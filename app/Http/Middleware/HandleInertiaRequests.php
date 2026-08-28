@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\Permission;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,8 +41,35 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+
+                /* What the viewer holds, so the sidebar and a page's controls
+                   can hide what the route would refuse anyway. Authorisation
+                   still happens on the server; this only stops the interface
+                   offering a door that is locked. */
+                'permissions' => $this->permissions($request),
+
+                /* The account menu wears the role rather than the account
+                   type: "Super Admin" says something the word "user" cannot. */
+                'roles' => $request->user()?->getRoleNames()->all() ?? [],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function permissions(Request $request): array
+    {
+        $user = $request->user();
+
+        if ($user === null) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            Permission::values(),
+            fn (string $permission) => $user->can($permission),
+        ));
     }
 }

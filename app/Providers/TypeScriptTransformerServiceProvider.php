@@ -1,0 +1,31 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Providers;
+
+use Spatie\LaravelTypeScriptTransformer\TypeScriptTransformerApplicationServiceProvider as BaseTypeScriptTransformerServiceProvider;
+use Spatie\TypeScriptTransformer\Formatters\PrettierFormatter;
+use Spatie\TypeScriptTransformer\Transformers\AttributedClassTransformer;
+use Spatie\TypeScriptTransformer\Transformers\EnumTransformer;
+use Spatie\TypeScriptTransformer\TypeScriptTransformerConfigFactory;
+use Spatie\TypeScriptTransformer\Writers\GlobalNamespaceWriter;
+
+/**
+ * Turns the `#[TypeScript]` classes and enums under app/ into one ambient
+ * declaration file, so an Inertia page types its props against the object the
+ * controller actually sent rather than a hand-copied interface.
+ */
+class TypeScriptTransformerServiceProvider extends BaseTypeScriptTransformerServiceProvider
+{
+    protected function configure(TypeScriptTransformerConfigFactory $config): void
+    {
+        $config
+            ->transformer(AttributedClassTransformer::class)
+            ->transformer(EnumTransformer::class)
+            ->transformDirectories(app_path())
+            ->outputDirectory(resource_path('js/types'))
+            ->writer(new GlobalNamespaceWriter('generated.d.ts'))
+            ->formatter(PrettierFormatter::class);
+    }
+}

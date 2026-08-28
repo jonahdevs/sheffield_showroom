@@ -39,7 +39,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <Card class="w-full">
+    <Card class="w-full gap-5">
         <CardHeader>
             <CardTitle class="flex gap-3">
                 <LockKeyhole class="size-4" />2FA recovery codes

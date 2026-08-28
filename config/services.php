@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    /*
+     * The main website, which owns the product catalogue. Both applications
+     * sit on the same server, so this is usually a local URL and the request
+     * never leaves the box.
+     */
+    'main_website' => [
+        'url' => env('MAIN_WEBSITE_URL', 'https://sheffieldafrica.com'),
+        'token' => env('MAIN_WEBSITE_SYNC_TOKEN'),
+        'timeout' => (int) env('MAIN_WEBSITE_TIMEOUT', 20),
+    ],
+
 ];

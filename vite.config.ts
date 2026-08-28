@@ -12,8 +12,10 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
             refresh: true,
             fonts: [
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                /* 700 and 800 carry the headings the base layer sets; the
+                   design leans on both and a synthesised bold reads wrong. */
+                bunny('Plus Jakarta Sans', {
+                    weights: [400, 500, 600, 700, 800],
                 }),
             ],
         }),

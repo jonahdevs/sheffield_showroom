@@ -1,0 +1,103 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use App\Enums\ProductSource;
+use App\Policies\ProductPolicy;
+use Carbon\CarbonImmutable;
+use Database\Factories\ProductFactory;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * @property int $id
+ * @property string $name
+ * @property string|null $sku
+ * @property string|null $image_path
+ * @property ProductSource $source
+ * @property int|null $external_id
+ * @property CarbonImmutable|null $synced_at
+ * @property int|null $created_by
+ * @property CarbonImmutable|null $created_at
+ * @property CarbonImmutable|null $updated_at
+ * @property CarbonImmutable|null $deleted_at
+ */
+#[UsePolicy(ProductPolicy::class)]
+class Product extends Model
+{
+    /** @use HasFactory<ProductFactory> */
+    use HasFactory, SoftDeletes;
+
+    /** Where an uploaded image lands on the public disk. */
+    public const IMAGE_DIRECTORY = 'products';
+
+    protected $fillable = [
+        'name',
+        'sku',
+        'image_path',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'source' => ProductSource::class,
+            'synced_at' => 'immutable_datetime',
+        ];
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * A URL the browser can load, or null when there is no picture.
+     *
+     * A synced row keeps the website's absolute URL rather than a copy of the
+     * file, so the two never drift; a row added here holds a path on the
+     * public disk.
+     */
+    public function imageUrl(): ?string
+    {
+        if ($this->image_path === null) {
+            return null;
+        }
+
+        return str_starts_with($this->image_path, 'http')
+            ? $this->image_path
+            : Storage::disk('public')->url($this->image_path);
+    }
+
+    public function isSynced(): bool
+    {
+        return $this->source === ProductSource::Website;
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    #[Scope]
+    protected function search(Builder $query, string $term): void
+    {
+        if ($term === '') {
+            return;
+        }
+
+        $like = '%'.$term.'%';
+
+        $query->where(fn (Builder $inner) => $inner
+            ->where('name', 'like', $like)
+            ->orWhere('sku', 'like', $like));
+    }
+}

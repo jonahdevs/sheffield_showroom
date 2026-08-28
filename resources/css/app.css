@@ -9,10 +9,22 @@
 
 @theme inline {
     --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
 
+    /* Applied to h1-h6 in the base layer at the foot of the file. Its own
+       token rather than reusing --font-sans, so a display face can be swapped
+       in for headings later without touching body copy. */
+    --font-heading:
+        'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+
+    /* Rounding runs on a 2px step off the button, so a card lands on
+       `rounded-xl` and a panel on `rounded-2xl` without naming a pixel. */
+    --radius-2xl: calc(var(--radius) + 4px);
+    --radius-xl: calc(var(--radius) + 2px);
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
@@ -35,6 +47,12 @@
     --color-muted: var(--muted);
     --color-muted-foreground: var(--muted-foreground);
 
+    /* A second tier of secondary text. The design keeps two and uses both
+       constantly - sub-text under a heading, and the meta line inside a row -
+       and one `muted-foreground` cannot be both without flattening the
+       hierarchy the pages are built on. */
+    --color-faint: var(--faint);
+
     --color-accent: var(--accent);
     --color-accent-foreground: var(--accent-foreground);
 
@@ -42,6 +60,8 @@
     --color-destructive-foreground: var(--destructive-foreground);
 
     --color-border: var(--border);
+    /* Row dividers inside a card are a step lighter than the card's own edge. */
+    --color-divider: var(--divider);
     --color-input: var(--input);
     --color-ring: var(--ring);
 
@@ -61,6 +81,49 @@
     --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Sheffield brand palette. Two brand colors: a red primary and an indigo
+   secondary. Kept in a non-inline @theme block so they emit real CSS custom
+   properties and generate utilities (bg-brand-500, text-brand-blue-600, ...). */
+@theme {
+    /* Two tint steps beyond the three brand colours, and no more: the active
+       nav row and the account block are washes of the brand, and a wash needs
+       a step at each end of the ramp that the mid tones cannot stand in for. */
+    --color-brand-50: hsl(354, 70%, 96%);
+
+    --color-brand-500: hsl(354, 68%, 45%);
+    --color-brand-600: hsl(354, 68%, 40%);
+    --color-brand-700: hsl(354, 68%, 35%);
+    --color-brand-950: hsl(354, 45%, 13%);
+
+    --color-brand-blue-500: hsl(229, 52%, 39%);
+    --color-brand-blue-600: hsl(229, 52%, 34%);
+    --color-brand-blue-700: hsl(229, 52%, 29%);
+    --color-brand-blue-900: hsl(229, 52%, 17%);
+}
+
+/* Neutral ramp. Tailwind's slate, step for step, overriding the stock hueless
+   `neutral-*` so every grey in the app - semantic tokens below and the
+   `neutral-*` utilities used directly in components - leans cool and sits
+   with the indigo brand colour. 850 is ours: dark mode needs a surface
+   between 800 and 900 and the stock ramp has no step there. */
+@theme {
+    --color-neutral-50: var(--color-slate-50);
+    --color-neutral-100: var(--color-slate-100);
+    --color-neutral-200: var(--color-slate-200);
+    --color-neutral-300: var(--color-slate-300);
+    --color-neutral-400: var(--color-slate-400);
+    --color-neutral-500: var(--color-slate-500);
+    --color-neutral-600: var(--color-slate-600);
+    --color-neutral-700: var(--color-slate-700);
+    --color-neutral-800: var(--color-slate-800);
+    /* Dark mode needs a surface between 800 and 900 - it is what `--muted`
+       sits on - and slate has no such step, so this one is interpolated. */
+    --color-neutral-850: oklch(24.3% 0.042 262);
+
+    --color-neutral-900: var(--color-slate-900);
+    --color-neutral-950: var(--color-slate-950);
+}
+
 /*
   The default border color has changed to `currentColor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
@@ -75,7 +138,7 @@
     ::before,
     ::backdrop,
     ::file-selector-button {
-        border-color: var(--color-gray-200, currentColor);
+        border-color: var(--color-neutral-200, currentColor);
     }
 }
 
@@ -83,90 +146,157 @@
     body,
     html {
         --font-sans:
-            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+            'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif,
             'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
             'Noto Color Emoji';
     }
 }
 
 :root {
-    --background: hsl(0 0% 100%);
-    --foreground: hsl(0 0% 3.9%);
-    --card: hsl(0 0% 100%);
-    --card-foreground: hsl(0 0% 3.9%);
-    --popover: hsl(0 0% 100%);
-    --popover-foreground: hsl(0 0% 3.9%);
-    --primary: hsl(0 0% 9%);
-    --primary-foreground: hsl(0 0% 98%);
-    --secondary: hsl(0 0% 92.1%);
-    --secondary-foreground: hsl(0 0% 9%);
-    --muted: hsl(0 0% 96.1%);
-    --muted-foreground: hsl(0 0% 45.1%);
-    --accent: hsl(0 0% 96.1%);
-    --accent-foreground: hsl(0 0% 9%);
+    --background: oklch(100% 0 0);
+    --foreground: var(--color-neutral-950);
+    --card: oklch(100% 0 0);
+    --card-foreground: var(--color-neutral-950);
+    --popover: oklch(100% 0 0);
+    --popover-foreground: var(--color-neutral-950);
+    --primary: var(--color-brand-500);
+    --primary-foreground: oklch(100% 0 0);
+    --secondary: var(--color-neutral-100);
+    --secondary-foreground: var(--color-neutral-900);
+    --muted: var(--color-neutral-50);
+    --muted-foreground: var(--color-neutral-700);
+    --faint: var(--color-neutral-600);
+    --accent: var(--color-neutral-100);
+    --accent-foreground: var(--color-neutral-900);
     --destructive: hsl(0 84.2% 60.2%);
-    --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 92.8%);
-    --input: hsl(0 0% 89.8%);
-    --ring: hsl(0 0% 3.9%);
+    --destructive-foreground: var(--color-neutral-50);
+    --border: var(--color-neutral-200);
+    --divider: var(--color-neutral-100);
+    --input: var(--color-neutral-300);
+    --ring: var(--color-brand-500);
     --chart-1: hsl(12 76% 61%);
     --chart-2: hsl(173 58% 39%);
     --chart-3: hsl(197 37% 24%);
     --chart-4: hsl(43 74% 66%);
     --chart-5: hsl(27 87% 67%);
-    --radius: 0.5rem;
-    --sidebar-background: hsl(0 0% 98%);
-    --sidebar-foreground: hsl(240 5.3% 26.1%);
-    --sidebar-primary: hsl(0 0% 10%);
-    --sidebar-primary-foreground: hsl(0 0% 98%);
-    --sidebar-accent: hsl(0 0% 94%);
-    --sidebar-accent-foreground: hsl(0 0% 30%);
-    --sidebar-border: hsl(0 0% 91%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
-    --sidebar: hsl(0 0% 98%);
+    --radius: 0.75rem;
+    /*
+     * The rail is white, not a tinted panel: the 1px border is the only thing
+     * dividing it from the page, and that is what keeps the whole shell
+     * reading as one surface. The current row is a wash of the brand with the
+     * brand itself as its label.
+     */
+    --sidebar-background: oklch(100% 0 0);
+    --sidebar-foreground: var(--color-neutral-800);
+    --sidebar-primary: var(--color-neutral-900);
+    --sidebar-primary-foreground: var(--color-neutral-50);
+    --sidebar-accent: var(--color-brand-50);
+    --sidebar-accent-foreground: var(--color-brand-600);
+    --sidebar-border: var(--color-neutral-200);
+    --sidebar-ring: var(--color-brand-500);
+    --sidebar: oklch(100% 0 0);
 }
 
 .dark {
-    --background: hsl(0 0% 3.9%);
-    --foreground: hsl(0 0% 98%);
-    --card: hsl(0 0% 3.9%);
-    --card-foreground: hsl(0 0% 98%);
-    --popover: hsl(0 0% 3.9%);
-    --popover-foreground: hsl(0 0% 98%);
-    --primary: hsl(0 0% 98%);
-    --primary-foreground: hsl(0 0% 9%);
-    --secondary: hsl(0 0% 14.9%);
-    --secondary-foreground: hsl(0 0% 98%);
-    --muted: hsl(0 0% 16.08%);
-    --muted-foreground: hsl(0 0% 63.9%);
-    --accent: hsl(0 0% 14.9%);
-    --accent-foreground: hsl(0 0% 98%);
+    --background: var(--color-neutral-950);
+    --foreground: var(--color-neutral-50);
+    /* A card lifts off the page here rather than matching it - on a dark
+       ground a border alone is not enough to separate the two. */
+    --card: var(--color-neutral-900);
+    --card-foreground: var(--color-neutral-50);
+    --popover: var(--color-neutral-900);
+    --popover-foreground: var(--color-neutral-50);
+    --primary: var(--color-brand-500);
+    --primary-foreground: oklch(100% 0 0);
+    --secondary: var(--color-neutral-850);
+    --secondary-foreground: var(--color-neutral-50);
+    --muted: var(--color-neutral-850);
+    --muted-foreground: var(--color-neutral-400);
+    --faint: var(--color-neutral-500);
+    --accent: var(--color-neutral-850);
+    --accent-foreground: var(--color-neutral-50);
     --destructive: hsl(0 84% 60%);
-    --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 14.9%);
-    --input: hsl(0 0% 14.9%);
-    --ring: hsl(0 0% 83.1%);
+    --destructive-foreground: var(--color-neutral-50);
+    --border: var(--color-neutral-850);
+    --divider: var(--color-neutral-850);
+    --input: var(--color-neutral-800);
+    --ring: var(--color-brand-500);
     --chart-1: hsl(220 70% 50%);
     --chart-2: hsl(160 60% 45%);
     --chart-3: hsl(30 80% 55%);
     --chart-4: hsl(280 65% 60%);
     --chart-5: hsl(340 75% 55%);
-    --sidebar-background: hsl(0 0% 7%);
-    --sidebar-foreground: hsl(0 0% 95.9%);
-    --sidebar-primary: hsl(360, 100%, 100%);
-    --sidebar-primary-foreground: hsl(0 0% 100%);
-    --sidebar-accent: hsl(0 0% 15.9%);
-    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-    --sidebar-border: hsl(0 0% 15.9%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
-    --sidebar: hsl(240 5.9% 10%);
+    /* The rail lifts off the page here rather than matching it, which is the
+       dark counterpart of the white rail against a white page. */
+    --sidebar-background: var(--color-neutral-900);
+    --sidebar-foreground: var(--color-neutral-200);
+    --sidebar-primary: var(--color-neutral-50);
+    --sidebar-primary-foreground: var(--color-neutral-950);
+    --sidebar-accent: var(--color-brand-950);
+    --sidebar-accent-foreground: var(--color-brand-500);
+    --sidebar-border: var(--color-neutral-850);
+    --sidebar-ring: var(--color-brand-500);
+    --sidebar: var(--color-neutral-900);
 }
 
 @layer base {
     * {
         @apply border-border outline-ring/50;
     }
+
+    /*
+     * Tailwind v4's Preflight leaves buttons on the browser default of
+     * `cursor: default`, where v3 gave them a pointer. Restoring it here
+     * rather than per-button is what stops the hand appearing on some
+     * controls and not others depending on what that file remembered.
+     */
+    button:not(:disabled),
+    [role='button']:not(:disabled) {
+        cursor: pointer;
+    }
+
     body {
         @apply bg-background text-foreground;
+        font-family: var(--font-sans);
+
+        /* Jakarta is a chunkier face than the default at the same size;
+           without this the small meta rows inside a card gain enough weight
+           to compete with the labels above them. */
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /*
+     * Every title in the app is a heading element - shadcn's CardTitle is an
+     * h3 and reka's DialogTitle an h2 - so this reaches them without each
+     * component opting in. Tracking pulls in as the size goes up, which is
+     * what stops Jakarta's wide default sidebearings from making a page title
+     * look loose. A utility still wins over this, so a component that has
+     * already made the call keeps it.
+     */
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: var(--font-heading);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+
+    h1 {
+        font-weight: 800;
+        letter-spacing: -0.03em;
+    }
+
+    /* The rail and any long table both scroll, so the bar is drawn rather
+       than left to the browser default. */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        @apply rounded-lg border-[3px] border-background bg-neutral-300;
     }
 }

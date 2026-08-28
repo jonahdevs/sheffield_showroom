@@ -12,6 +12,12 @@ export type User = {
 
 export type Auth = {
     user: User;
+
+    /** Every capability the signed-in user holds, for gating the interface. */
+    permissions: App.Enums.Permission[];
+
+    /** The role names they hold, for the label in the account menu. */
+    roles: string[];
 };
 
 export type Passkey = {
