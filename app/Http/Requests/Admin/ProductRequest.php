@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\ProductStatus;
 use App\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -46,6 +47,12 @@ class ProductRequest extends FormRequest
                 Rule::unique('products', 'sku')->ignore($this->product()?->id),
             ],
 
+            /* Optional so a caller that predates the column - or a form that
+               only wants to fix a typo in a name - is not made to restate it.
+               The controller decides what an absent status means, which is not
+               the same answer on create as on edit. */
+            'status' => ['nullable', Rule::enum(ProductStatus::class)],
+
             /* 4MB and the four formats a phone or a catalogue export
                produces. `image` alone would also accept an SVG, which is a
                script that happens to draw. */
@@ -64,6 +71,7 @@ class ProductRequest extends FormRequest
     {
         return [
             'sku.unique' => 'Another product already has that SKU.',
+            'status.Illuminate\Validation\Rules\Enum' => 'Choose one of the listed statuses.',
             'image.mimes' => 'Use a JPG, PNG or WEBP image.',
             'image.max' => 'The image must be 4MB or smaller.',
         ];

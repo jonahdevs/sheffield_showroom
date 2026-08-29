@@ -2,6 +2,7 @@
 
 use App\Enums\Permission;
 use App\Enums\ProductSource;
+use App\Enums\ProductStatus;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
@@ -82,6 +83,39 @@ it('imports products from the website', function () {
         ->and($sheet->source)->toBe(ProductSource::Website)
         ->and($sheet->synced_at)->not->toBeNull()
         ->and($sheet->imageUrl())->toBe('https://sheffieldafrica.test/storage/a.jpg');
+});
+
+/**
+ * The model number is what a customer asks after - "have you got the BP-28" -
+ * so it comes across with the rest rather than being left on the website.
+ */
+it('imports the model number under either key the website uses', function () {
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Box Profile', 'sku' => 'SS-0001', 'model_number' => 'BP-28', 'image_url' => null],
+        ['id' => 12, 'name' => 'Gutter', 'sku' => 'SS-0002', 'model' => 'GT-400', 'image_url' => null],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect(Product::query()->where('external_id', 11)->sole()->model_number)->toBe('BP-28')
+        ->and(Product::query()->where('external_id', 12)->sole()->model_number)->toBe('GT-400');
+});
+
+/**
+ * A model written out as the literal string "null" is read off a tile and
+ * quoted to a customer, so it is treated as the absence it is - the same
+ * check the SKU goes through.
+ */
+it('stores a blank or placeholder model number as nothing', function () {
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'No model', 'sku' => 'SS-0001', 'model_number' => 'null', 'image_url' => null],
+        ['id' => 12, 'name' => 'Also none', 'sku' => 'SS-0002', 'model_number' => '  ', 'image_url' => null],
+        ['id' => 13, 'name' => 'Never said', 'sku' => 'SS-0003', 'image_url' => null],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect(Product::query()->pluck('model_number')->unique()->all())->toBe([null]);
 });
 
 it('sends the token the website expects', function () {
@@ -398,4 +432,192 @@ it('removes nothing when a page fails part way through', function () {
     $this->actingAs($user)->post(route('admin.products.sync'));
 
     expect(Product::query()->count())->toBe(2);
+});
+
+// -----------------------------------------------------------------------------
+// Status, which the sync derives rather than the website dictating
+// -----------------------------------------------------------------------------
+
+it('maps what the website publishes onto a status', function () {
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'On sale', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => true],
+        ['id' => 12, 'name' => 'Held back', 'sku' => 'SS-2', 'image_url' => null, 'is_published' => false],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect(Product::query()->where('external_id', 11)->sole()->status)
+        ->toBe(ProductStatus::Published)
+        ->and(Product::query()->where('external_id', 12)->sole()->status)
+        ->toBe(ProductStatus::Draft);
+});
+
+/**
+ * The flag has been seen to arrive as a number or a string rather than a JSON
+ * boolean, and a product read as unpublished comes off the floor.
+ */
+it('reads the published flag however the feed spells it', function () {
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'One', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => 1],
+        ['id' => 12, 'name' => 'Two', 'sku' => 'SS-2', 'image_url' => null, 'is_published' => '0'],
+        ['id' => 13, 'name' => 'Three', 'sku' => 'SS-3', 'image_url' => null, 'is_published' => 'true'],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect(Product::query()->where('external_id', 11)->sole()->status)->toBe(ProductStatus::Published)
+        ->and(Product::query()->where('external_id', 12)->sole()->status)->toBe(ProductStatus::Draft)
+        ->and(Product::query()->where('external_id', 13)->sole()->status)->toBe(ProductStatus::Published);
+});
+
+/**
+ * `Inactive` is the one status a person sets here and the website cannot know
+ * about. A sync that reset it would undo a decision somebody made on the floor,
+ * every single run, until they stopped bothering to make it.
+ */
+it('never overwrites a status somebody set to Inactive here', function () {
+    $product = Product::factory()
+        ->fromWebsite(11)
+        ->status(ProductStatus::Inactive)
+        ->create(['name' => 'Held off the floor', 'sku' => 'SS-1']);
+
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Held off the floor', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => true],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect($product->fresh()->status)->toBe(ProductStatus::Inactive);
+});
+
+it('leaves Inactive alone even when the website has unpublished the product', function () {
+    $product = Product::factory()
+        ->fromWebsite(11)
+        ->status(ProductStatus::Inactive)
+        ->create(['name' => 'Held off the floor', 'sku' => 'SS-1']);
+
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Held off the floor', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => false],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect($product->fresh()->status)->toBe(ProductStatus::Inactive);
+});
+
+/**
+ * An endpoint that has not been taught to send `is_published` is saying
+ * nothing, not saying "draft". Reading its silence as a draft would take the
+ * whole floor offline on the first run.
+ */
+it('leaves a local status alone when the payload carries no status fields', function () {
+    $draft = Product::factory()->fromWebsite(11)->status(ProductStatus::Draft)
+        ->create(['name' => 'Not ready', 'sku' => 'SS-1']);
+    $inactive = Product::factory()->fromWebsite(12)->status(ProductStatus::Inactive)
+        ->create(['name' => 'Put away', 'sku' => 'SS-2']);
+
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Not ready', 'sku' => 'SS-1', 'image_url' => null],
+        ['id' => 12, 'name' => 'Put away', 'sku' => 'SS-2', 'image_url' => null],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect($draft->fresh()->status)->toBe(ProductStatus::Draft)
+        ->and($inactive->fresh()->status)->toBe(ProductStatus::Inactive);
+});
+
+it('publishes a product the thin payload introduces for the first time', function () {
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Brand new', 'sku' => 'SS-1', 'image_url' => null],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect(Product::query()->sole()->status)->toBe(ProductStatus::Published);
+});
+
+/**
+ * A row that arrives carrying a `deleted_at` has been withdrawn upstream. The
+ * status and the soft delete have to agree about it, or the tile says one thing
+ * and the list says another.
+ */
+it('archives and removes a product the website reports as withdrawn', function () {
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Still sold', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => true],
+        ['id' => 12, 'name' => 'Withdrawn', 'sku' => 'SS-2', 'image_url' => null, 'is_published' => true, 'deleted_at' => '2026-08-01T00:00:00+00:00'],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    $withdrawn = Product::withTrashed()->where('external_id', 12)->sole();
+
+    expect($withdrawn->status)->toBe(ProductStatus::Archived)
+        ->and($withdrawn->trashed())->toBeTrue()
+        ->and(Product::query()->count())->toBe(1);
+});
+
+it('archives a product the website has stopped offering', function () {
+    $both = fn (array $rows) => [
+        'data' => $rows,
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 200, 'total' => count($rows)],
+    ];
+
+    Http::fake([
+        '*/api/catalogue/products*' => Http::sequence()
+            ->push($both([
+                ['id' => 11, 'name' => 'Still sold', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => true],
+                ['id' => 12, 'name' => 'Discontinued', 'sku' => 'SS-2', 'image_url' => null, 'is_published' => true],
+            ]))
+            ->push($both([
+                ['id' => 11, 'name' => 'Still sold', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => true],
+            ])),
+    ]);
+
+    $user = catalogueSyncer();
+
+    $this->actingAs($user)->post(route('admin.products.sync'));
+    $this->actingAs($user)->post(route('admin.products.sync'));
+
+    $gone = Product::withTrashed()->where('external_id', 12)->sole();
+
+    expect($gone->trashed())->toBeTrue()
+        ->and($gone->status)->toBe(ProductStatus::Archived);
+});
+
+/**
+ * A product back on the feed is back on the floor, so the status has to come
+ * back with it - an un-deleted row still reading "Archived" is the same
+ * disagreement in the other direction.
+ */
+it('puts an archived product back on the floor when the website offers it again', function () {
+    $product = Product::factory()->fromWebsite(11)->status(ProductStatus::Archived)
+        ->create(['name' => 'Back in stock', 'sku' => 'SS-1']);
+
+    $product->delete();
+
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'Back in stock', 'sku' => 'SS-1', 'image_url' => null],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    $product->refresh();
+
+    expect($product->trashed())->toBeFalse()
+        ->and($product->status)->toBe(ProductStatus::Published);
+});
+
+it('never touches the status of a product added here by hand', function () {
+    $local = Product::factory()->status(ProductStatus::Inactive)
+        ->create(['name' => 'Local only', 'sku' => 'LOCAL-1']);
+
+    fakeCatalogue([
+        ['id' => 11, 'name' => 'From the website', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => false],
+    ]);
+
+    $this->actingAs(catalogueSyncer())->post(route('admin.products.sync'));
+
+    expect($local->fresh()->status)->toBe(ProductStatus::Inactive)
+        ->and($local->fresh()->trashed())->toBeFalse();
 });

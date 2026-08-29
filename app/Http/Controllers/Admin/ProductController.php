@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Data\ProductData;
+use App\Enums\ProductStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProductRequest;
 use App\Models\Product;
@@ -35,9 +36,11 @@ class ProductController extends Controller
 
         $viewer = $request->user();
         $search = $request->string('search')->trim()->toString();
+        $status = $this->status($request);
 
         $products = Product::query()
             ->when($search !== '', fn (Builder $query) => $query->search($search))
+            ->when($status !== null, fn (Builder $query) => $query->ofStatus($status))
             ->orderBy('name')
             /* The catalogue holds products that share a name to the letter, so
                a sort on name alone puts them in no fixed order. Page two would
@@ -52,7 +55,12 @@ class ProductController extends Controller
                rather than replacing it. `reset` on the client is what turns a
                new search back into a fresh list. */
             'products' => Inertia::scroll($products),
-            'filters' => ['search' => $search],
+            'filters' => [
+                'search' => $search,
+                'status' => $status?->value ?? '',
+            ],
+            'statuses' => ProductStatus::options(),
+            'counts' => $this->counts(),
             'can' => [
                 'create' => $viewer->can('create', Product::class),
                 'update' => $viewer->can('update', new Product),
@@ -64,11 +72,55 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * The status the tab strip is asking for, or null for all of them.
+     *
+     * A value that is not a status at all - a stale bookmark, somebody editing
+     * the query string - reads as no filter rather than as an error page. The
+     * floor is looking for a product, not for a lecture about a URL.
+     */
+    private function status(Request $request): ?ProductStatus
+    {
+        return ProductStatus::tryFrom($request->string('status')->trim()->toString());
+    }
+
+    /**
+     * How many products sit under each tab.
+     *
+     * Grouped in one query rather than counted case by case: there are four
+     * statuses and this runs on every keystroke in the search box.
+     *
+     * These deliberately count what the list can actually show, which excludes
+     * soft-deleted rows. Most `archived` products are also soft-deleted, so
+     * that tab is usually near-empty - it holds the ones somebody archived here
+     * without removing them.
+     *
+     * @return array<string, int>
+     */
+    private function counts(): array
+    {
+        $counted = Product::query()
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
+        $counts = ['all' => (int) $counted->sum()];
+
+        foreach (ProductStatus::cases() as $status) {
+            $counts[$status->value] = (int) $counted->get($status->value, 0);
+        }
+
+        return $counts;
+    }
+
     public function create(): Response
     {
         $this->authorize('create', Product::class);
 
-        return Inertia::render('admin/products/Form', ['product' => null]);
+        return Inertia::render('admin/products/Form', [
+            'product' => null,
+            'statuses' => ProductStatus::options(),
+        ]);
     }
 
     public function edit(Product $product): Response
@@ -77,12 +129,16 @@ class ProductController extends Controller
 
         return Inertia::render('admin/products/Form', [
             'product' => ProductData::fromModel($product),
+            'statuses' => ProductStatus::options(),
         ]);
     }
 
     public function store(ProductRequest $request): RedirectResponse
     {
         $product = new Product($request->safe()->only(['name', 'sku']));
+        /* Nothing chosen means a product somebody is putting on the floor
+           now - which is the only reason they are on this form. */
+        $product->status = $this->chosenStatus($request) ?? ProductStatus::Published;
         $product->created_by = $request->user()->id;
 
         if ($request->hasFile('image')) {
@@ -105,6 +161,11 @@ class ProductController extends Controller
         $previousImage = $product->image_path;
 
         $product->fill($request->safe()->only(['name', 'sku']));
+
+        /* Absent means the form did not ask, not that the product should be
+           reset. A sync could not clobber a status; neither may a partial
+           form post. */
+        $product->status = $this->chosenStatus($request) ?? $product->status;
 
         if ($request->hasFile('image')) {
             $product->image_path = $request->file('image')
@@ -130,6 +191,16 @@ class ProductController extends Controller
         ]);
 
         return to_route('admin.products.index');
+    }
+
+    /**
+     * The status the form sent, or null when it sent none.
+     */
+    private function chosenStatus(ProductRequest $request): ?ProductStatus
+    {
+        $status = $request->validated('status');
+
+        return is_string($status) ? ProductStatus::from($status) : null;
     }
 
     /**

@@ -25,10 +25,12 @@ defineProps<{
                 :href="home()"
                 class="flex items-center gap-2 self-center font-medium"
             >
-                <div class="flex h-9 w-9 items-center justify-center">
-                    <AppLogoIcon
-                        class="size-9 fill-current text-black dark:text-white"
-                    />
+                <!-- Chipped for the same reason as the sidebar mark: in dark mode the
+                     page behind this is near-black and the flame's navy half would vanish. -->
+                <div
+                    class="flex h-10 w-10 items-center justify-center rounded-md bg-white ring-1 ring-border"
+                >
+                    <AppLogoIcon class="size-9" />
                 </div>
             </Link>
 

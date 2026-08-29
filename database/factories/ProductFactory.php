@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\ProductSource;
+use App\Enums\ProductStatus;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,6 +23,7 @@ class ProductFactory extends Factory
             'name' => ucwords(fake()->unique()->words(3, true)),
             'sku' => strtoupper(fake()->unique()->bothify('SS-####-??')),
             'image_path' => null,
+            'status' => ProductStatus::Published,
             'source' => ProductSource::Manual,
         ];
     }
@@ -36,6 +38,15 @@ class ProductFactory extends Factory
             'external_id' => $externalId ?? fake()->unique()->numberBetween(1, 100000),
             'synced_at' => now(),
         ]);
+    }
+
+    /**
+     * A status somebody set here by hand. `Inactive` is the interesting one:
+     * no sync may move it.
+     */
+    public function status(ProductStatus $status): static
+    {
+        return $this->state(fn (array $attributes) => ['status' => $status]);
     }
 
     public function withoutSku(): static

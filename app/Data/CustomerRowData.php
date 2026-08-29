@@ -6,12 +6,13 @@ namespace App\Data;
 
 use App\Enums\CustomerType;
 use App\Models\Customer;
+use Carbon\CarbonImmutable;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
 /**
  * A customer as the list shows them. Deliberately thinner than
- * `CustomerFormData`: the table has no column for a date of birth or a note.
+ * `CustomerFormData`: the table has no column for an address or a note.
  */
 #[TypeScript(location: ['App', 'Data'])]
 class CustomerRowData extends Data
@@ -21,11 +22,12 @@ class CustomerRowData extends Data
         public CustomerType $type,
         public string $type_label,
         public string $display_name,
-        public ?string $subtitle,
+        public ?string $name,
+        public ?string $company_name,
         public string $phone,
         public ?string $email,
-        public string $location,
-        public string $added,
+        public int $visits_count,
+        public ?string $last_visit,
     ) {}
 
     public static function fromModel(Customer $customer): self
@@ -35,17 +37,33 @@ class CustomerRowData extends Data
             type: $customer->type,
             type_label: $customer->type->label(),
             display_name: $customer->displayName(),
-            subtitle: $customer->subtitle(),
+            /* The two names in their own right, because the table gives each
+               a column. A company customer is a person and a business, and one
+               cell cannot show both without choosing between them. */
+            name: $customer->name,
+            company_name: $customer->company_name,
             phone: $customer->phone,
             email: $customer->email,
-            /* Town and country. The rest of the address belongs on the
-               record rather than in a table cell, and the country carries a
-               default so there is always something to show. */
-            location: implode(', ', array_filter([
-                $customer->city ?? $customer->state,
-                $customer->country,
-            ])),
-            added: $customer->created_at?->format('j M Y') ?? '',
+            /* Both come off `withCount`/`withMax` in the list query. Defaulted
+               rather than required, so a row built outside that query reads as
+               nobody having visited rather than failing. */
+            visits_count: (int) ($customer->visits_count ?? 0),
+            last_visit: self::lastVisit($customer),
         );
+    }
+
+    /**
+     * When they were last in, as the column aggregate hands it over.
+     *
+     * `withMax` returns whatever the driver gave it - a string on some, a cast
+     * value on others - so it is parsed rather than formatted directly.
+     */
+    private static function lastVisit(Customer $customer): ?string
+    {
+        $moment = $customer->visits_max_visited_at ?? null;
+
+        return $moment === null
+            ? null
+            : CarbonImmutable::parse($moment)->format('j M Y');
     }
 }

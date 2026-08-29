@@ -16,15 +16,22 @@
  */
 export const MAX_VISIBLE_OPTIONS = 50;
 
+/** An option, plus the extra text a caller wants searched but not shown. */
+type Searchable = App.Data.OptionData & { keywords?: string | null };
+
 /**
  * Whether an option answers to a search term.
  *
- * Both the label and the hint are searched: a customer is looked up by their
- * phone number as often as by their name, and a product by its SKU as often as
- * by what it is called.
+ * The label and the hint are searched: a customer is looked up by their phone
+ * number as often as by their name, and a product by its SKU as often as by
+ * what it is called. `keywords` is for what identifies a record without
+ * belonging on the row - the company a customer came in for, which is how they
+ * are remembered even though the box asks for a person.
  */
-function matches(option: App.Data.OptionData, term: string): boolean {
-    return `${option.label} ${option.hint ?? ''}`.toLowerCase().includes(term);
+function matches(option: Searchable, term: string): boolean {
+    return `${option.label} ${option.hint ?? ''} ${option.keywords ?? ''}`
+        .toLowerCase()
+        .includes(term);
 }
 
 function normalise(search: string): string {
@@ -34,18 +41,18 @@ function normalise(search: string): string {
 /**
  * The first `limit` options matching a search term, in the order given.
  */
-export function matchOptions(
-    options: App.Data.OptionData[],
+export function matchOptions<T extends Searchable>(
+    options: T[],
     search: string,
     limit: number = MAX_VISIBLE_OPTIONS,
-): App.Data.OptionData[] {
+): T[] {
     const term = normalise(search);
 
     if (term === '') {
         return options.slice(0, limit);
     }
 
-    const found: App.Data.OptionData[] = [];
+    const found: T[] = [];
 
     for (const option of options) {
         if (matches(option, term)) {
@@ -66,10 +73,7 @@ export function matchOptions(
  * Counted rather than collected, so telling somebody there are four hundred
  * more does not build four hundred more objects to say it.
  */
-export function countMatches(
-    options: App.Data.OptionData[],
-    search: string,
-): number {
+export function countMatches(options: Searchable[], search: string): number {
     const term = normalise(search);
 
     if (term === '') {

@@ -21,13 +21,11 @@ class CustomerFactory extends Factory
         return [
             'type' => CustomerType::Individual,
             'name' => fake()->name(),
-            'date_of_birth' => fake()->optional()->dateTimeBetween('-70 years', '-18 years'),
-            'occupation' => fake()->optional()->jobTitle(),
             'phone' => $this->kenyanPhone(),
-            'alternative_phone' => fake()->optional()->passthrough($this->kenyanPhone()),
             'email' => fake()->optional()->safeEmail(),
-            'address_line_1' => fake()->optional()->streetAddress(),
-            'address_line_2' => fake()->optional()->secondaryAddress(),
+            'id_number' => fake()->optional()->numerify('########'),
+            'street_address' => fake()->optional()->streetAddress(),
+            'area' => fake()->optional()->secondaryAddress(),
             'city' => fake()->optional()->city(),
             'state' => fake()->optional()->randomElement(['Nairobi', 'Kiambu', 'Nakuru', 'Mombasa', 'Kisumu']),
             'postal_code' => fake()->optional()->postcode(),
@@ -37,20 +35,18 @@ class CustomerFactory extends Factory
     }
 
     /**
-     * Swaps the person's fields for the organisation's, so a company row never
-     * carries a stray name or date of birth.
+     * The same person, buying for the business they work for.
+     *
+     * `name` is left as it is rather than swapped out: a company row names
+     * whoever came in from it just as an individual row does, and the company
+     * is what is added on top.
      */
     public function company(): static
     {
         return $this->state(fn (array $attributes) => [
             'type' => CustomerType::Company,
-            'name' => null,
-            'date_of_birth' => null,
-            'occupation' => null,
             'company_name' => fake()->company(),
             'industry' => fake()->randomElement(['Construction', 'Manufacturing', 'Real Estate', 'Agriculture']),
-            'contact_person' => fake()->name(),
-            'contact_person_position' => fake()->optional()->jobTitle(),
         ]);
     }
 

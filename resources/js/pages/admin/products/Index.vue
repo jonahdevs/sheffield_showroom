@@ -9,7 +9,7 @@ import {
     Search,
     Trash2,
 } from '@lucide/vue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { Paginator } from '@/components/TablePagination.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,21 +38,59 @@ interface Paginated<T> extends Paginator {
 
 const props = defineProps<{
     products: Paginated<App.Data.ProductData>;
-    filters: { search: string };
+    filters: { search: string; status: string };
+    statuses: { value: string; label: string }[];
+    counts: Record<string, number>;
     can: { create: boolean; update: boolean; delete: boolean; sync: boolean };
     /** False when no token is set, which is the usual reason a sync fails. */
     sync_configured: boolean;
 }>();
 
-const { filters, hasFilters, processing, clear } = useFilters({
+const { filters, hasFilters, processing, apply, clear } = useFilters({
     url: index.url(),
-    initial: { search: props.filters.search ?? '' },
-    blank: { search: '' },
-    only: ['products', 'filters'],
+    initial: {
+        search: props.filters.search ?? '',
+        status: props.filters.status === '' ? 'all' : props.filters.status,
+    },
+    blank: { search: '', status: 'all' },
+    only: ['products', 'filters', 'counts'],
     /* Without this the tiles the search just found would be appended to the
        ones it was meant to replace. */
     reset: ['products'],
 });
+
+/**
+ * The status filter is a tab strip rather than a select, the same as the one
+ * over the customers table: a handful of choices, each worth a count. The
+ * counts are of what this list can show, so soft-deleted products are in none
+ * of them - which is why Archived usually reads low.
+ */
+const tabs = computed(() => [
+    { value: 'all', label: 'All', count: props.counts.all ?? 0 },
+    ...props.statuses.map((status) => ({
+        value: status.value,
+        label: status.label,
+        count: props.counts[status.value] ?? 0,
+    })),
+]);
+
+/**
+ * Published is the ordinary case and every tile would wear the same badge, so
+ * it goes unsaid. A status worth reading is one that explains why a product is
+ * not where you expected it.
+ */
+function statusTone(status: App.Enums.ProductStatus): string | null {
+    switch (status) {
+        case 'draft':
+            return 'border-transparent bg-muted text-faint';
+        case 'inactive':
+            return 'border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400';
+        case 'archived':
+            return 'border-transparent bg-destructive/10 text-destructive';
+        default:
+            return null;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Pulling the catalogue from the main website
@@ -162,6 +200,27 @@ defineOptions({
 
         <Card class="min-w-0 gap-0 overflow-hidden p-0">
             <div
+                class="flex flex-wrap items-center gap-1 border-b border-border px-5 pt-3.5"
+            >
+                <button
+                    v-for="tab in tabs"
+                    :key="tab.value"
+                    type="button"
+                    class="-mb-px flex items-center gap-2 border-b-2 px-3 pb-3 text-xs font-bold transition-colors"
+                    :class="
+                        filters.status === tab.value
+                            ? 'border-primary text-primary'
+                            : 'border-transparent text-faint hover:text-foreground'
+                    "
+                    :data-test="`tab-${tab.value}`"
+                    @click="apply({ status: tab.value })"
+                >
+                    {{ tab.label }}
+                    <span class="text-faint tabular-nums">{{ tab.count }}</span>
+                </button>
+            </div>
+
+            <div
                 class="flex flex-wrap items-center gap-2.5 border-b border-border px-5 py-3.5"
             >
                 <InputGroup class="w-full max-w-80">
@@ -213,7 +272,7 @@ defineOptions({
                 <p class="text-sm text-muted-foreground">
                     {{
                         hasFilters
-                            ? 'No product matches that search.'
+                            ? 'No product matches that.'
                             : 'No products have been added yet.'
                     }}
                 </p>
@@ -279,6 +338,17 @@ defineOptions({
                         </p>
 
                         <div class="mt-auto flex items-center gap-1.5 pt-3">
+                            <!-- Only when it says something. A Published badge
+                                 on every tile is a badge nobody reads. -->
+                            <span
+                                v-if="statusTone(product.status)"
+                                class="w-fit shrink-0 rounded border px-1.5 py-0.5 text-[0.6875rem]"
+                                :class="statusTone(product.status)"
+                                :data-test="`status-${product.id}`"
+                            >
+                                {{ product.status_label }}
+                            </span>
+
                             <Badge
                                 v-if="product.is_synced"
                                 variant="secondary"

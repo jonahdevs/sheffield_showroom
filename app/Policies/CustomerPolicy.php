@@ -39,4 +39,17 @@ class CustomerPolicy
     {
         return $user->can(Permission::CustomersExport->value);
     }
+
+    /**
+     * Importing writes, so it needs the permission for writing as well as the
+     * one for importing. A file lands as new customers and as corrections to
+     * customers already on the list, and whoever may do neither by hand should
+     * not be able to do both at once through an upload.
+     */
+    public function import(User $user): bool
+    {
+        return $user->can(Permission::CustomersImport->value)
+            && $user->can(Permission::CustomersCreate->value)
+            && $user->can(Permission::CustomersUpdate->value);
+    }
 }

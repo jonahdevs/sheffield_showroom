@@ -4,12 +4,31 @@ use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\VisitController;
+use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'Welcome')->name('home');
+/* There is nothing here for a visitor to read: every screen in the showroom
+   is behind a sign-in, so the root is a door rather than a page. It stays
+   named `home` because Fortify sends people here after logging out and after
+   deleting an account, and those redirects resolve the name, not the path.
+
+   A signed-in person is deliberately not special-cased. `/login` already wears
+   the `guest` middleware, which bounces anyone authenticated to the dashboard,
+   so routing them straight there from here would be a second copy of that
+   decision - and the copy is the one that would rot when the destination
+   moves. */
+Route::redirect('/', '/login')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::controller(DashboardController::class)
+        ->middleware('permission:dashboard.view')
+        ->group(function () {
+            Route::get('dashboard', 'index')->name('dashboard');
+
+            /* The same figures as a file. No permission of its own: it is a
+               copy of the screen the line above already opened. */
+            Route::get('dashboard/export', 'export')->name('dashboard.export');
+        });
 });
 
 /*
@@ -40,8 +59,10 @@ Route::middleware(['auth', 'verified'])
                     ->middleware('permission:visits.view.any|visits.view.own')
                     ->name('index');
 
-                /* `create` before `{visit}`, or the wildcard swallows it. */
+                /* `create` and `export` before `{visit}`, or the wildcard
+                   swallows them. */
                 Route::get('create', 'create')->middleware('permission:visits.create')->name('create');
+                Route::get('export', 'export')->middleware('permission:visits.export')->name('export');
                 Route::get('{visit}/edit', 'edit')->middleware('permission:visits.update')->name('edit');
 
                 Route::post('/', 'store')->middleware('permission:visits.create')->name('store');
@@ -59,8 +80,20 @@ Route::middleware(['auth', 'verified'])
             ->group(function () {
                 Route::get('/', 'index')->middleware('permission:customers.view.any')->name('index');
 
-                /* `create` before `{customer}`, or the wildcard swallows it. */
+                /* `create` and `export` before `{customer}`, or the wildcard
+                   swallows them. */
                 Route::get('create', 'create')->middleware('permission:customers.create')->name('create');
+                Route::get('export', 'export')->middleware('permission:customers.export')->name('export');
+
+                /* Only the import permission is named here. A file of
+                   customers both adds and rewrites rows, so it needs the
+                   permissions for both as well - but `permission:` reads a
+                   pipe as "any of these", and stating the conjunction here
+                   would say the opposite of what it means. `CustomerPolicy`
+                   holds it instead. */
+                Route::post('import', 'import')
+                    ->middleware('permission:customers.import')
+                    ->name('import');
                 Route::get('{customer}/edit', 'edit')->middleware('permission:customers.update')->name('edit');
 
                 Route::post('/', 'store')->middleware('permission:customers.create')->name('store');

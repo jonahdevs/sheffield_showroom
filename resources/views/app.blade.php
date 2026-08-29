@@ -30,15 +30,29 @@
             }
         </style>
 
-        <link rel="icon" href="/favicon.ico" sizes="any">
+        {{-- Ordered widest-support first. The .ico carries 16/32/48 for the browsers and
+             OS shell surfaces that still only read .ico; the SVG is listed after it so
+             browsers that understand image/svg+xml prefer the vector and stay crisp on
+             HiDPI and at odd zoom levels. The explicit 16/32 PNGs are the fallback for
+             engines that take neither, and must stay listed or those clients silently
+             downscale the .ico's 48 and fringe the flame's thin stem. --}}
+        <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32">
+        <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16">
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+        {{-- Named .json rather than the more usual .webmanifest because nginx (which
+             Herd fronts the app with) has no MIME mapping for .webmanifest and serves it
+             as application/octet-stream, which Chrome refuses to parse as a manifest.
+             The .json extension maps to application/json, which Chrome does accept. --}}
+        <link rel="manifest" href="/manifest.json">
+        <meta name="theme-color" content="#c12534">
 
         @fonts
 
         @vite(['resources/css/app.css', 'resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
         <x-inertia::head>
-            <title>{{ config('app.name', 'Laravel') }}</title>
+            <title>{{ config('app.name', 'Sheffieldafrica') }}</title>
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">

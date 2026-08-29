@@ -169,8 +169,11 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
+                    <!-- Semibold rather than bold: the lead cell of every row below
+                         is itself text-xs font-bold, so a bold header would read as
+                         one more row instead of the label for all of them. -->
                     <div
-                        class="grid min-w-[760px] grid-cols-[minmax(0,1fr)_170px_minmax(0,1fr)] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                        class="grid min-w-[760px] grid-cols-[minmax(0,1fr)_170px_minmax(0,1fr)] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
                         <span>Permission</span>
                         <span>Group</span>

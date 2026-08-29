@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ProductSource;
+use App\Enums\ProductStatus;
 use App\Policies\ProductPolicy;
 use Carbon\CarbonImmutable;
 use Database\Factories\ProductFactory;
@@ -21,7 +22,9 @@ use Illuminate\Support\Facades\Storage;
  * @property int $id
  * @property string $name
  * @property string|null $sku
+ * @property string|null $model_number
  * @property string|null $image_path
+ * @property ProductStatus $status
  * @property ProductSource $source
  * @property int|null $external_id
  * @property CarbonImmutable|null $synced_at
@@ -42,13 +45,16 @@ class Product extends Model
     protected $fillable = [
         'name',
         'sku',
+        'model_number',
         'image_path',
+        'status',
     ];
 
     protected function casts(): array
     {
         return [
             'source' => ProductSource::class,
+            'status' => ProductStatus::class,
             'synced_at' => 'immutable_datetime',
         ];
     }
@@ -82,6 +88,15 @@ class Product extends Model
     public function isSynced(): bool
     {
         return $this->source === ProductSource::Website;
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    #[Scope]
+    protected function ofStatus(Builder $query, ProductStatus $status): void
+    {
+        $query->where('status', $status);
     }
 
     /**

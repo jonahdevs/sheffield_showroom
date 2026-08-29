@@ -1,0 +1,27 @@
+{
+    "id": "/",
+    "name": "Sheffieldafrica Showroom",
+    "short_name": "Showroom",
+    "description": "Sheffield Steel Systems showroom - product, customer and visit management.",
+    "lang": "en",
+    "dir": "ltr",
+    "scope": "/",
+    "icons": [
+        {
+            "src": "/android-chrome-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/android-chrome-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ],
+    "theme_color": "#c12534",
+    "background_color": "#ffffff",
+    "display": "standalone",
+    "start_url": "/"
+}

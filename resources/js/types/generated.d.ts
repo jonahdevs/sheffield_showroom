@@ -4,21 +4,17 @@ declare namespace App {
             id: number;
             type: App.Enums.CustomerType;
             name: string | null;
-            date_of_birth: string | null;
-            occupation: string | null;
+            phone: string;
+            email: string | null;
+            id_number: string | null;
             company_name: string | null;
             industry: string | null;
-            contact_person: string | null;
-            contact_person_position: string | null;
-            phone: string;
-            alternative_phone: string | null;
-            email: string | null;
-            address_line_1: string | null;
-            address_line_2: string | null;
-            city: string | null;
-            state: string | null;
-            postal_code: string | null;
             country: string;
+            state: string | null;
+            city: string | null;
+            street_address: string | null;
+            area: string | null;
+            postal_code: string | null;
             notes: string | null;
             display_name: string;
         };
@@ -27,21 +23,62 @@ declare namespace App {
             label: string;
             hint: string | null;
             image_url: string | null;
+            keywords: string | null;
             type: App.Enums.CustomerType;
             name: string | null;
             company_name: string | null;
+            industry: string | null;
             email: string | null;
+            id_number: string | null;
         };
         export type CustomerRowData = {
             id: number;
             type: App.Enums.CustomerType;
             type_label: string;
             display_name: string;
-            subtitle: string | null;
+            name: string | null;
+            company_name: string | null;
             phone: string;
             email: string | null;
-            location: string;
-            added: string;
+            visits_count: number;
+            last_visit: string | null;
+        };
+        export type DashboardProductInterestData = {
+            id: number;
+            name: string;
+            image_url: string | null;
+            visits: number;
+        };
+        export type DashboardRangeData = {
+            preset: string;
+            from: string;
+            to: string;
+            label: string;
+            days: number;
+        };
+        export type DashboardRespondentData = {
+            name: string;
+            visits: number;
+            customers: number;
+            follow_ups: number;
+        };
+        export type DashboardSliceData = {
+            value: string;
+            label: string;
+            count: number;
+            share: number;
+        };
+        export type DashboardStatData = {
+            key: string;
+            label: string;
+            value: number;
+            previous: number;
+            change: number | null;
+        };
+        export type DashboardTrendPointData = {
+            date: string;
+            label: string;
+            visits: number;
         };
         export type OptionData = {
             value: number;
@@ -70,10 +107,22 @@ declare namespace App {
             id: number;
             name: string;
             sku: string | null;
+            model_number: string | null;
             image_url: string | null;
+            status: App.Enums.ProductStatus;
+            status_label: string;
             source: App.Enums.ProductSource;
             is_synced: boolean;
             added: string;
+        };
+        export type ProductOptionData = {
+            value: number;
+            label: string;
+            hint: string | null;
+            image_url: string | null;
+            model_number: string | null;
+            quantity: number;
+            interest_level: App.Enums.InterestLevel | null;
         };
         export type RoleData = {
             id: number;
@@ -97,9 +146,11 @@ declare namespace App {
             customer_id: number;
             customer_type: App.Enums.CustomerType;
             customer_name: string | null;
-            company_name: string | null;
             phone: string;
             email: string | null;
+            id_number: string | null;
+            company_name: string | null;
+            industry: string | null;
             visited_on: string;
             visited_time: string;
             purpose: App.Enums.VisitPurpose;
@@ -108,22 +159,21 @@ declare namespace App {
             expected_follow_up_on: string | null;
             duration_minutes: number | null;
             notes: string | null;
-            product_ids: number[];
-            products: App.Data.OptionData[];
+            products: App.Data.ProductOptionData[];
             customer_label: string;
         };
         export type VisitRowData = {
             id: number;
             customer_name: string;
+            customer_type: App.Enums.CustomerType;
+            customer_company: string | null;
             customer_phone: string | null;
             purpose: App.Enums.VisitPurpose;
             purpose_label: string;
-            source: App.Enums.CustomerSource;
-            source_label: string;
             visited_on: string;
             visited_time: string;
             duration: string | null;
-            product_count: number;
+            products: string[];
             attended_by: string | null;
             has_notes: boolean;
         };
@@ -140,6 +190,7 @@ declare namespace App {
             | 'sales_call'
             | 'other';
         export type CustomerType = 'individual' | 'company';
+        export type InterestLevel = 'high' | 'medium' | 'low';
         export type Permission =
             | 'dashboard.view'
             | 'visits.view.any'
@@ -153,6 +204,7 @@ declare namespace App {
             | 'customers.update'
             | 'customers.delete'
             | 'customers.export'
+            | 'customers.import'
             | 'products.view.any'
             | 'products.create'
             | 'products.update'
@@ -166,6 +218,8 @@ declare namespace App {
             | 'users.create'
             | 'users.update';
         export type ProductSource = 'manual' | 'website';
+        export type ProductStatus =
+            'draft' | 'published' | 'inactive' | 'archived';
         export type VisitPurpose =
             | 'new_enquiry'
             | 'quotation'

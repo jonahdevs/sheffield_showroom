@@ -32,6 +32,14 @@ const props = withDefaults(
         placeholder?: string;
         searchPlaceholder?: string;
         emptyText?: string;
+        /**
+         * Whether the chips under the box are left off.
+         *
+         * For a caller that lists the picks itself and in more detail - a
+         * table with a column per thing worth saying about them - where chips
+         * saying the same names above it are a second answer to read.
+         */
+        hideChosen?: boolean;
         dataTest?: string;
     }>(),
     {
@@ -40,6 +48,7 @@ const props = withDefaults(
         placeholder: 'Choose any number',
         searchPlaceholder: 'Type to search',
         emptyText: 'Nothing matches that.',
+        hideChosen: false,
         dataTest: undefined,
     },
 );
@@ -219,7 +228,10 @@ function remove(value: number) {
             </ComboboxList>
         </Combobox>
 
-        <ul v-if="chosen.length > 0" class="flex flex-wrap gap-1.5">
+        <ul
+            v-if="!props.hideChosen && chosen.length > 0"
+            class="flex flex-wrap gap-1.5"
+        >
             <li v-for="option in chosen" :key="option.value">
                 <Badge
                     variant="outline"

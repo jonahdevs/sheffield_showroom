@@ -50,6 +50,11 @@ enum Permission: string
     case CustomersDelete = 'customers.delete';
     case CustomersExport = 'customers.export';
 
+    /* Reading the list out and writing a file of it back are not the same
+       trust: an export leaks, an import rewrites hundreds of records at once
+       and there is no undo behind it. */
+    case CustomersImport = 'customers.import';
+
     // =========================================================================
     // Products
     // =========================================================================

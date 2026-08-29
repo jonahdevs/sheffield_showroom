@@ -14,23 +14,21 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * @property int $id
+ * @property int|null $legacy_id
  * @property CustomerType $type
  * @property string|null $name
- * @property CarbonImmutable|null $date_of_birth
- * @property string|null $occupation
  * @property string|null $company_name
  * @property string|null $industry
- * @property string|null $contact_person
- * @property string|null $contact_person_position
  * @property string $phone
- * @property string|null $alternative_phone
  * @property string|null $email
- * @property string|null $address_line_1
- * @property string|null $address_line_2
+ * @property string|null $id_number
+ * @property string|null $street_address
+ * @property string|null $area
  * @property string|null $city
  * @property string|null $state
  * @property string|null $postal_code
@@ -50,17 +48,13 @@ class Customer extends Model
     protected $fillable = [
         'type',
         'name',
-        'date_of_birth',
-        'occupation',
         'company_name',
         'industry',
-        'contact_person',
-        'contact_person_position',
         'phone',
-        'alternative_phone',
         'email',
-        'address_line_1',
-        'address_line_2',
+        'id_number',
+        'street_address',
+        'area',
         'city',
         'state',
         'postal_code',
@@ -72,7 +66,6 @@ class Customer extends Model
     {
         return [
             'type' => CustomerType::class,
-            'date_of_birth' => 'immutable_date',
         ];
     }
 
@@ -85,8 +78,22 @@ class Customer extends Model
     }
 
     /**
-     * What to call them. A company is named by the company; the contact person
-     * is who you ask for, not who the customer is.
+     * Every call they have made at the showroom.
+     *
+     * A removed visit is not one of them: `Visit` soft deletes, so the
+     * relation carries its own scope and a count taken through here is a count
+     * of what still stands.
+     *
+     * @return HasMany<Visit, $this>
+     */
+    public function visits(): HasMany
+    {
+        return $this->hasMany(Visit::class);
+    }
+
+    /**
+     * What to call them. A company is named by the company, not by whoever
+     * from it walked in - that person is `name`, and they are who you ask for.
      */
     public function displayName(): string
     {
@@ -96,30 +103,13 @@ class Customer extends Model
     }
 
     /**
-     * The line under the name: what an individual does, or who to ask for at
-     * a company. Null when neither was recorded.
-     */
-    public function subtitle(): ?string
-    {
-        if ($this->isCompany()) {
-            return $this->contact_person === null
-                ? $this->industry
-                : trim($this->contact_person.($this->contact_person_position === null
-                    ? ''
-                    : ' - '.$this->contact_person_position));
-        }
-
-        return $this->occupation;
-    }
-
-    /**
      * The address as one line, skipping whatever was left blank.
      */
     public function addressLine(): ?string
     {
         $parts = array_filter([
-            $this->address_line_1,
-            $this->address_line_2,
+            $this->street_address,
+            $this->area,
             $this->city,
             $this->state,
             $this->postal_code,
@@ -147,7 +137,7 @@ class Customer extends Model
     private const SUBSCRIBER_DIGITS = 9;
 
     /**
-     * Search across the two names, the contact person and both numbers.
+     * Search across both names, the email, the ID number and the phone.
      *
      * People write a number down however they please and the record keeps
      * whatever shape it was given, so both sides are reduced to digits and
@@ -170,14 +160,13 @@ class Customer extends Model
         $query->where(function (Builder $inner) use ($like, $tail) {
             $inner->where('name', 'like', $like)
                 ->orWhere('company_name', 'like', $like)
-                ->orWhere('contact_person', 'like', $like)
-                ->orWhere('email', 'like', $like);
+                ->orWhere('email', 'like', $like)
+                ->orWhere('id_number', 'like', $like);
 
             if ($tail !== '') {
                 $stripped = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%s, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')";
 
-                $inner->orWhereRaw(sprintf($stripped, 'phone').' like ?', ['%'.$tail.'%'])
-                    ->orWhereRaw(sprintf($stripped, 'alternative_phone').' like ?', ['%'.$tail.'%']);
+                $inner->orWhereRaw(sprintf($stripped, 'phone').' like ?', ['%'.$tail.'%']);
             }
         });
     }
@@ -231,8 +220,6 @@ class Customer extends Model
 
         $stripped = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%s, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')";
 
-        $query->where(fn (Builder $inner) => $inner
-            ->whereRaw(sprintf($stripped, 'phone').' like ?', ['%'.$tail])
-            ->orWhereRaw(sprintf($stripped, 'alternative_phone').' like ?', ['%'.$tail]));
+        $query->whereRaw(sprintf($stripped, 'phone').' like ?', ['%'.$tail]);
     }
 }

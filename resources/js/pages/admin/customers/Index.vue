@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     Building2,
     Pencil,
     Plus,
     Search,
     Trash2,
+    Upload,
     UserRound,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import ExportMenu from '@/components/ExportMenu.vue';
+import InputError from '@/components/InputError.vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
 import TablePagination from '@/components/TablePagination.vue';
 import type { Paginator } from '@/components/TablePagination.vue';
@@ -31,7 +34,14 @@ import {
 } from '@/components/ui/input-group';
 import { useFilters } from '@/composables/useFilters';
 import { dashboard } from '@/routes';
-import { create, destroy, edit, index } from '@/routes/admin/customers';
+import {
+    create,
+    destroy,
+    edit,
+    exportMethod,
+    importMethod,
+    index,
+} from '@/routes/admin/customers';
 
 interface Paginated<T> extends Paginator {
     data: T[];
@@ -42,11 +52,18 @@ const props = defineProps<{
     filters: { search: string; type: string };
     types: { value: string; label: string }[];
     page_sizes: number[];
+    formats: string[];
     counts: { all: number; individual: number; company: number };
-    can: { create: boolean; update: boolean; delete: boolean };
+    can: {
+        create: boolean;
+        update: boolean;
+        delete: boolean;
+        export: boolean;
+        import: boolean;
+    };
 }>();
 
-const { filters, hasFilters, processing, apply, clear } = useFilters({
+const { filters, query, hasFilters, processing, apply, clear } = useFilters({
     url: index.url(),
     initial: {
         search: props.filters.search ?? '',
@@ -71,6 +88,38 @@ const tabs = computed(() => [
                 : props.counts.company,
     })),
 ]);
+
+const importing = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
+
+const importForm = useForm<{ file: File | null }>({ file: null });
+
+function chooseFile(event: Event) {
+    const [file] = (event.target as HTMLInputElement).files ?? [];
+
+    importForm.file = file ?? null;
+    importForm.clearErrors('file');
+}
+
+/**
+ * The counts come back as a toast rather than on this page, so a finished
+ * import closes the dialog and the list behind it is already the new one.
+ */
+function sendImport() {
+    importForm.post(importMethod().url, {
+        preserveScroll: true,
+        onSuccess: () => {
+            importing.value = false;
+            importForm.reset();
+
+            /* The input keeps the chosen file after a reset, so picking the
+               same file again would fire no change event and submit nothing. */
+            if (fileInput.value !== null) {
+                fileInput.value.value = '';
+            }
+        },
+    });
+}
 
 const deleting = ref<App.Data.CustomerRowData | null>(null);
 
@@ -116,12 +165,38 @@ defineOptions({
                 </p>
             </div>
 
-            <Button v-if="props.can.create" as-child data-test="new-customer">
-                <Link :href="create().url">
-                    <Plus />
-                    New customer
-                </Link>
-            </Button>
+            <div class="flex flex-wrap items-center gap-2.5">
+                <Button
+                    v-if="props.can.import"
+                    variant="quiet"
+                    data-test="import-customers"
+                    @click="importing = true"
+                >
+                    <Upload />
+                    Import
+                </Button>
+
+                <!-- The export follows the filters, so the file is the list
+                     on the screen rather than the whole table. -->
+                <ExportMenu
+                    v-if="props.can.export"
+                    :url="exportMethod().url"
+                    :query="query"
+                    :formats="props.formats"
+                    name="customers"
+                />
+
+                <Button
+                    v-if="props.can.create"
+                    as-child
+                    data-test="new-customer"
+                >
+                    <Link :href="create().url">
+                        <Plus />
+                        New customer
+                    </Link>
+                </Button>
+            </div>
         </div>
 
         <Card class="min-w-0 gap-0 overflow-hidden p-0">
@@ -213,14 +288,18 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
+                    <!-- Semibold rather than bold: the lead cell of every row below
+                         is itself text-xs font-bold, so a bold header would read as
+                         one more row instead of the label for all of them. -->
                     <div
-                        class="grid min-w-[1000px] grid-cols-[minmax(0,1.2fr)_130px_minmax(0,1.1fr)_minmax(0,1fr)_100px_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                        class="grid min-w-[880px] grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,0.4fr)_minmax(0,0.7fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
-                        <span>Customer</span>
+                        <span>Customer name</span>
+                        <span>Company</span>
+                        <span>Type</span>
                         <span>Phone</span>
-                        <span>Email</span>
-                        <span>Location</span>
-                        <span>Added</span>
+                        <span>Visits</span>
+                        <span>Last visit</span>
                         <span class="sr-only">Actions</span>
                     </div>
 
@@ -228,9 +307,12 @@ defineOptions({
                         <div
                             v-for="customer in props.customers.data"
                             :key="customer.id"
-                            class="grid min-w-[1000px] grid-cols-[minmax(0,1.2fr)_130px_minmax(0,1.1fr)_minmax(0,1fr)_100px_84px] items-center gap-4 px-5 py-3.5"
+                            class="grid min-w-[880px] grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,0.4fr)_minmax(0,0.7fr)_84px] items-center gap-4 px-5 py-3"
                             :data-test="`customer-${customer.id}`"
                         >
+                            <!-- The person, in every row. A company customer
+                                 is somebody who came in for a business, not a
+                                 business that walked in on its own. -->
                             <div class="flex min-w-0 items-center gap-3">
                                 <span
                                     class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-faint"
@@ -244,36 +326,71 @@ defineOptions({
                                 </span>
 
                                 <div class="min-w-0">
-                                    <p class="truncate text-xs font-bold">
-                                        {{ customer.display_name }}
-                                    </p>
                                     <p
-                                        v-if="customer.subtitle"
-                                        class="mt-0.5 truncate text-xs text-faint"
+                                        class="truncate text-xs font-bold"
+                                        :class="
+                                            customer.name ? '' : 'text-faint'
+                                        "
+                                        :title="customer.name ?? undefined"
                                     >
-                                        {{ customer.subtitle }}
+                                        {{ customer.name ?? '--' }}
+                                    </p>
+                                    <!-- Under the name rather than in a column
+                                         of its own: an address is long, mostly
+                                         absent, and only ever read once you
+                                         know whose it is. -->
+                                    <p
+                                        v-if="customer.email"
+                                        class="mt-0.5 truncate text-xs text-faint"
+                                        :title="customer.email"
+                                    >
+                                        {{ customer.email }}
                                     </p>
                                 </div>
                             </div>
+
+                            <span
+                                class="truncate text-xs"
+                                :class="
+                                    customer.company_name ? '' : 'text-faint'
+                                "
+                                :title="customer.company_name ?? undefined"
+                            >
+                                {{ customer.company_name ?? '--' }}
+                            </span>
+
+                            <span
+                                class="w-fit shrink-0 rounded border px-1.5 py-0.5 text-[0.6875rem] text-faint"
+                            >
+                                {{ customer.type_label }}
+                            </span>
 
                             <span class="truncate text-xs tabular-nums">
                                 {{ customer.phone }}
                             </span>
 
+                            <!-- Nobody yet reads as a dash rather than a zero:
+                                 a customer who has not been in is not one who
+                                 came in no times. -->
                             <span
-                                class="truncate text-xs"
-                                :class="customer.email ? '' : 'text-faint'"
-                                :title="customer.email ?? undefined"
+                                class="text-xs tabular-nums"
+                                :class="
+                                    customer.visits_count > 0
+                                        ? 'font-bold'
+                                        : 'text-faint'
+                                "
                             >
-                                {{ customer.email ?? '--' }}
+                                {{
+                                    customer.visits_count > 0
+                                        ? customer.visits_count
+                                        : '--'
+                                }}
                             </span>
 
-                            <span class="truncate text-xs text-faint">
-                                {{ customer.location }}
-                            </span>
-
-                            <span class="text-xs text-faint tabular-nums">
-                                {{ customer.added }}
+                            <span
+                                class="truncate text-xs text-faint tabular-nums"
+                            >
+                                {{ customer.last_visit ?? '--' }}
                             </span>
 
                             <div class="flex items-center justify-end gap-1">
@@ -319,6 +436,93 @@ defineOptions({
             </template>
         </Card>
     </div>
+
+    <!--
+      One step rather than an upload-then-confirm screen: the counts come back
+      as a toast, and a row the rules refused is reported in it rather than
+      stopping the rest of the file landing.
+    -->
+    <Dialog v-model:open="importing">
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Import customers</DialogTitle>
+                <DialogDescription>
+                    A CSV or Excel file with a heading row. Rows are matched on
+                    the telephone number, so sending the same file twice
+                    corrects those customers rather than filing them again.
+                </DialogDescription>
+            </DialogHeader>
+
+            <div class="flex flex-col gap-3.5">
+                <div
+                    class="flex flex-col gap-1.5 rounded-lg bg-muted/60 p-3.5 text-xs"
+                >
+                    <span class="font-bold">Columns</span>
+                    <span class="text-faint">
+                        Name and Phone are required. Type is
+                        <em>individual</em> or <em>company</em>, and a company
+                        row needs a Company. Industry, Email, ID number, Street
+                        address, Area, City, County, Postal code and Country are
+                        optional, and a blank cell leaves what is on record
+                        alone.
+                    </span>
+                    <!-- The export writes exactly these columns, so the
+                         quickest correct file is one this screen produced. -->
+                    <span v-if="props.can.export" class="text-faint">
+                        An export of this list is a working template.
+                    </span>
+                </div>
+
+                <input
+                    id="import-file"
+                    ref="fileInput"
+                    type="file"
+                    accept=".csv,.txt,.xlsx,.xls"
+                    class="sr-only"
+                    data-test="import-file"
+                    @change="chooseFile"
+                />
+
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <Button
+                        type="button"
+                        variant="quiet"
+                        size="sm"
+                        data-test="choose-import-file"
+                        @click="fileInput?.click()"
+                    >
+                        <Upload />
+                        {{
+                            importForm.file ? 'Choose another' : 'Choose a file'
+                        }}
+                    </Button>
+
+                    <span
+                        v-if="importForm.file"
+                        class="min-w-0 truncate text-xs text-faint"
+                        data-test="chosen-import-file"
+                    >
+                        {{ importForm.file.name }}
+                    </span>
+                </div>
+
+                <InputError :message="importForm.errors.file" />
+            </div>
+
+            <DialogFooter>
+                <Button variant="quiet" @click="importing = false">
+                    Cancel
+                </Button>
+                <Button
+                    :disabled="!importForm.file || importForm.processing"
+                    data-test="confirm-import-customers"
+                    @click="sendImport"
+                >
+                    {{ importForm.processing ? 'Importing...' : 'Import' }}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 
     <Dialog
         :open="deleting !== null"

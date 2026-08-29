@@ -26,17 +26,18 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 class VisitFormData extends Data
 {
     /**
-     * @param  array<int, int>  $product_ids
-     * @param  array<int, OptionData>  $products
+     * @param  array<int, ProductOptionData>  $products
      */
     public function __construct(
         public int $id,
         public int $customer_id,
         public CustomerType $customer_type,
         public ?string $customer_name,
-        public ?string $company_name,
         public string $phone,
         public ?string $email,
+        public ?string $id_number,
+        public ?string $company_name,
+        public ?string $industry,
         public string $visited_on,
         public string $visited_time,
         public VisitPurpose $purpose,
@@ -45,9 +46,9 @@ class VisitFormData extends Data
         public ?string $expected_follow_up_on,
         public ?int $duration_minutes,
         public ?string $notes,
-        public array $product_ids,
-        /* The products already chosen, so the box can name one dropped from
-           the catalogue since without falling back to a bare id. */
+        /* What they were shown and how keen they were on each. Carries the
+           whole row rather than an id, so a product dropped from the catalogue
+           since still has a name to show rather than a bare number. */
         public array $products,
         public string $customer_label,
     ) {}
@@ -61,9 +62,11 @@ class VisitFormData extends Data
             customer_id: $visit->customer_id,
             customer_type: $customer->type,
             customer_name: $customer->name,
-            company_name: $customer->company_name,
             phone: $customer->phone,
             email: $customer->email,
+            id_number: $customer->id_number,
+            company_name: $customer->company_name,
+            industry: $customer->industry,
             visited_on: $visit->visited_at->format('Y-m-d'),
             visited_time: $visit->visited_at->format('H:i'),
             purpose: $visit->purpose,
@@ -72,9 +75,8 @@ class VisitFormData extends Data
             expected_follow_up_on: $visit->expected_follow_up_on?->format('Y-m-d'),
             duration_minutes: $visit->duration_minutes,
             notes: $visit->notes,
-            product_ids: $visit->products->pluck('id')->all(),
             products: $visit->products
-                ->map(OptionData::fromProduct(...))
+                ->map(ProductOptionData::fromVisitProduct(...))
                 ->values()
                 ->all(),
             customer_label: $customer->displayName(),

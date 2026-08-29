@@ -1,19 +1,27 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
+    Building2,
+    CalendarDays,
+    CalendarRange,
+    ClipboardList,
     NotebookPen,
     Package,
     Pencil,
     Plus,
     Search,
+    Sun,
     Trash2,
+    UserRound,
 } from '@lucide/vue';
+import type { Component } from 'vue';
 import { ref } from 'vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
+import StatTile from '@/components/StatTile.vue';
 import TablePagination from '@/components/TablePagination.vue';
 import type { Paginator } from '@/components/TablePagination.vue';
 import TableSkeleton from '@/components/TableSkeleton.vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -36,9 +44,16 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { CHART_PALETTE } from '@/composables/useChartTheme';
 import { useFilters } from '@/composables/useFilters';
 import { dashboard } from '@/routes';
-import { create, destroy, edit, index } from '@/routes/admin/visits';
+import {
+    create,
+    destroy,
+    edit,
+    exportMethod,
+    index,
+} from '@/routes/admin/visits';
 
 interface Paginated<T> extends Paginator {
     data: T[];
@@ -49,13 +64,22 @@ const props = defineProps<{
     filters: { search: string; purpose: string };
     purposes: { value: string; label: string }[];
     page_sizes: number[];
+    formats: string[];
     total: number;
+    /* How busy the floor has been, unaffected by the search and the purpose
+       filter - see the controller's `stats()` for why. */
+    stats: App.Data.DashboardStatData[];
     /** True for a salesperson, who sees only what they logged. */
     scoped_to_own: boolean;
-    can: { create: boolean; update: boolean; delete: boolean };
+    can: {
+        create: boolean;
+        update: boolean;
+        delete: boolean;
+        export: boolean;
+    };
 }>();
 
-const { filters, hasFilters, processing, clear } = useFilters({
+const { filters, query, hasFilters, processing, clear } = useFilters({
     url: index.url(),
     initial: {
         search: props.filters.search ?? '',
@@ -64,6 +88,51 @@ const { filters, hasFilters, processing, clear } = useFilters({
     blank: { search: '', purpose: 'all' },
     only: ['visits', 'filters'],
 });
+
+/**
+ * What the page hangs on each figure: a glyph, a colour, and what its delta is
+ * measured against.
+ *
+ * Kept here rather than sent from the server because none of it is data - it
+ * is how this screen chooses to present four integers, and a controller has no
+ * business holding an icon. The palette is the dashboard's, so a reader moving
+ * between the two rows reads them as the same instrument.
+ */
+const TILES: Record<
+    string,
+    { icon: Component; colour: string; comparison: string }
+> = {
+    total: {
+        icon: ClipboardList,
+        colour: CHART_PALETTE[0],
+        comparison: '',
+    },
+    today: {
+        icon: Sun,
+        colour: CHART_PALETTE[1],
+        comparison: 'vs yesterday',
+    },
+    week: {
+        icon: CalendarDays,
+        colour: CHART_PALETTE[2],
+        comparison: 'vs last week',
+    },
+    month: {
+        icon: CalendarRange,
+        colour: CHART_PALETTE[3],
+        comparison: 'vs last month',
+    },
+};
+
+function tile(key: string) {
+    return (
+        TILES[key] ?? {
+            icon: ClipboardList,
+            colour: CHART_PALETTE[8],
+            comparison: '',
+        }
+    );
+}
 
 const deleting = ref<App.Data.VisitRowData | null>(null);
 
@@ -113,12 +182,40 @@ defineOptions({
                 </p>
             </div>
 
-            <Button v-if="props.can.create" as-child data-test="new-visit">
-                <Link :href="create().url">
-                    <Plus />
-                    New customer visit
-                </Link>
-            </Button>
+            <div class="flex flex-wrap items-center gap-2.5">
+                <!-- The export follows the filters and the same visibility
+                     split the list sits behind: a salesperson downloads their
+                     own visits, not the floor's. -->
+                <ExportMenu
+                    v-if="props.can.export"
+                    :url="exportMethod().url"
+                    :query="query"
+                    :formats="props.formats"
+                    name="visits"
+                />
+
+                <Button v-if="props.can.create" as-child data-test="new-visit">
+                    <Link :href="create().url">
+                        <Plus />
+                        New visit
+                    </Link>
+                </Button>
+            </div>
+        </div>
+
+        <!-- Read before the list rather than after it: somebody opening
+             this screen wants to know whether the floor has been busy before
+             they start reading rows, and the four windows narrow in the order
+             a person asks them. -->
+        <div class="grid gap-4 @lg/page:grid-cols-2 @3xl/page:grid-cols-4">
+            <StatTile
+                v-for="stat in props.stats"
+                :key="stat.key"
+                :stat="stat"
+                :icon="tile(stat.key).icon"
+                :colour="tile(stat.key).colour"
+                :comparison="tile(stat.key).comparison"
+            />
         </div>
 
         <Card class="min-w-0 gap-0 overflow-hidden p-0">
@@ -181,7 +278,7 @@ defineOptions({
                 v-if="processing"
                 class="px-5 py-2"
                 :rows="Math.min(props.visits.per_page, 10)"
-                :columns="5"
+                :columns="7"
             />
 
             <div
@@ -212,14 +309,18 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
+                    <!-- Semibold rather than bold: the lead cell of every row below
+                         is itself text-xs font-bold, so a bold header would read as
+                         one more row instead of the label for all of them. -->
                     <div
-                        class="grid min-w-[1000px] grid-cols-[minmax(0,1fr)_minmax(0,1fr)_160px_150px_minmax(0,1fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                        class="grid min-w-[1120px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
                         <span>Customer</span>
-                        <span>Nature of visit</span>
-                        <span>When</span>
-                        <span>Source</span>
-                        <span>Attended by</span>
+                        <span>Company</span>
+                        <span>Purpose</span>
+                        <span>Interested products</span>
+                        <span>Respondent</span>
+                        <span>Visit date &amp; time</span>
                         <span class="sr-only">Actions</span>
                     </div>
 
@@ -227,48 +328,92 @@ defineOptions({
                         <div
                             v-for="visit in props.visits.data"
                             :key="visit.id"
-                            class="grid min-w-[1000px] grid-cols-[minmax(0,1fr)_minmax(0,1fr)_160px_150px_minmax(0,1fr)_84px] items-center gap-4 px-5 py-3.5"
+                            class="grid min-w-[1120px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 px-5 py-3.5"
                             :data-test="`visit-${visit.id}`"
                         >
-                            <div class="min-w-0">
-                                <p class="truncate text-xs font-bold">
-                                    {{ visit.customer_name }}
-                                </p>
-                                <p
-                                    v-if="visit.customer_phone"
-                                    class="mt-0.5 truncate text-xs text-faint"
+                            <!-- Read the same way as the customers list: the
+                                 kind as an icon, the person in bold, and what
+                                 identifies them under it. -->
+                            <div class="flex min-w-0 items-center gap-3">
+                                <span
+                                    class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-faint"
+                                    aria-hidden="true"
                                 >
-                                    {{ visit.customer_phone }}
-                                </p>
+                                    <Building2
+                                        v-if="visit.customer_type === 'company'"
+                                        class="size-4"
+                                    />
+                                    <UserRound v-else class="size-4" />
+                                </span>
+
+                                <div class="min-w-0">
+                                    <p class="truncate text-xs font-bold">
+                                        {{ visit.customer_name }}
+                                    </p>
+                                    <p
+                                        v-if="visit.customer_phone"
+                                        class="mt-0.5 truncate text-xs text-faint tabular-nums"
+                                    >
+                                        {{ visit.customer_phone }}
+                                    </p>
+                                </div>
                             </div>
 
-                            <div class="flex min-w-0 flex-col gap-1">
+                            <span
+                                class="truncate text-xs"
+                                :class="
+                                    visit.customer_company ? '' : 'text-faint'
+                                "
+                                :title="visit.customer_company ?? undefined"
+                            >
+                                {{ visit.customer_company ?? '--' }}
+                            </span>
+
+                            <div class="flex min-w-0 items-center gap-2">
                                 <span class="truncate text-xs">
                                     {{ visit.purpose_label }}
                                 </span>
 
-                                <span
-                                    class="flex items-center gap-2.5 text-xs text-faint"
-                                >
-                                    <span
-                                        v-if="visit.product_count > 0"
-                                        class="flex items-center gap-1"
-                                        :title="`${visit.product_count} product(s) viewed`"
-                                    >
-                                        <Package
-                                            class="size-3.5"
-                                            aria-hidden="true"
-                                        />
-                                        {{ visit.product_count }}
-                                    </span>
+                                <NotebookPen
+                                    v-if="visit.has_notes"
+                                    class="size-3.5 shrink-0 text-faint"
+                                    aria-label="Has a write-up"
+                                />
+                            </div>
 
-                                    <NotebookPen
-                                        v-if="visit.has_notes"
-                                        class="size-3.5"
-                                        aria-label="Has a write-up"
-                                    />
+                            <!-- Named rather than counted: "3" tells nobody
+                                 whether to follow up with a quote for mabati
+                                 or for gutters. -->
+                            <div class="flex min-w-0 items-center gap-1.5">
+                                <Package
+                                    v-if="visit.products.length > 0"
+                                    class="size-3.5 shrink-0 text-faint"
+                                    aria-hidden="true"
+                                />
+                                <span
+                                    class="truncate text-xs"
+                                    :class="
+                                        visit.products.length > 0
+                                            ? ''
+                                            : 'text-faint'
+                                    "
+                                    :title="
+                                        visit.products.length > 0
+                                            ? visit.products.join(', ')
+                                            : undefined
+                                    "
+                                >
+                                    {{
+                                        visit.products.length > 0
+                                            ? visit.products.join(', ')
+                                            : '--'
+                                    }}
                                 </span>
                             </div>
+
+                            <span class="truncate text-xs text-faint">
+                                {{ visit.attended_by ?? '--' }}
+                            </span>
 
                             <div class="min-w-0 text-xs">
                                 <p class="truncate tabular-nums">
@@ -283,19 +428,6 @@ defineOptions({
                                     }}
                                 </p>
                             </div>
-
-                            <span class="min-w-0">
-                                <Badge
-                                    variant="secondary"
-                                    class="max-w-full truncate"
-                                >
-                                    {{ visit.source_label }}
-                                </Badge>
-                            </span>
-
-                            <span class="truncate text-xs text-faint">
-                                {{ visit.attended_by ?? '--' }}
-                            </span>
 
                             <div class="flex items-center justify-end gap-1">
                                 <Button

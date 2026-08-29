@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * @property int $id
+ * @property int|null $legacy_id
  * @property int $customer_id
  * @property string|null $respondent
  * @property CarbonImmutable $visited_at
@@ -78,13 +79,15 @@ class Visit extends Model
     }
 
     /**
-     * What was shown on the floor.
+     * What was shown on the floor: how many of each they were after, and how
+     * keen they were on it.
      *
      * @return BelongsToMany<Product, $this>
      */
     public function products(): BelongsToMany
     {
-        return $this->belongsToMany(Product::class);
+        return $this->belongsToMany(Product::class)
+            ->withPivot('quantity', 'interest_level');
     }
 
     /**

@@ -10,9 +10,13 @@ use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
 /**
- * Every field the form reads and writes, including the ones the other type
- * leaves null - the form keeps both halves mounted so switching the toggle
- * does not lose what was already typed.
+ * Every field the form reads and writes, in the order the form asks for them:
+ * who they are, the business they came for if any, where they are, and
+ * anything worth knowing next time.
+ *
+ * The business half stays mounted for an individual so switching the toggle
+ * does not lose what was already typed; `CustomerRequest` is what stops it
+ * being saved against somebody buying in their own name.
  */
 #[TypeScript(location: ['App', 'Data'])]
 class CustomerFormData extends Data
@@ -21,21 +25,17 @@ class CustomerFormData extends Data
         public int $id,
         public CustomerType $type,
         public ?string $name,
-        public ?string $date_of_birth,
-        public ?string $occupation,
+        public string $phone,
+        public ?string $email,
+        public ?string $id_number,
         public ?string $company_name,
         public ?string $industry,
-        public ?string $contact_person,
-        public ?string $contact_person_position,
-        public string $phone,
-        public ?string $alternative_phone,
-        public ?string $email,
-        public ?string $address_line_1,
-        public ?string $address_line_2,
-        public ?string $city,
-        public ?string $state,
-        public ?string $postal_code,
         public string $country,
+        public ?string $state,
+        public ?string $city,
+        public ?string $street_address,
+        public ?string $area,
+        public ?string $postal_code,
         public ?string $notes,
         public string $display_name,
     ) {}
@@ -46,22 +46,17 @@ class CustomerFormData extends Data
             id: $customer->id,
             type: $customer->type,
             name: $customer->name,
-            /* ISO for the date input, which accepts nothing else. */
-            date_of_birth: $customer->date_of_birth?->format('Y-m-d'),
-            occupation: $customer->occupation,
+            phone: $customer->phone,
+            email: $customer->email,
+            id_number: $customer->id_number,
             company_name: $customer->company_name,
             industry: $customer->industry,
-            contact_person: $customer->contact_person,
-            contact_person_position: $customer->contact_person_position,
-            phone: $customer->phone,
-            alternative_phone: $customer->alternative_phone,
-            email: $customer->email,
-            address_line_1: $customer->address_line_1,
-            address_line_2: $customer->address_line_2,
-            city: $customer->city,
-            state: $customer->state,
-            postal_code: $customer->postal_code,
             country: $customer->country,
+            state: $customer->state,
+            city: $customer->city,
+            street_address: $customer->street_address,
+            area: $customer->area,
+            postal_code: $customer->postal_code,
             notes: $customer->notes,
             display_name: $customer->displayName(),
         );

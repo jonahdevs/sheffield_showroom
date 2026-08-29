@@ -5,6 +5,7 @@ use App\Enums\Permission;
 use App\Models\Customer;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Visit;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -39,17 +40,15 @@ function individualPayload(array $overrides = []): array
     return array_merge([
         'type' => CustomerType::Individual->value,
         'name' => 'Achieng Odhiambo',
-        'date_of_birth' => '1985-04-12',
-        'occupation' => 'Contractor',
         'phone' => '0722 000 111',
-        'alternative_phone' => null,
         'email' => 'achieng@example.com',
-        'address_line_1' => 'Plot 14, Enterprise Road',
-        'address_line_2' => 'Industrial Area',
-        'city' => 'Nairobi',
-        'state' => 'Nairobi',
-        'postal_code' => '00100',
+        'id_number' => '12345678',
         'country' => 'Kenya',
+        'state' => 'Nairobi',
+        'city' => 'Nairobi',
+        'street_address' => 'Plot 14, Enterprise Road',
+        'area' => 'Industrial Area',
+        'postal_code' => '00100',
         'notes' => 'Came in for mabati pricing.',
     ], $overrides);
 }
@@ -61,19 +60,19 @@ function companyPayload(array $overrides = []): array
 {
     return array_merge([
         'type' => CustomerType::Company->value,
+        /* A company customer is still a person: whoever came in from it. */
+        'name' => 'Peter Mwangi',
+        'phone' => '020 271 1000',
+        'email' => 'procurement@mwangi.co.ke',
+        'id_number' => null,
         'company_name' => 'Mwangi Builders Ltd',
         'industry' => 'Construction',
-        'contact_person' => 'Peter Mwangi',
-        'contact_person_position' => 'Procurement Manager',
-        'phone' => '020 271 1000',
-        'alternative_phone' => '0733 444 555',
-        'email' => 'procurement@mwangi.co.ke',
-        'address_line_1' => 'Baba Dogo Road',
-        'address_line_2' => null,
-        'city' => 'Nairobi',
-        'state' => 'Nairobi',
-        'postal_code' => '00100',
         'country' => 'Kenya',
+        'state' => 'Nairobi',
+        'city' => 'Nairobi',
+        'street_address' => 'Baba Dogo Road',
+        'area' => null,
+        'postal_code' => '00100',
         'notes' => null,
     ], $overrides);
 }
@@ -84,6 +83,62 @@ it('refuses the customers list without customers.view.any', function () {
     $this->actingAs($user)
         ->get(route('admin.customers.index'))
         ->assertForbidden();
+});
+
+/**
+ * Both come off aggregates on the list query rather than from loading the
+ * visits, so this is what says the aggregates are wired to the right relation.
+ */
+it('counts each customer\'s visits and dates the last one', function () {
+    $user = staffWith([Permission::CustomersViewAny]);
+
+    $customer = Customer::factory()->create();
+
+    Visit::factory()->create([
+        'customer_id' => $customer->id,
+        'visited_at' => now()->subMonth(),
+    ]);
+    Visit::factory()->create([
+        'customer_id' => $customer->id,
+        'visited_at' => now()->subDays(3),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.customers.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('customers.data.0.visits_count', 2)
+            ->where('customers.data.0.last_visit', now()->subDays(3)->format('j M Y')));
+});
+
+/** Nobody yet is nothing to date, not a visit that happened at no time. */
+it('leaves the last visit empty for a customer nobody has logged', function () {
+    $user = staffWith([Permission::CustomersViewAny]);
+
+    Customer::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('admin.customers.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('customers.data.0.visits_count', 0)
+            ->where('customers.data.0.last_visit', null));
+});
+
+/** A removed visit is not one they made: the relation soft deletes. */
+it('leaves a removed visit out of the count', function () {
+    $user = staffWith([Permission::CustomersViewAny]);
+
+    $customer = Customer::factory()->create();
+
+    Visit::factory()->create(['customer_id' => $customer->id]);
+    Visit::factory()->create(['customer_id' => $customer->id])->delete();
+
+    $this->actingAs($user)
+        ->get(route('admin.customers.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('customers.data.0.visits_count', 1));
 });
 
 it('shows the customers list to somebody who may view it', function () {
@@ -113,8 +168,7 @@ it('records an individual', function () {
 
     expect($customer->type)->toBe(CustomerType::Individual)
         ->and($customer->name)->toBe('Achieng Odhiambo')
-        ->and($customer->occupation)->toBe('Contractor')
-        ->and($customer->date_of_birth->format('Y-m-d'))->toBe('1985-04-12')
+        ->and($customer->id_number)->toBe('12345678')
         ->and($customer->created_by)->toBe($user->id)
         ->and($customer->displayName())->toBe('Achieng Odhiambo');
 });
@@ -130,16 +184,25 @@ it('records a company', function () {
 
     expect($customer->type)->toBe(CustomerType::Company)
         ->and($customer->company_name)->toBe('Mwangi Builders Ltd')
-        ->and($customer->contact_person)->toBe('Peter Mwangi')
-        ->and($customer->displayName())->toBe('Mwangi Builders Ltd')
-        ->and($customer->subtitle())->toBe('Peter Mwangi - Procurement Manager');
+        /* The person, kept alongside the company rather than instead of it. */
+        ->and($customer->name)->toBe('Peter Mwangi')
+        ->and($customer->displayName())->toBe('Mwangi Builders Ltd');
 });
 
-it('requires a name from an individual and a company name from a company', function () {
+/**
+ * The name is asked of both. Somebody who came in for a company still gave
+ * their own name at the counter, and a record without one names nobody to ask
+ * for next time.
+ */
+it('requires a name from both types, and a company name from a company', function () {
     $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
 
     $this->actingAs($user)
         ->post(route('admin.customers.store'), individualPayload(['name' => null]))
+        ->assertSessionHasErrors('name');
+
+    $this->actingAs($user)
+        ->post(route('admin.customers.store'), companyPayload(['name' => null]))
         ->assertSessionHasErrors('name');
 
     $this->actingAs($user)
@@ -150,39 +213,23 @@ it('requires a name from an individual and a company name from a company', funct
 });
 
 /**
- * Both types share one table, so a company row carrying a date of birth is the
- * failure this guards against.
+ * The business section is the only half that turns on the type, so it is the
+ * only one a switched toggle can leave something behind in.
  */
-it('drops the fields belonging to the other type', function () {
-    $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
-
-    $this->actingAs($user)->post(route('admin.customers.store'), companyPayload([
-        'name' => 'Left over from the individual form',
-        'date_of_birth' => '1990-01-01',
-        'occupation' => 'Stale',
-    ]));
-
-    $customer = Customer::query()->sole();
-
-    expect($customer->name)->toBeNull()
-        ->and($customer->date_of_birth)->toBeNull()
-        ->and($customer->occupation)->toBeNull();
-});
-
-it('clears the company fields when the type is individual', function () {
+it('clears the business fields when the type is individual', function () {
     $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
 
     $this->actingAs($user)->post(route('admin.customers.store'), individualPayload([
         'company_name' => 'Stale Ltd',
         'industry' => 'Stale',
-        'contact_person' => 'Stale',
     ]));
 
     $customer = Customer::query()->sole();
 
     expect($customer->company_name)->toBeNull()
         ->and($customer->industry)->toBeNull()
-        ->and($customer->contact_person)->toBeNull();
+        /* Not the name - that one belongs to both types. */
+        ->and($customer->name)->toBe('Achieng Odhiambo');
 });
 
 it('always requires a phone number', function () {
@@ -199,27 +246,6 @@ it('rejects a phone number carrying letters', function () {
     $this->actingAs($user)
         ->post(route('admin.customers.store'), individualPayload(['phone' => 'call me']))
         ->assertSessionHasErrors('phone');
-});
-
-it('rejects an alternative number identical to the main one', function () {
-    $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
-
-    $this->actingAs($user)
-        ->post(route('admin.customers.store'), individualPayload([
-            'phone' => '0722 000 111',
-            'alternative_phone' => '0722 000 111',
-        ]))
-        ->assertSessionHasErrors('alternative_phone');
-});
-
-it('rejects a date of birth in the future', function () {
-    $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
-
-    $this->actingAs($user)
-        ->post(route('admin.customers.store'), individualPayload([
-            'date_of_birth' => now()->addDay()->format('Y-m-d'),
-        ]))
-        ->assertSessionHasErrors('date_of_birth');
 });
 
 it('refuses to create without customers.create', function () {
@@ -258,8 +284,9 @@ it('converts an individual into a company on update', function () {
 
     expect($customer->type)->toBe(CustomerType::Company)
         ->and($customer->company_name)->toBe('Mwangi Builders Ltd')
-        ->and($customer->name)->toBeNull()
-        ->and($customer->occupation)->toBeNull();
+        /* Their own name survives the conversion; it was never the individual
+           half of the record. */
+        ->and($customer->name)->toBe('Peter Mwangi');
 });
 
 it('soft deletes a customer so their history survives', function () {
@@ -362,7 +389,6 @@ it('accepts a number in the international form the phone input writes', function
     $this->actingAs($user)
         ->post(route('admin.customers.store'), individualPayload([
             'phone' => '+254722000111',
-            'alternative_phone' => '+254733444555',
         ]))
         ->assertRedirect(route('admin.customers.index'));
 
@@ -376,8 +402,8 @@ it('records the fuller address', function () {
 
     $customer = Customer::query()->sole();
 
-    expect($customer->address_line_1)->toBe('Plot 14, Enterprise Road')
-        ->and($customer->address_line_2)->toBe('Industrial Area')
+    expect($customer->street_address)->toBe('Plot 14, Enterprise Road')
+        ->and($customer->area)->toBe('Industrial Area')
         ->and($customer->city)->toBe('Nairobi')
         ->and($customer->state)->toBe('Nairobi')
         ->and($customer->postal_code)->toBe('00100')

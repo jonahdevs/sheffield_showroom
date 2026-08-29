@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { Building2, UserRound } from '@lucide/vue';
 import { computed } from 'vue';
-import DatePicker from '@/components/DatePicker.vue';
 import InputError from '@/components/InputError.vue';
 import PhoneInput from '@/components/PhoneInput.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/customers';
@@ -24,21 +29,17 @@ type CustomerType = 'individual' | 'company';
 const form = useForm({
     type: (props.customer?.type ?? 'individual') as CustomerType,
     name: props.customer?.name ?? '',
-    date_of_birth: props.customer?.date_of_birth ?? '',
-    occupation: props.customer?.occupation ?? '',
+    phone: props.customer?.phone ?? '',
+    email: props.customer?.email ?? '',
+    id_number: props.customer?.id_number ?? '',
     company_name: props.customer?.company_name ?? '',
     industry: props.customer?.industry ?? '',
-    contact_person: props.customer?.contact_person ?? '',
-    contact_person_position: props.customer?.contact_person_position ?? '',
-    phone: props.customer?.phone ?? '',
-    alternative_phone: props.customer?.alternative_phone ?? '',
-    email: props.customer?.email ?? '',
-    address_line_1: props.customer?.address_line_1 ?? '',
-    address_line_2: props.customer?.address_line_2 ?? '',
-    city: props.customer?.city ?? '',
-    state: props.customer?.state ?? '',
-    postal_code: props.customer?.postal_code ?? '',
     country: props.customer?.country ?? props.default_country,
+    state: props.customer?.state ?? '',
+    city: props.customer?.city ?? '',
+    street_address: props.customer?.street_address ?? '',
+    area: props.customer?.area ?? '',
+    postal_code: props.customer?.postal_code ?? '',
     notes: props.customer?.notes ?? '',
 });
 
@@ -49,9 +50,11 @@ const heading = computed(() =>
 );
 
 /**
- * Switching type keeps whatever has already been typed on both halves - the
- * server drops the fields the chosen type does not use, so a mis-click costs
- * nothing and a correction costs no retyping.
+ * Switching type only opens or closes the business section.
+ *
+ * Everything above it is asked of both kinds, so nothing typed is thrown
+ * away by a mis-click - and what was typed into the business section stays
+ * there in case the mis-click was the switch back.
  */
 function chooseType(type: CustomerType) {
     form.type = type;
@@ -59,13 +62,15 @@ function chooseType(type: CustomerType) {
 }
 
 const canSubmit = computed(() => {
-    if (form.processing || form.phone.trim() === '') {
+    if (
+        form.processing ||
+        form.name.trim() === '' ||
+        form.phone.trim() === ''
+    ) {
         return false;
     }
 
-    return isCompany.value
-        ? form.company_name.trim() !== ''
-        : form.name.trim() !== '';
+    return !isCompany.value || form.company_name.trim() !== '';
 });
 
 function submit() {
@@ -95,13 +100,19 @@ defineOptions({
 </script>
 
 <!--
-  One form for both kinds of customer. The type picker sits above the panels
-  because it decides what the first one asks for; everything below it -
-  contact, address, notes - is the same either way.
+  One form for both kinds of customer, in the order the counter learns things:
+  who this is, the business they came for if there is one, where they are, and
+  anything worth knowing next time.
 
-  The two-column rows switch on `@2xl/page`, the page's own width rather than
-  the window's: behind the rail a viewport breakpoint promises room the form
-  does not have.
+  A person is recorded either way. Somebody who says "I am Jonah and I have
+  come for the company" is one customer with two facts about them, not a
+  company with a person hidden behind it - so the name is asked of everybody
+  and the type only decides whether a business section follows it.
+
+  The rows go two across on `@2xl/page` and three on `@4xl/page` - the page's
+  own width rather than the window's, because behind the rail a viewport
+  breakpoint promises room the form does not have. Business stays at two: it
+  has two fields, and a third column there is an empty one.
 -->
 <template>
     <Head :title="heading" />
@@ -110,79 +121,12 @@ defineOptions({
         <div>
             <h1 class="text-2xl leading-tight">{{ heading }}</h1>
             <p class="mt-2 text-sm text-muted-foreground">
-                A phone number and a name are all that is needed. Everything
+                A name and a phone number are all that is needed. Everything
                 else can be filled in as you learn it.
             </p>
         </div>
 
         <form class="flex flex-col gap-5" @submit.prevent="submit">
-            <!--
-              The type picker sits above the panels rather than inside the
-              first one, because it decides what that panel asks for. Real
-              radios, visually hidden behind the cards, so arrow keys move
-              between them and the choice is one field rather than two buttons
-              that happen to disagree.
-            -->
-            <fieldset>
-                <legend class="sr-only">Customer type</legend>
-
-                <div
-                    class="flex flex-col gap-2.5 @2xl/page:grid @2xl/page:grid-cols-2"
-                >
-                    <label
-                        v-for="type in props.types"
-                        :key="type.value"
-                        class="flex cursor-pointer items-center gap-3 rounded-xl border bg-card p-3.5 transition-colors has-focus-visible:border-ring has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
-                        :class="
-                            form.type === type.value
-                                ? 'border-primary bg-brand-50 dark:bg-brand-950'
-                                : 'border-border hover:border-primary/40'
-                        "
-                    >
-                        <input
-                            type="radio"
-                            name="type"
-                            class="sr-only"
-                            :value="type.value"
-                            :checked="form.type === type.value"
-                            :data-test="`type-${type.value}`"
-                            @change="chooseType(type.value as CustomerType)"
-                        />
-
-                        <span
-                            class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                            :class="
-                                form.type === type.value
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-muted text-faint'
-                            "
-                            aria-hidden="true"
-                        >
-                            <Building2
-                                v-if="type.value === 'company'"
-                                class="size-4.5"
-                            />
-                            <UserRound v-else class="size-4.5" />
-                        </span>
-
-                        <span class="min-w-0">
-                            <span class="block text-xs font-bold">
-                                {{ type.label }}
-                            </span>
-                            <span class="mt-0.5 block text-xs text-faint">
-                                {{
-                                    type.value === 'company'
-                                        ? 'An organisation, reached through a contact person.'
-                                        : 'A person buying in their own name.'
-                                }}
-                            </span>
-                        </span>
-                    </label>
-                </div>
-
-                <InputError :message="form.errors.type" />
-            </fieldset>
-
             <Card as="section" class="gap-0 p-0">
                 <div class="border-b border-divider px-5 py-3.5">
                     <h2
@@ -192,68 +136,124 @@ defineOptions({
                     </h2>
                 </div>
 
-                <!-- Individual -->
-                <div
-                    v-if="!isCompany"
-                    class="p-5"
-                    data-test="individual-fields"
-                >
-                    <div>
-                        <Label for="name"
-                            >Full name
-                            <span class="text-primary">*</span></Label
-                        >
-                        <Input
-                            id="name"
-                            v-model="form.name"
-                            class="mt-2.25"
-                            placeholder="e.g. Achieng Odhiambo"
-                            autocomplete="name"
-                            data-test="field-name"
-                        />
-                        <InputError :message="form.errors.name" />
-                    </div>
-
+                <div class="p-5">
                     <div
-                        class="mt-5 flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
+                        class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5 @4xl/page:grid-cols-3"
                     >
+                        <!-- Leads the section: it is the one answer that
+                             changes what the rest of the form asks for. -->
                         <div>
-                            <Label for="date_of_birth">Date of birth</Label>
-                            <div class="mt-2.25">
-                                <DatePicker
-                                    id="date_of_birth"
-                                    v-model="form.date_of_birth"
-                                    max="today"
-                                    data-test="field-dob"
-                                />
-                            </div>
-                            <InputError :message="form.errors.date_of_birth" />
+                            <Label for="type">
+                                Customer type
+                                <span class="text-primary">*</span>
+                            </Label>
+                            <Select
+                                :model-value="form.type"
+                                @update:model-value="
+                                    (value) => chooseType(value as CustomerType)
+                                "
+                            >
+                                <SelectTrigger
+                                    id="type"
+                                    class="mt-2.25 w-full"
+                                    data-test="field-type"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem
+                                        v-for="type in props.types"
+                                        :key="type.value"
+                                        :value="type.value"
+                                        :data-test="`type-${type.value}`"
+                                    >
+                                        {{ type.label }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <InputError :message="form.errors.type" />
                         </div>
 
                         <div>
-                            <Label for="occupation">Occupation</Label>
+                            <Label for="name">
+                                Full name <span class="text-primary">*</span>
+                            </Label>
                             <Input
-                                id="occupation"
-                                v-model="form.occupation"
+                                id="name"
+                                v-model="form.name"
                                 class="mt-2.25"
-                                placeholder="e.g. Contractor"
-                                data-test="field-occupation"
+                                placeholder="e.g. Achieng Odhiambo"
+                                autocomplete="name"
+                                data-test="field-name"
                             />
-                            <InputError :message="form.errors.occupation" />
+                            <InputError :message="form.errors.name" />
+                        </div>
+
+                        <div>
+                            <Label for="phone">
+                                Phone number
+                                <span class="text-primary">*</span>
+                            </Label>
+                            <div class="mt-2.25">
+                                <PhoneInput
+                                    id="phone"
+                                    v-model="form.phone"
+                                    data-test="field-phone"
+                                />
+                            </div>
+                            <InputError :message="form.errors.phone" />
+                        </div>
+
+                        <div>
+                            <Label for="email">Email</Label>
+                            <Input
+                                id="email"
+                                v-model="form.email"
+                                type="email"
+                                class="mt-2.25"
+                                placeholder="Optional"
+                                autocomplete="email"
+                                data-test="field-email"
+                            />
+                            <InputError :message="form.errors.email" />
+                        </div>
+
+                        <div>
+                            <Label for="id_number">ID number</Label>
+                            <Input
+                                id="id_number"
+                                v-model="form.id_number"
+                                class="mt-2.25"
+                                inputmode="numeric"
+                                placeholder="Optional"
+                                data-test="field-id-number"
+                            />
+                            <InputError :message="form.errors.id_number" />
                         </div>
                     </div>
                 </div>
+            </Card>
 
-                <!-- Company -->
-                <div v-else class="p-5" data-test="company-fields">
+            <!-- Only for a company, and only the two fields the company itself
+                 has. Everything about the person is already above. -->
+            <Card v-if="isCompany" as="section" class="gap-0 p-0">
+                <div class="border-b border-divider px-5 py-3.5">
+                    <h2
+                        class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                    >
+                        Business
+                    </h2>
+                </div>
+
+                <div class="p-5">
                     <div
                         class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
                     >
                         <div>
-                            <Label for="company_name"
-                                >Company name
-                                <span class="text-primary">*</span></Label
-                            >
+                            <Label for="company_name">
+                                Company name
+                                <span class="text-primary">*</span>
+                            </Label>
                             <Input
                                 id="company_name"
                                 v-model="form.company_name"
@@ -276,96 +276,6 @@ defineOptions({
                             />
                             <InputError :message="form.errors.industry" />
                         </div>
-
-                        <div>
-                            <Label for="contact_person">Contact person</Label>
-                            <Input
-                                id="contact_person"
-                                v-model="form.contact_person"
-                                class="mt-2.25"
-                                placeholder="Who to ask for"
-                                data-test="field-contact-person"
-                            />
-                            <InputError :message="form.errors.contact_person" />
-                        </div>
-
-                        <div>
-                            <Label for="contact_person_position"
-                                >Their position</Label
-                            >
-                            <Input
-                                id="contact_person_position"
-                                v-model="form.contact_person_position"
-                                class="mt-2.25"
-                                placeholder="e.g. Procurement Manager"
-                                data-test="field-contact-position"
-                            />
-                            <InputError
-                                :message="form.errors.contact_person_position"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </Card>
-
-            <Card as="section" class="gap-0 p-0">
-                <div class="border-b border-divider px-5 py-3.5">
-                    <h2
-                        class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
-                    >
-                        Contact information
-                    </h2>
-                </div>
-
-                <div class="p-5">
-                    <div
-                        class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
-                    >
-                        <div>
-                            <Label for="phone"
-                                >Phone number
-                                <span class="text-primary">*</span></Label
-                            >
-                            <div class="mt-2.25">
-                                <PhoneInput
-                                    id="phone"
-                                    v-model="form.phone"
-                                    data-test="field-phone"
-                                />
-                            </div>
-                            <InputError :message="form.errors.phone" />
-                        </div>
-
-                        <div>
-                            <Label for="alternative_phone"
-                                >Alternative phone number</Label
-                            >
-                            <div class="mt-2.25">
-                                <PhoneInput
-                                    id="alternative_phone"
-                                    v-model="form.alternative_phone"
-                                    placeholder="Optional"
-                                    data-test="field-alt-phone"
-                                />
-                            </div>
-                            <InputError
-                                :message="form.errors.alternative_phone"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="mt-5">
-                        <Label for="email">Email</Label>
-                        <Input
-                            id="email"
-                            v-model="form.email"
-                            type="email"
-                            class="mt-2.25"
-                            placeholder="Optional"
-                            autocomplete="email"
-                            data-test="field-email"
-                        />
-                        <InputError :message="form.errors.email" />
                     </div>
                 </div>
             </Card>
@@ -379,51 +289,26 @@ defineOptions({
                     </h2>
                 </div>
 
+                <!-- Widest first: the country narrows to a state, a state to a
+                     town, and a town to the street somebody actually stands
+                     on. Read in that order it is one address rather than six
+                     boxes. -->
                 <div class="p-5">
                     <div
-                        class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
+                        class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5 @4xl/page:grid-cols-3"
                     >
                         <div>
-                            <Label for="address_line_1">Address line 1</Label>
+                            <Label for="country">
+                                Country <span class="text-primary">*</span>
+                            </Label>
                             <Input
-                                id="address_line_1"
-                                v-model="form.address_line_1"
+                                id="country"
+                                v-model="form.country"
                                 class="mt-2.25"
-                                placeholder="e.g. Plot 14, Enterprise Road"
-                                autocomplete="address-line1"
-                                data-test="field-address-line-1"
+                                autocomplete="country-name"
+                                data-test="field-country"
                             />
-                            <InputError :message="form.errors.address_line_1" />
-                        </div>
-
-                        <div>
-                            <Label for="address_line_2">Address line 2</Label>
-                            <Input
-                                id="address_line_2"
-                                v-model="form.address_line_2"
-                                class="mt-2.25"
-                                placeholder="Estate, block or building"
-                                autocomplete="address-line2"
-                                data-test="field-address-line-2"
-                            />
-                            <InputError :message="form.errors.address_line_2" />
-                        </div>
-                    </div>
-
-                    <div
-                        class="mt-5 flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
-                    >
-                        <div>
-                            <Label for="city">City</Label>
-                            <Input
-                                id="city"
-                                v-model="form.city"
-                                class="mt-2.25"
-                                placeholder="e.g. Nairobi"
-                                autocomplete="address-level2"
-                                data-test="field-city"
-                            />
-                            <InputError :message="form.errors.city" />
+                            <InputError :message="form.errors.country" />
                         </div>
 
                         <div>
@@ -440,6 +325,45 @@ defineOptions({
                         </div>
 
                         <div>
+                            <Label for="city">City</Label>
+                            <Input
+                                id="city"
+                                v-model="form.city"
+                                class="mt-2.25"
+                                placeholder="e.g. Nairobi"
+                                autocomplete="address-level2"
+                                data-test="field-city"
+                            />
+                            <InputError :message="form.errors.city" />
+                        </div>
+
+                        <div>
+                            <Label for="street_address">Street address</Label>
+                            <Input
+                                id="street_address"
+                                v-model="form.street_address"
+                                class="mt-2.25"
+                                placeholder="e.g. Plot 14, Enterprise Road"
+                                autocomplete="address-line1"
+                                data-test="field-street-address"
+                            />
+                            <InputError :message="form.errors.street_address" />
+                        </div>
+
+                        <div>
+                            <Label for="area">Area / Estate</Label>
+                            <Input
+                                id="area"
+                                v-model="form.area"
+                                class="mt-2.25"
+                                placeholder="e.g. Industrial Area"
+                                autocomplete="address-line2"
+                                data-test="field-area"
+                            />
+                            <InputError :message="form.errors.area" />
+                        </div>
+
+                        <div>
                             <Label for="postal_code">Postal code</Label>
                             <Input
                                 id="postal_code"
@@ -451,20 +375,6 @@ defineOptions({
                             />
                             <InputError :message="form.errors.postal_code" />
                         </div>
-
-                        <div>
-                            <Label for="country">
-                                Country <span class="text-primary">*</span>
-                            </Label>
-                            <Input
-                                id="country"
-                                v-model="form.country"
-                                class="mt-2.25"
-                                autocomplete="country-name"
-                                data-test="field-country"
-                            />
-                            <InputError :message="form.errors.country" />
-                        </div>
                     </div>
                 </div>
             </Card>
@@ -474,16 +384,22 @@ defineOptions({
                     <h2
                         class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
                     >
-                        Notes
+                        Additional information
                     </h2>
                 </div>
 
                 <div class="p-5">
                     <Label for="notes" class="sr-only">Notes</Label>
+                    <!-- `min-h` rather than `rows`: the shared textarea is
+                         `field-sizing-content`, so it grows with what is typed
+                         and takes its floor from the class rather than the
+                         attribute. `rows` is left as the fallback for browsers
+                         that do not support the sizing yet. -->
                     <Textarea
                         id="notes"
                         v-model="form.notes"
-                        rows="4"
+                        rows="8"
+                        class="min-h-48"
                         placeholder="What they came in for, what they were quoted, anything worth knowing next time."
                         data-test="field-notes"
                     />

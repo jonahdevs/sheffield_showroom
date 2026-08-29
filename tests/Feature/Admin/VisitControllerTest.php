@@ -2,6 +2,7 @@
 
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
+use App\Enums\InterestLevel;
 use App\Enums\Permission;
 use App\Enums\VisitPurpose;
 use App\Models\Customer;
@@ -9,6 +10,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Visit;
+use Carbon\CarbonImmutable;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -35,7 +37,11 @@ function visitStaff(array $permissions): User
     return User::factory()->create()->assignRole($role);
 }
 
-/** Somebody who runs the floor: every visit, not only their own. */
+/**
+ * Somebody who runs the floor: every visit, not only their own, and the
+ * customer records behind them - a correction typed on the visit form reaches
+ * the customer only for whoever may edit customers.
+ */
 function visitManager(): User
 {
     return visitStaff([
@@ -44,6 +50,7 @@ function visitManager(): User
         Permission::VisitsCreate,
         Permission::VisitsUpdate,
         Permission::VisitsDelete,
+        Permission::CustomersUpdate,
     ]);
 }
 
@@ -64,8 +71,17 @@ function visitSalesperson(): User
  */
 function visitPayload(array $overrides = []): array
 {
+    $customer = Customer::factory()->create();
+
     return [
-        'customer_id' => Customer::factory()->create()->id,
+        'customer_id' => $customer->id,
+        /* The form shows a picked customer's own details back and posts them
+           with the rest, so the payload carries them too. */
+        'customer_type' => $customer->type->value,
+        'customer_name' => $customer->name,
+        'company_name' => $customer->company_name,
+        'phone' => $customer->phone,
+        'email' => $customer->email,
         ...visitFields(),
         ...$overrides,
     ];
@@ -106,8 +122,29 @@ function visitFields(): array
         'source' => CustomerSource::Referral->value,
         'duration_minutes' => 45,
         'notes' => 'Coming back on Friday.',
-        'product_ids' => [],
+        'products' => [],
     ];
+}
+
+/**
+ * Products as the form posts them: an id, how many, and how keen they were.
+ *
+ * @param  array<int, int>  $ids
+ * @return array<int, array{id: int, quantity: int, interest_level: string}>
+ */
+function pickedProducts(
+    array $ids,
+    InterestLevel $level = InterestLevel::Medium,
+    int $quantity = 1,
+): array {
+    return array_map(
+        fn (int $id) => [
+            'id' => $id,
+            'quantity' => $quantity,
+            'interest_level' => $level->value,
+        ],
+        $ids,
+    );
 }
 
 it('refuses the log to somebody with neither half of the view split', function () {
@@ -134,6 +171,106 @@ it('lists every visit to somebody who may see the floor', function () {
  * The whole point of the `view.own` half: a salesperson's list is their own
  * work, not the showroom's.
  */
+/**
+ * The four figures above the list. Each window is a floor on `visited_at`, so
+ * a visit today is also counted in the week and the month - they narrow, they
+ * do not partition.
+ */
+it('counts the log by today, this week and this month', function () {
+    $manager = visitManager();
+
+    /* Pinned to a Wednesday so "this week" has days either side of today
+       inside it, and the month boundary is nowhere near. */
+    $this->travelTo(CarbonImmutable::parse('2026-08-19 10:00:00'));
+
+    Visit::factory()->count(2)->create(['visited_at' => now()]);
+    Visit::factory()->create(['visited_at' => now()->startOfWeek()->addHours(9)]);
+    Visit::factory()->create(['visited_at' => now()->startOfMonth()->addHours(9)]);
+    Visit::factory()->create(['visited_at' => now()->subMonths(3)]);
+
+    $this->actingAs($manager)
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.0.value', 5)
+            ->where('stats.1.value', 2)
+            ->where('stats.2.value', 3)
+            ->where('stats.3.value', 4));
+});
+
+/**
+ * Each window carries the same window before it, so the tile can say which way
+ * the floor is going rather than only how busy it is.
+ */
+it('compares each window against the one before it', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-19 10:00:00'));
+
+    /* Four today against two yesterday: up a hundred per cent. */
+    Visit::factory()->count(4)->create(['visited_at' => now()]);
+    Visit::factory()->count(2)->create(['visited_at' => now()->subDay()]);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.1.key', 'today')
+            ->where('stats.1.value', 4)
+            ->where('stats.1.previous', 2)
+            ->where('stats.1.change', 100)
+            /* A running total has nothing before it - every visit there has
+               ever been is already in the figure. */
+            ->where('stats.0.key', 'total')
+            ->where('stats.0.change', null));
+});
+
+/** A salesperson's figures are their own log, not the floor's. */
+it('counts only a salesperson\'s own visits in the figures', function () {
+    $salesperson = visitSalesperson();
+
+    Visit::factory()->count(2)->loggedBy($salesperson)->create(['visited_at' => now()]);
+    Visit::factory()->count(5)->create(['visited_at' => now()]);
+
+    $this->actingAs($salesperson)
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.0.value', 2)
+            ->where('stats.0.label', 'Visits you logged')
+            ->where('stats.1.value', 2));
+});
+
+/**
+ * The figures answer how busy the floor has been, which is a question about
+ * the log rather than about whatever is typed in the search box. The pager
+ * already says how many rows a filter matched.
+ */
+it('leaves the figures alone when the list is filtered', function () {
+    $wanted = Customer::factory()->create(['name' => 'Achieng Odhiambo']);
+
+    Visit::factory()->create(['customer_id' => $wanted->id, 'visited_at' => now()]);
+    Visit::factory()->count(3)->create(['visited_at' => now()]);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['search' => 'Achieng']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 1)
+            ->where('stats.0.value', 4));
+});
+
+/** A removed visit is not one the floor took. */
+it('leaves a removed visit out of the figures', function () {
+    Visit::factory()->create(['visited_at' => now()]);
+    Visit::factory()->create(['visited_at' => now()])->delete();
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.0.value', 1)
+            ->where('stats.1.value', 1));
+});
+
 it('shows a salesperson only the visits they logged', function () {
     $salesperson = visitSalesperson();
 
@@ -171,7 +308,7 @@ it('attaches the products the customer was shown', function () {
     $products = Product::factory()->count(3)->create();
 
     $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
-        'product_ids' => $products->pluck('id')->all(),
+        'products' => pickedProducts($products->pluck('id')->all()),
     ]));
 
     expect(Visit::query()->sole()->products)->toHaveCount(3);
@@ -185,7 +322,7 @@ it('records a product shown twice on one visit only once', function () {
     $product = Product::factory()->create();
 
     $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
-        'product_ids' => [$product->id, $product->id],
+        'products' => pickedProducts([$product->id, $product->id]),
     ]));
 
     expect(Visit::query()->sole()->products)->toHaveCount(1);
@@ -201,10 +338,96 @@ it('replaces the products rather than adding to them on an edit', function () {
 
     $this->actingAs($user)->patch(route('admin.visits.update', $visit), visitPayload([
         'customer_id' => $visit->customer_id,
-        'product_ids' => [$after->id],
+        'products' => pickedProducts([$after->id]),
     ]));
 
     expect($visit->fresh()->products->pluck('id')->all())->toBe([$after->id]);
+});
+
+it('records how keen they were on each product', function () {
+    $wanted = Product::factory()->create();
+    $glanced = Product::factory()->create();
+
+    $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
+        'products' => [
+            ['id' => $wanted->id, 'quantity' => 20, 'interest_level' => InterestLevel::High->value],
+            ['id' => $glanced->id, 'quantity' => 1, 'interest_level' => InterestLevel::Low->value],
+        ],
+    ]));
+
+    $products = Visit::query()->sole()->products->keyBy('id');
+
+    expect($products[$wanted->id]->pivot->interest_level)->toBe('high')
+        ->and($products[$glanced->id]->pivot->interest_level)->toBe('low');
+});
+
+/**
+ * A customer asks after twenty sheets rather than one, and a write-up that
+ * records only which product they looked at cannot tell a roofing job from a
+ * repair.
+ */
+it('records how many of each product they were after', function () {
+    $sheets = Product::factory()->create();
+    $nails = Product::factory()->create();
+
+    $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
+        'products' => [
+            ['id' => $sheets->id, 'quantity' => 20, 'interest_level' => InterestLevel::High->value],
+            ['id' => $nails->id, 'quantity' => 3, 'interest_level' => InterestLevel::Medium->value],
+        ],
+    ]));
+
+    $products = Visit::query()->sole()->products->keyBy('id');
+
+    expect($products[$sheets->id]->pivot->quantity)->toBe(20)
+        ->and($products[$nails->id]->pivot->quantity)->toBe(3);
+});
+
+it('refuses a product nobody wanted any of', function () {
+    $product = Product::factory()->create();
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), visitPayload([
+            'products' => [
+                ['id' => $product->id, 'quantity' => 0, 'interest_level' => InterestLevel::Medium->value],
+            ],
+        ]))
+        ->assertSessionHasErrors('products.0.quantity');
+});
+
+/** Past a few thousand it is a typo, not an order the floor took. */
+it('refuses a quantity that is a slipped keystroke', function () {
+    $product = Product::factory()->create();
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), visitPayload([
+            'products' => [
+                ['id' => $product->id, 'quantity' => 100000, 'interest_level' => InterestLevel::Medium->value],
+            ],
+        ]))
+        ->assertSessionHasErrors('products.0.quantity');
+});
+
+it('refuses a product with no interest level against it', function () {
+    $product = Product::factory()->create();
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), visitPayload([
+            'products' => [['id' => $product->id, 'quantity' => 1]],
+        ]))
+        ->assertSessionHasErrors('products.0.interest_level');
+});
+
+it('refuses an interest level that is not one of the three', function () {
+    $product = Product::factory()->create();
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), visitPayload([
+            'products' => [
+                ['id' => $product->id, 'quantity' => 1, 'interest_level' => 'blazing'],
+            ],
+        ]))
+        ->assertSessionHasErrors('products.0.interest_level');
 });
 
 it('refuses a visit dated in the future', function () {
@@ -462,18 +685,25 @@ it('files a different number as a different customer', function () {
     expect(Customer::query()->count())->toBe(2);
 });
 
-it('records a company by its company name rather than a person', function () {
+/**
+ * A company customer is a person and a company, not a company instead of a
+ * person. Whoever walked in is who the counter dealt with, and the visit form
+ * records them alongside the business they came for.
+ */
+it('records both the person and the company for a company visit', function () {
     $this->actingAs(visitManager())->post(route('admin.visits.store'), newCustomerPayload([
         'customer_type' => CustomerType::Company->value,
-        'customer_name' => null,
+        'customer_name' => 'Peter Mwangi',
         'company_name' => 'Mwangi Builders Ltd',
+        'industry' => 'Construction',
     ]));
 
     $customer = Customer::query()->sole();
 
     expect($customer->type)->toBe(CustomerType::Company)
+        ->and($customer->name)->toBe('Peter Mwangi')
         ->and($customer->company_name)->toBe('Mwangi Builders Ltd')
-        ->and($customer->name)->toBeNull()
+        ->and($customer->industry)->toBe('Construction')
         ->and($customer->displayName())->toBe('Mwangi Builders Ltd');
 });
 
@@ -489,10 +719,18 @@ it('refuses a typed-in customer with no phone number', function () {
         ->and(Customer::query()->count())->toBe(0);
 });
 
-it('refuses a typed-in individual with no name', function () {
+it('refuses a typed-in customer of either kind with no name', function () {
     $this->actingAs(visitManager())
         ->post(route('admin.visits.store'), newCustomerPayload([
             'customer_name' => null,
+        ]))
+        ->assertSessionHasErrors('customer_name');
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload([
+            'customer_type' => CustomerType::Company->value,
+            'customer_name' => null,
+            'company_name' => 'Mwangi Builders Ltd',
         ]))
         ->assertSessionHasErrors('customer_name');
 });
@@ -501,24 +739,51 @@ it('refuses a typed-in company with no company name', function () {
     $this->actingAs(visitManager())
         ->post(route('admin.visits.store'), newCustomerPayload([
             'customer_type' => CustomerType::Company->value,
-            'customer_name' => null,
             'company_name' => null,
         ]))
         ->assertSessionHasErrors('company_name');
 });
 
 /**
- * Picked off the list, the record on file is what counts - the visit form is
- * not the place to quietly rewrite a customer.
+ * The fields stay editable behind a picked customer, so what comes back is the
+ * record as it now stands - a number corrected at the counter is corrected
+ * where it was noticed.
  */
-it('leaves a picked customer\'s details alone', function () {
+it('saves a correction typed over a picked customer back to their record', function () {
     $existing = Customer::factory()->create([
+        'type' => CustomerType::Individual,
         'name' => 'Achieng Odhiambo',
         'phone' => '0722 000 111',
     ]);
 
     $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
         'customer_id' => $existing->id,
+        'customer_type' => CustomerType::Individual->value,
+        'customer_name' => 'Achieng Odhiambo-Kamau',
+        'phone' => '0799 999 999',
+    ]));
+
+    $existing->refresh();
+
+    expect($existing->name)->toBe('Achieng Odhiambo-Kamau')
+        ->and($existing->phone)->toBe('0799 999 999')
+        ->and(Visit::query()->sole()->customer_id)->toBe($existing->id);
+});
+
+/**
+ * Shown the details read-only, whoever may not edit customers has no edit to
+ * send - and one that arrives anyway is not one the form offered them.
+ */
+it('leaves a picked customer alone for somebody who may not edit customers', function () {
+    $existing = Customer::factory()->create([
+        'type' => CustomerType::Individual,
+        'name' => 'Achieng Odhiambo',
+        'phone' => '0722 000 111',
+    ]);
+
+    $this->actingAs(visitSalesperson())->post(route('admin.visits.store'), visitPayload([
+        'customer_id' => $existing->id,
+        'customer_type' => CustomerType::Individual->value,
         'customer_name' => 'Somebody Else',
         'phone' => '0799 999 999',
     ]));
@@ -528,6 +793,30 @@ it('leaves a picked customer\'s details alone', function () {
     expect($existing->name)->toBe('Achieng Odhiambo')
         ->and($existing->phone)->toBe('0722 000 111')
         ->and(Visit::query()->sole()->customer_id)->toBe($existing->id);
+});
+
+/**
+ * The business half is only on screen for a company, so an individual's visit
+ * write-up never showed the field and has no business clearing it. The
+ * employer stays as it was entered under Customers.
+ */
+it('leaves the company an individual is recorded against alone', function () {
+    $existing = Customer::factory()->create([
+        'type' => CustomerType::Individual,
+        'name' => 'Achieng Odhiambo',
+        'company_name' => 'Mwangi Builders Ltd',
+        'phone' => '0722 000 111',
+    ]);
+
+    $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
+        'customer_id' => $existing->id,
+        'customer_type' => CustomerType::Individual->value,
+        'customer_name' => 'Achieng Odhiambo',
+        'company_name' => null,
+        'phone' => '0722 000 111',
+    ]));
+
+    expect($existing->fresh()->company_name)->toBe('Mwangi Builders Ltd');
 });
 
 // =============================================================================

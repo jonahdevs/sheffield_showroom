@@ -2,6 +2,7 @@
 
 use App\Enums\Permission;
 use App\Enums\ProductSource;
+use App\Enums\ProductStatus;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
@@ -327,4 +328,104 @@ it('pages through products of identical name without repeating one', function ()
         ->and($second)->toHaveCount(6)
         ->and(array_intersect($first, $second))->toBeEmpty()
         ->and(array_unique([...$first, ...$second]))->toHaveCount(30);
+});
+
+// -----------------------------------------------------------------------------
+// Status, which is set here rather than on the website
+// -----------------------------------------------------------------------------
+
+it('publishes a product recorded with no status chosen', function () {
+    $user = productStaff([Permission::ProductsViewAny, Permission::ProductsCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.products.store'), ['name' => 'Straight to the floor']);
+
+    expect(Product::query()->sole()->status)->toBe(ProductStatus::Published);
+});
+
+it('records the status chosen on the form', function () {
+    $user = productStaff([Permission::ProductsViewAny, Permission::ProductsCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.products.store'), [
+            'name' => 'Not out yet',
+            'status' => ProductStatus::Draft->value,
+        ]);
+
+    expect(Product::query()->sole()->status)->toBe(ProductStatus::Draft);
+});
+
+/**
+ * The point of the whole column: somebody standing on the floor decides a
+ * product is not worth showing, and no sync may undo it. Setting it has to be
+ * possible on a product the website owns, which is where it matters most.
+ */
+it('lets somebody mark a synced product Inactive', function () {
+    $user = productStaff([Permission::ProductsViewAny, Permission::ProductsUpdate]);
+
+    $product = Product::factory()->fromWebsite()->create(['name' => 'From the website']);
+
+    $this->actingAs($user)
+        ->post(route('admin.products.update', $product), [
+            'name' => 'From the website',
+            'status' => ProductStatus::Inactive->value,
+        ])
+        ->assertRedirect(route('admin.products.index'));
+
+    expect($product->fresh()->status)->toBe(ProductStatus::Inactive);
+});
+
+it('leaves the status alone when the form did not send one', function () {
+    $user = productStaff([Permission::ProductsViewAny, Permission::ProductsUpdate]);
+
+    $product = Product::factory()->status(ProductStatus::Inactive)->create(['name' => 'Put away']);
+
+    $this->actingAs($user)
+        ->post(route('admin.products.update', $product), ['name' => 'Put away, renamed']);
+
+    expect($product->fresh()->status)->toBe(ProductStatus::Inactive);
+});
+
+it('rejects a status that is not one of ours', function () {
+    $user = productStaff([Permission::ProductsViewAny, Permission::ProductsCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.products.store'), ['name' => 'Odd one', 'status' => 'retired'])
+        ->assertSessionHasErrors('status');
+
+    expect(Product::query()->count())->toBe(0);
+});
+
+it('filters the catalogue by status and counts each one', function () {
+    $user = productStaff([Permission::ProductsViewAny]);
+
+    Product::factory()->count(3)->status(ProductStatus::Published)->create();
+    Product::factory()->count(2)->status(ProductStatus::Inactive)->create();
+
+    $this->actingAs($user)
+        ->get(route('admin.products.index', ['status' => ProductStatus::Inactive->value]))
+        ->assertInertia(fn ($page) => $page
+            ->where('products.total', 2)
+            ->where('filters.status', ProductStatus::Inactive->value)
+            ->where('counts.all', 5)
+            ->where('counts.published', 3)
+            ->where('counts.inactive', 2)
+            ->where('counts.draft', 0));
+});
+
+/**
+ * A stale bookmark or a hand-edited URL should show the catalogue, not an
+ * error. The floor is looking for a product.
+ */
+it('ignores a status filter that is not a status', function () {
+    $user = productStaff([Permission::ProductsViewAny]);
+
+    Product::factory()->count(2)->create();
+
+    $this->actingAs($user)
+        ->get(route('admin.products.index', ['status' => 'retired']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('products.total', 2)
+            ->where('filters.status', ''));
 });
