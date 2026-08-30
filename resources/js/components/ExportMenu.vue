@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { Download, FileSpreadsheet, FileText, FileType } from '@lucide/vue';
+import {
+    ChevronDown,
+    Download,
+    FileSpreadsheet,
+    FileText,
+    FileType,
+} from '@lucide/vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -7,6 +13,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
 
 const props = defineProps<{
     /** Where the list's export lives, without a query string. */
@@ -52,6 +59,8 @@ function download(format: 'csv' | 'xlsx' | 'pdf') {
 <template>
     <DropdownMenu>
         <DropdownMenuTrigger as-child>
+            <!-- The chevron sits behind its own rule, so the button reads as
+                 a menu that opens rather than a download that fires. -->
             <Button
                 variant="quiet"
                 :disabled="props.disabled"
@@ -59,6 +68,11 @@ function download(format: 'csv' | 'xlsx' | 'pdf') {
             >
                 <Download />
                 Export
+                <Separator
+                    orientation="vertical"
+                    class="h-4! self-center bg-border"
+                />
+                <ChevronDown class="text-muted-foreground" />
             </Button>
         </DropdownMenuTrigger>
 

@@ -63,8 +63,13 @@ class RolesSeeder extends Seeder
                     PermissionEnum::ProductsDelete,
 
                     /* Staffs their own team without being trusted to widen
-                       what that team is allowed to touch. */
+                       what that team is allowed to touch: they open accounts
+                       and set the address each one signs in with, and they
+                       hand out roles, but the roles themselves are shaped
+                       above them. */
                     PermissionEnum::UsersViewAny,
+                    PermissionEnum::UsersCreate,
+                    PermissionEnum::UsersUpdate,
                     PermissionEnum::RolesView,
                     PermissionEnum::RolesAssign,
                 ],

@@ -7,6 +7,7 @@ import {
     Plus,
     Search,
     Shield,
+    SquarePen,
     Trash2,
     Users,
 } from '@lucide/vue';
@@ -56,6 +57,7 @@ import { useFilters } from '@/composables/useFilters';
 import { useInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
 import { create, destroy, edit, index } from '@/routes/admin/roles';
+import { create as createUser, edit as editUser } from '@/routes/admin/users';
 import { update as updateUserRoles } from '@/routes/admin/users/roles';
 
 interface Paginated<T> extends Paginator {
@@ -72,6 +74,8 @@ const props = defineProps<{
         update: boolean;
         delete: boolean;
         assign: boolean;
+        create_user: boolean;
+        update_user: boolean;
     };
 }>();
 
@@ -93,6 +97,11 @@ const activeFilterCount = computed(
 
 function headline(name: string): string {
     return name.replace(/-/g, ' ');
+}
+
+/** Whether the row's menu has anything in it worth opening. */
+function canActOn(holder: App.Data.RoleHolderData): boolean {
+    return props.can.update_user || (props.can.assign && !holder.is_self);
 }
 
 // -----------------------------------------------------------------------------
@@ -307,8 +316,25 @@ defineOptions({
           list of people sits under the list of roles rather than a page away.
         -->
         <Card class="min-w-0 gap-0 overflow-hidden p-0">
-            <div class="border-b border-border px-5 py-3.5">
+            <div
+                class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3.5"
+            >
                 <h2 class="text-sm font-bold">Users</h2>
+
+                <!-- The account itself, not the role on it: somebody who is
+                     not on this list yet has nothing to be assigned. -->
+                <Button
+                    v-if="props.can.create_user"
+                    as-child
+                    size="sm"
+                    variant="quiet"
+                    data-test="new-user"
+                >
+                    <Link :href="createUser().url">
+                        <Plus />
+                        New user
+                    </Link>
+                </Button>
             </div>
 
             <div
@@ -454,12 +480,12 @@ defineOptions({
                                 </span>
                             </div>
 
-                            <!-- Own row aside: nobody re-roles themselves, so
-                                 the menu has nothing to offer on it. -->
+                            <!-- Nobody re-roles themselves, so on your own row
+                                 the menu is whatever is left - which is the
+                                 account itself, and nothing at all without the
+                                 permission to edit one. -->
                             <div class="flex justify-end">
-                                <DropdownMenu
-                                    v-if="props.can.assign && !holder.is_self"
-                                >
+                                <DropdownMenu v-if="canActOn(holder)">
                                     <DropdownMenuTrigger as-child>
                                         <Button
                                             variant="ghost"
@@ -472,6 +498,24 @@ defineOptions({
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                         <DropdownMenuItem
+                                            v-if="props.can.update_user"
+                                            as-child
+                                            :data-test="`edit-user-${holder.id}`"
+                                        >
+                                            <Link
+                                                class="w-full cursor-pointer"
+                                                :href="editUser(holder.id).url"
+                                            >
+                                                <SquarePen />
+                                                Edit user
+                                            </Link>
+                                        </DropdownMenuItem>
+
+                                        <DropdownMenuItem
+                                            v-if="
+                                                props.can.assign &&
+                                                !holder.is_self
+                                            "
                                             :data-test="`assign-${holder.id}`"
                                             @select="openAssign(holder)"
                                         >

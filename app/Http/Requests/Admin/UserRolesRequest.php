@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Concerns\RoleAssignmentRules;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
- * Setting which roles a user holds. The same ceiling as `RoleRequest`, read
- * one level up: a role you could not have built is a role you cannot hand out,
- * or assigning becomes the way around the grant check.
+ * Setting which roles a user holds, from the Roles screen's Users panel. The
+ * ceiling it enforces lives in `RoleAssignmentRules`, shared with the account
+ * form, which sets the same thing from the other direction.
  */
 class UserRolesRequest extends FormRequest
 {
+    use RoleAssignmentRules;
+
     public function authorize(): bool
     {
         return $this->user()->can('assignTo', [Role::class, $this->subject()]);
@@ -27,10 +29,7 @@ class UserRolesRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'roles' => ['present', 'array'],
-            'roles.*' => ['string', Rule::exists('roles', 'name')],
-        ];
+        return $this->roleRules();
     }
 
     /**
@@ -38,34 +37,7 @@ class UserRolesRequest extends FormRequest
      */
     public function after(): array
     {
-        return [
-            function (Validator $validator) {
-                $beyondReach = Role::query()
-                    ->whereIn('name', (array) $this->input('roles', []))
-                    ->with('permissions:id,name')
-                    ->get()
-                    ->filter(fn (Role $role) => $role->permissions
-                        ->contains(fn ($permission) => $this->user()->cannot($permission->name)))
-                    ->pluck('name')
-                    ->all();
-
-                if ($beyondReach !== []) {
-                    $validator->errors()->add(
-                        'roles',
-                        'You cannot assign a role that holds permissions you do not: '
-                            .implode(', ', $beyondReach).'.',
-                    );
-                }
-            },
-        ];
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    public function roles(): array
-    {
-        return array_values(array_unique((array) $this->validated('roles')));
+        return [fn (Validator $validator) => $this->refuseRolesBeyondReach($validator)];
     }
 
     public function subject(): User

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { LogOut, Settings, UserRound } from '@lucide/vue';
+import { LogOut, Settings } from '@lucide/vue';
 import { computed } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -12,7 +12,6 @@ import {
 import { useInitials } from '@/composables/useInitials';
 import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
-import { edit as security } from '@/routes/security';
 import type { User } from '@/types';
 
 const props = defineProps<{ user: User }>();
@@ -87,13 +86,6 @@ const handleLogout = () => {
     <DropdownMenuGroup>
         <DropdownMenuItem :as-child="true">
             <Link class="w-full cursor-pointer" :href="edit()" prefetch>
-                <UserRound class="size-3.5" :stroke-width="1.7" />
-                Profile
-            </Link>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem :as-child="true">
-            <Link class="w-full cursor-pointer" :href="security()" prefetch>
                 <Settings class="size-3.5" :stroke-width="1.7" />
                 Settings
             </Link>

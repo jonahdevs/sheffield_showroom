@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
-use App\Enums\Permission;
+use App\Concerns\RoleAssignmentRules;
 use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -13,10 +13,14 @@ use Illuminate\Validation\Validator;
 /**
  * Creating and editing a role. The rule that matters is the last one: nobody
  * may grant a permission they do not hold themselves, or a role becomes a way
- * to promote yourself past the ceiling your own account sits under.
+ * to promote yourself past the ceiling your own account sits under. It lives
+ * in `RoleAssignmentRules`, shared with the screens that hand roles and
+ * permissions to a person.
  */
 class RoleRequest extends FormRequest
 {
+    use RoleAssignmentRules;
+
     public function authorize(): bool
     {
         $role = $this->role();
@@ -43,8 +47,7 @@ class RoleRequest extends FormRequest
                 Rule::unique('roles', 'name')->ignore($role?->id),
             ],
             'description' => ['nullable', 'string', 'max:255'],
-            'permissions' => ['present', 'array'],
-            'permissions.*' => ['string', Rule::in(Permission::values())],
+            ...$this->permissionRules(),
         ];
     }
 
@@ -63,44 +66,7 @@ class RoleRequest extends FormRequest
      */
     public function after(): array
     {
-        return [
-            function (Validator $validator) {
-                $ungrantable = array_values(array_diff(
-                    (array) $this->input('permissions', []),
-                    $this->grantable(),
-                ));
-
-                if ($ungrantable !== []) {
-                    $validator->errors()->add(
-                        'permissions',
-                        'You cannot grant a permission you do not hold yourself: '
-                            .implode(', ', $ungrantable).'.',
-                    );
-                }
-            },
-        ];
-    }
-
-    /**
-     * What this person may hand out. A super admin passes every check through
-     * `Gate::before`, so the whole set is theirs to give.
-     *
-     * @return array<int, string>
-     */
-    public function grantable(): array
-    {
-        return array_values(array_filter(
-            Permission::values(),
-            fn (string $permission) => $this->user()->can($permission),
-        ));
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    public function permissions(): array
-    {
-        return array_values(array_unique((array) $this->validated('permissions')));
+        return [fn (Validator $validator) => $this->refusePermissionsBeyondReach($validator)];
     }
 
     public function role(): ?Role

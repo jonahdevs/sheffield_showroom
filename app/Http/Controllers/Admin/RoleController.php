@@ -55,6 +55,10 @@ class RoleController extends Controller
                 'update' => $viewer->can(Permission::RolesUpdate->value),
                 'delete' => $viewer->can(Permission::RolesDelete->value),
                 'assign' => $viewer->can(Permission::RolesAssign->value),
+                /* The Users panel's two links. Adding and editing an account
+                   is a separate trust from handing out a role on one. */
+                'create_user' => $viewer->can('create', User::class),
+                'update_user' => $viewer->can(Permission::UsersUpdate->value),
             ],
         ]);
     }

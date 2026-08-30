@@ -13,10 +13,15 @@ class ProfileUpdateRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
+     * Email is deliberately absent: an account's email address is an
+     * access credential, so only an administrator may change it.
+     *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
-        return $this->profileRules($this->user()->id);
+        return [
+            'name' => $this->nameRules(),
+        ];
     }
 }

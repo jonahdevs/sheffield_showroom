@@ -36,7 +36,7 @@ const user = computed(() => page.props.auth.user);
         <Heading
             variant="small"
             title="Profile"
-            description="Update your name and email address"
+            description="Update your name"
         />
 
         <Form
@@ -58,19 +58,23 @@ const user = computed(() => page.props.auth.user);
                 <InputError class="mt-2" :message="errors.name" />
             </div>
 
+            <!-- Read-only: the email address is an access credential, so
+                 only an administrator can change it. -->
             <div class="grid gap-2">
                 <Label for="email">Email address</Label>
                 <Input
                     id="email"
                     type="email"
                     class="mt-1 block w-full"
-                    name="email"
                     :default-value="user.email"
-                    required
-                    autocomplete="username"
-                    placeholder="Email address"
+                    disabled
+                    readonly
+                    aria-describedby="email-description"
                 />
-                <InputError class="mt-2" :message="errors.email" />
+                <p id="email-description" class="text-sm text-muted-foreground">
+                    Your email address cannot be changed here. Contact an
+                    administrator to have it updated.
+                </p>
             </div>
 
             <div v-if="page.props.mustVerifyEmail && !user.email_verified_at">

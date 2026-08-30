@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\VisitController;
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
@@ -156,6 +157,24 @@ Route::middleware(['auth', 'verified'])
                 ->middleware('permission:roles.assign')
                 ->name('users.roles.update');
         });
+
+        // ---------------------------------------------------------------
+        // Users
+        // ---------------------------------------------------------------
+
+        /* No index of its own: the Roles screen already lists every account
+           with the roles it holds, and these are the two links off it. */
+        Route::controller(UserController::class)
+            ->prefix('users')
+            ->name('users.')
+            ->group(function () {
+                /* `create` before `{user}`, or the wildcard swallows it. */
+                Route::get('create', 'create')->middleware('permission:users.create')->name('create');
+                Route::get('{user}/edit', 'edit')->middleware('permission:users.update')->name('edit');
+
+                Route::post('/', 'store')->middleware('permission:users.create')->name('store');
+                Route::patch('{user}', 'update')->middleware('permission:users.update')->name('update');
+            });
     });
 
 require __DIR__.'/settings.php';

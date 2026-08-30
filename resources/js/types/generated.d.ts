@@ -141,6 +141,15 @@ declare namespace App {
             roles: string[];
             is_self: boolean;
         };
+        export type UserFormData = {
+            id: number;
+            name: string;
+            email: string;
+            roles: string[];
+            role_ids: number[];
+            permissions: string[];
+            is_self: boolean;
+        };
         export type VisitFormData = {
             id: number;
             customer_id: number;

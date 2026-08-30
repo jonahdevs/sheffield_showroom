@@ -27,14 +27,13 @@ class ProfileController extends Controller
 
     /**
      * Update the user's profile information.
+     *
+     * The email address is absent from the validated payload: it is an
+     * access credential an administrator owns, not a profile field.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $request->user()->fill($request->validated());
-
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
-        }
 
         $request->user()->save();
 
