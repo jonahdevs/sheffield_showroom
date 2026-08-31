@@ -43,7 +43,7 @@ it('hangs each visit on the customer whose record the note was written on', func
     $visit = Visit::query()->where('legacy_id', 9)->sole();
 
     expect($visit->customer->name)->toBe('Isaac')
-        ->and($visit->customer->phone)->toBe('0728912898')
+        ->and($visit->customer->phone)->toBe('+254728912898')
         ->and($visit->customer->legacy_id)->toBe(9)
         ->and($visit->notes)->toBe("Service of equipment\nGirraj dealt with them");
 });

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\VisitController;
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
@@ -112,9 +113,14 @@ Route::middleware(['auth', 'verified'])
                 Route::get('/', 'index')->middleware('permission:products.view.any')->name('index');
 
                 /* Pulling the catalogue both adds and rewrites rows, so it
-                   needs the permissions for both. */
+                   needs the permissions for both - and `permission:` reads a
+                   pipe as "any of these", so the conjunction is two middleware
+                   in a row rather than one directive. Written as a pipe this
+                   said the opposite of what it meant, and let somebody holding
+                   only one of the two past a gate the controller then closed.
+                   `ProductController::sync` still authorizes both. */
                 Route::post('sync', 'sync')
-                    ->middleware('permission:products.create|products.update')
+                    ->middleware(['permission:products.create', 'permission:products.update'])
                     ->name('sync');
 
                 /* `create` before `{product}`, or the wildcard swallows it. */
@@ -152,10 +158,50 @@ Route::middleware(['auth', 'verified'])
                 Route::delete('{role}', 'destroy')->middleware('permission:roles.delete')->name('destroy');
             });
 
+            /* Staffing a role stays with the roles controller and keeps its
+               address under `users`, because that is where the screen puts it:
+               the list of people sits on the Roles page, under the roles they
+               hold. Registered before the users group below only so the two
+               halves of `admin.users.*` read together; `{user}/roles` is
+               literal past the wildcard either way. */
             Route::patch('users/{user}/roles', 'assign')
                 ->middleware('permission:roles.assign')
                 ->name('users.roles.update');
         });
+
+        // ---------------------------------------------------------------
+        // Users
+        // ---------------------------------------------------------------
+
+        Route::controller(UserController::class)
+            ->prefix('users')
+            ->name('users.')
+            ->group(function () {
+                /* `create` before `{user}`, or the wildcard swallows it. */
+                Route::get('create', 'create')->middleware('permission:users.create')->name('create');
+                Route::post('/', 'store')->middleware('permission:users.create')->name('store');
+
+                Route::middleware('permission:users.update')->group(function () {
+                    Route::get('{user}/edit', 'edit')->name('edit');
+                    Route::patch('{user}', 'update')->name('update');
+
+                    /* Setting a password is not a field on the form above: it
+                       is the one write here that cannot be undone by typing
+                       the old value back, so it gets its own address, its own
+                       request and its own confirmation. The permission is the
+                       same one, because anybody who can change the email a
+                       reset would go to already owns the account. */
+                    Route::put('{user}/password', 'password')->name('password.update');
+                });
+
+                /* Its own permission rather than `users.update`. A direct
+                   grant is the one thing on this screen that shows up nowhere
+                   on the Roles page, so it is handed out deliberately instead
+                   of arriving with the right to correct a spelling. */
+                Route::patch('{user}/permissions', 'permissions')
+                    ->middleware('permission:users.permissions')
+                    ->name('permissions.update');
+            });
     });
 
 require __DIR__.'/settings.php';

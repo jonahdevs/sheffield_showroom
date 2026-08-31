@@ -80,7 +80,34 @@ enum Permission: string
 
     case UsersViewAny = 'users.view.any';
     case UsersCreate = 'users.create';
+
+    /* The account itself: name, email, and the password behind it. Setting
+       somebody's password is the same trust as owning their login, so it sits
+       under this rather than earning a permission of its own - anyone allowed
+       to change the email a reset goes to already holds the account. */
     case UsersUpdate = 'users.update';
+
+    /* Granting a capability to one person rather than to the job they do.
+       Kept apart from `users.update` because it is the one grant that does not
+       show up on the Roles screen: whoever holds this can leave an ability
+       attached to an account after the role behind it is taken away, so it is
+       handed out on purpose rather than as a side effect of editing a name. */
+    case UsersPermissions = 'users.permissions';
+
+    // =========================================================================
+    // Your own account
+    // =========================================================================
+
+    /* Moving the address your own account signs in at.
+
+       Off by default, and the only permission here that is about yourself
+       rather than about somebody else. The address is where a password reset
+       lands, so an account that can move it can be handed to whoever is
+       sitting at an unlocked laptop - which is why changing one is normally an
+       administrator's job on the Users screen. A showroom that would rather
+       let its staff correct their own typo grants this to a role and gets that
+       back, without also handing out `users.update` over everybody else. */
+    case ProfileEmailUpdate = 'profile.email.update';
 
     /**
      * The domain this permission belongs to, used to group the permission matrix.

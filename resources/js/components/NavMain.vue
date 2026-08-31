@@ -19,6 +19,22 @@ withDefaults(
 );
 
 const { isCurrentOrParentUrl } = useCurrentUrl();
+
+/**
+ * Whether this row is the one you are under.
+ *
+ * `isCurrentOrParentUrl` already holds the highlight down a section, so a
+ * create or edit form does not put the rail out. What it cannot know is that a
+ * row sometimes leads to screens filed elsewhere - the accounts under
+ * `/admin/users` are reached from Roles, because that is where the list of
+ * people lives - so an item may name those sections itself.
+ */
+function isActive(item: NavItem): boolean {
+    return (
+        isCurrentOrParentUrl(item.href) ||
+        (item.activeFor ?? []).some((section) => isCurrentOrParentUrl(section))
+    );
+}
 </script>
 
 <template>
@@ -28,7 +44,7 @@ const { isCurrentOrParentUrl } = useCurrentUrl();
             <SidebarMenuItem v-for="item in items" :key="item.title">
                 <SidebarMenuButton
                     as-child
-                    :is-active="isCurrentOrParentUrl(item.href)"
+                    :is-active="isActive(item)"
                     :tooltip="item.title"
                 >
                     <Link :href="item.href">

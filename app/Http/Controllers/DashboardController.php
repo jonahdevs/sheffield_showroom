@@ -165,27 +165,35 @@ class DashboardController extends Controller
             DashboardStatData::compare('visits', 'Total visits', $now['visits'], $before['visits']),
             DashboardStatData::compare('customers', 'Unique customers', $now['customers'], $before['customers']),
             DashboardStatData::compare('new_customers', 'New customers', $now['new_customers'], $before['new_customers']),
-            DashboardStatData::compare('returning_customers', 'Returning customers', $now['returning_customers'], $before['returning_customers']),
             DashboardStatData::compare('product_interests', 'Products interested in', $now['product_interests'], $before['product_interests']),
         ];
     }
 
     /**
-     * @return array{visits: int, customers: int, new_customers: int, returning_customers: int, product_interests: int}
+     * @return array{visits: int, customers: int, new_customers: int, product_interests: int}
      */
     private function totals(User $viewer, DashboardRangeData $range): array
     {
-        $customers = $this->within($viewer, $range)->distinct()->count('visits.customer_id');
-        $new = $this->newCustomers($viewer, $range);
+        /* Both in one round trip. They read the same rows behind the same
+           filter - the visits, and the people behind them - and forty visits
+           from twenty-five people is a different floor than forty from
+           thirty-nine, so the pair is the answer rather than two answers. */
+        $counted = $this->within($viewer, $range)
+            ->selectRaw('COUNT(*) AS visits')
+            ->selectRaw('COUNT(DISTINCT visits.customer_id) AS customers')
+            ->first();
 
         return [
-            'visits' => $this->within($viewer, $range)->count(),
-            'customers' => $customers,
-            'new_customers' => $new,
-            /* Derived rather than queried: the two halves have to add up to
-               the unique count, and asking the database twice is how they end
-               up not doing. */
-            'returning_customers' => $customers - $new,
+            'visits' => (int) ($counted?->visits ?? 0),
+            'customers' => (int) ($counted?->customers ?? 0),
+
+            /* How many of those had never been before. There is deliberately
+               no returning figure beside it - it would be this subtracted
+               from the count above, which is the tile immediately to its
+               left, and a row that carries a total and both its halves is
+               three numbers doing two numbers' work. */
+            'new_customers' => $this->newCustomers($viewer, $range),
+
             'product_interests' => $this->productInterests($viewer, $range),
         ];
     }

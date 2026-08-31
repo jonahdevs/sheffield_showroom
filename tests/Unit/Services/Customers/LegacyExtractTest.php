@@ -119,20 +119,36 @@ it('treats an unrecognised customer type as an individual', function () {
 it('strips the leading apostrophe a spreadsheet left on a phone number', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['phone_primary' => "'0705745046"]));
 
-    expect($row['phone'])->toBe('0705745046');
+    expect($row['phone'])->toBe('+254705745046');
 });
 
-it('keeps a phone number in the shape it was written', function (string $phone) {
+/**
+ * One shape for every number, the one `PhoneInput` writes: a plus, a country
+ * code, and the subscriber number. A row that keeps its trunk zero opens that
+ * box on the wrong country.
+ */
+it('writes a phone number the way the form stores one', function (string $phone, string $expected) {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['phone_primary' => $phone]));
 
-    expect($row['phone'])->toBe($phone);
+    expect($row['phone'])->toBe($expected);
 })->with([
-    'Kenyan mobile' => '0722000111',
-    'Kenyan landline' => '0202000111',
-    'spaced' => '0722 000 111',
-    'Uganda' => '+256775879264',
-    'United Kingdom' => '+447771894871',
-    'Netherlands' => '+31624570166',
+    'Kenyan mobile' => ['0722000111', '+254722000111'],
+    /* The newer Kenyan mobile range, seven rows of the extract. */
+    'Kenyan mobile on the 01 range' => ['0110000111', '+254110000111'],
+    'Kenyan landline' => ['0202000111', '+254202000111'],
+    'spaced' => ['0722 000 111', '+254722000111'],
+    'hyphenated' => ['0722-000-111', '+254722000111'],
+    /* Typed without the trunk zero, which one row in the extract is. */
+    'bare national' => ['704320865', '+254704320865'],
+    /* Already says where it is from, so it is left saying it. */
+    'Uganda' => ['+256775879264', '+256775879264'],
+    'Uganda without the plus' => ['256772501996', '+256772501996'],
+    'United Kingdom' => ['+447771894871', '+447771894871'],
+    'Netherlands' => ['+31624570166', '+31624570166'],
+    'already Kenyan' => ['+254722000111', '+254722000111'],
+    /* `00` is the older way of writing the plus, so the country code that
+       follows it is not given a second one. */
+    'international prefix' => ['00254722000111', '+254722000111'],
 ]);
 
 it('skips a row whose phone column is not a number', function (string $phone) {
@@ -149,10 +165,16 @@ it('skips a row whose phone column is not a number', function (string $phone) {
     'eight digits' => '07220001',
 ]);
 
+/**
+ * Nine digits is the floor, and one row of the extract sits on it - a `07`
+ * number a digit short. It is kept rather than judged: the transform is
+ * mechanical, and a short number somebody can see and correct is better than
+ * a customer silently dropped.
+ */
 it('keeps a nine digit number', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['phone_primary' => '071308438']));
 
-    expect($row['phone'])->toBe('071308438');
+    expect($row['phone'])->toBe('+25471308438');
 });
 
 it('keeps an email address only when it is one', function (string $email, ?string $expected) {

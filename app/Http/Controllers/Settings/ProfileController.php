@@ -27,11 +27,19 @@ class ProfileController extends Controller
 
     /**
      * Update the user's profile information.
+     *
+     * An email only arrives here when the account holds
+     * `profile.email.update`; without it the request never validates the field
+     * and `validated()` cannot carry one, so the address is left where it is.
+     * The un-verifying below is therefore only ever reached by somebody
+     * allowed to move it.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $request->user()->fill($request->validated());
 
+        /* An address nobody has been shown to reach yet is not a verified one
+           - the same rule the Users screen holds. */
         if ($request->user()->isDirty('email')) {
             $request->user()->email_verified_at = null;
         }

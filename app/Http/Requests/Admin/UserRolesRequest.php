@@ -40,12 +40,20 @@ class UserRolesRequest extends FormRequest
     {
         return [
             function (Validator $validator) {
+                /* Super admin is named rather than read off its rows:
+                   `Gate::before` hands that role every ability while it may
+                   hold no permission row at all, so a subset test against the
+                   database says it grants nothing and anybody with
+                   `roles.assign` could hand it out. */
                 $beyondReach = Role::query()
                     ->whereIn('name', (array) $this->input('roles', []))
                     ->with('permissions:id,name')
                     ->get()
-                    ->filter(fn (Role $role) => $role->permissions
-                        ->contains(fn ($permission) => $this->user()->cannot($permission->name)))
+                    ->filter(fn (Role $role) => $role->isSuperAdmin()
+                        ? ! $this->user()->hasRole(Role::SUPER_ADMIN)
+                        : $role->permissions->contains(
+                            fn ($permission) => $this->user()->cannot($permission->name),
+                        ))
                     ->pluck('name')
                     ->all();
 

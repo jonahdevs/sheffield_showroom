@@ -16,7 +16,6 @@ import PageSizeSelect from '@/components/PageSizeSelect.vue';
 import TablePagination from '@/components/TablePagination.vue';
 import type { Paginator } from '@/components/TablePagination.vue';
 import TableSkeleton from '@/components/TableSkeleton.vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -33,6 +32,7 @@ import {
     InputGroupInput,
 } from '@/components/ui/input-group';
 import { useFilters } from '@/composables/useFilters';
+import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
 import {
     create,
@@ -121,21 +121,12 @@ function sendImport() {
     });
 }
 
-const deleting = ref<App.Data.CustomerRowData | null>(null);
-
-function confirmDelete() {
-    const customer = deleting.value;
-
-    if (customer === null) {
+async function removeCustomer(customer: App.Data.CustomerRowData) {
+    if (!(await confirmDelete())) {
         return;
     }
 
-    router.delete(destroy(customer.id).url, {
-        preserveScroll: true,
-        onSuccess: () => {
-            deleting.value = null;
-        },
-    });
+    router.delete(destroy(customer.id).url, { preserveScroll: true });
 }
 
 defineOptions({
@@ -414,7 +405,7 @@ defineOptions({
                                     class="text-destructive hover:text-destructive"
                                     :aria-label="`Remove ${customer.display_name}`"
                                     :data-test="`delete-${customer.id}`"
-                                    @click="deleting = customer"
+                                    @click="removeCustomer(customer)"
                                 >
                                     <Trash2 />
                                 </Button>
@@ -519,44 +510,6 @@ defineOptions({
                     @click="sendImport"
                 >
                     {{ importForm.processing ? 'Importing...' : 'Import' }}
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
-
-    <Dialog
-        :open="deleting !== null"
-        @update:open="!$event && (deleting = null)"
-    >
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>
-                    Remove {{ deleting?.display_name }}?
-                </DialogTitle>
-                <DialogDescription>
-                    They come off the customer list. Nothing they are already
-                    attached to is lost, and the record can be brought back.
-                </DialogDescription>
-            </DialogHeader>
-
-            <div
-                class="flex flex-col gap-1.5 rounded-lg bg-muted/60 p-3.5 text-xs"
-            >
-                <span class="font-bold">{{ deleting?.display_name }}</span>
-                <span class="text-faint">{{ deleting?.phone }}</span>
-                <Badge variant="secondary" class="mt-1 w-fit">
-                    {{ deleting?.type_label }}
-                </Badge>
-            </div>
-
-            <DialogFooter>
-                <Button variant="quiet" @click="deleting = null">Cancel</Button>
-                <Button
-                    variant="destructive"
-                    data-test="confirm-delete-customer"
-                    @click="confirmDelete"
-                >
-                    Remove customer
                 </Button>
             </DialogFooter>
         </DialogContent>

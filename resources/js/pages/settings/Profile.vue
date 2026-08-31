@@ -9,6 +9,7 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { usePermissions } from '@/composables/usePermissions';
 import { edit } from '@/routes/profile';
 import { send } from '@/routes/verification';
 
@@ -25,6 +26,16 @@ defineOptions({
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
+
+const { can } = usePermissions();
+
+/*
+ * Off unless a role hands it over. The address is where a sign-in is made and
+ * where a reset would land, so moving it is normally an administrator's job on
+ * the Users screen - a showroom that would rather let its staff fix their own
+ * typo grants `profile.email.update` and this becomes a field again.
+ */
+const canUpdateEmail = computed(() => can('profile.email.update'));
 </script>
 
 <template>
@@ -36,7 +47,11 @@ const user = computed(() => page.props.auth.user);
         <Heading
             variant="small"
             title="Profile"
-            description="Update your name and email address"
+            :description="
+                canUpdateEmail
+                    ? 'Update your name and email address'
+                    : 'Update your name'
+            "
         />
 
         <Form
@@ -58,19 +73,38 @@ const user = computed(() => page.props.auth.user);
                 <InputError class="mt-2" :message="errors.name" />
             </div>
 
+            <!--
+              A field or a fact, by whether the account is trusted to move it.
+              Disabled rather than hidden: knowing which address you sign in
+              with is worth reading even when it is not yours to change, and a
+              disabled input posts nothing, so the name never reaches the
+              server at all.
+            -->
             <div class="grid gap-2">
                 <Label for="email">Email address</Label>
                 <Input
                     id="email"
                     type="email"
                     class="mt-1 block w-full"
-                    name="email"
+                    :name="canUpdateEmail ? 'email' : undefined"
                     :default-value="user.email"
-                    required
+                    :disabled="!canUpdateEmail"
+                    :required="canUpdateEmail"
                     autocomplete="username"
                     placeholder="Email address"
+                    :data-test="
+                        canUpdateEmail ? 'field-email' : 'email-read-only'
+                    "
                 />
-                <InputError class="mt-2" :message="errors.email" />
+                <InputError
+                    v-if="canUpdateEmail"
+                    class="mt-2"
+                    :message="errors.email"
+                />
+                <p v-else class="text-sm text-muted-foreground">
+                    Ask an administrator to change this. It is the address you
+                    sign in with, so it is not yours to move.
+                </p>
             </div>
 
             <div v-if="page.props.mustVerifyEmail && !user.email_verified_at">

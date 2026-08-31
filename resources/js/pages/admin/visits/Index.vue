@@ -15,7 +15,6 @@ import {
     UserRound,
 } from '@lucide/vue';
 import type { Component } from 'vue';
-import { ref } from 'vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
 import StatTile from '@/components/StatTile.vue';
@@ -24,14 +23,6 @@ import type { Paginator } from '@/components/TablePagination.vue';
 import TableSkeleton from '@/components/TableSkeleton.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
 import {
     InputGroup,
     InputGroupAddon,
@@ -46,6 +37,7 @@ import {
 } from '@/components/ui/select';
 import { CHART_PALETTE } from '@/composables/useChartTheme';
 import { useFilters } from '@/composables/useFilters';
+import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
 import {
     create,
@@ -65,7 +57,6 @@ const props = defineProps<{
     purposes: { value: string; label: string }[];
     page_sizes: number[];
     formats: string[];
-    total: number;
     /* How busy the floor has been, unaffected by the search and the purpose
        filter - see the controller's `stats()` for why. */
     stats: App.Data.DashboardStatData[];
@@ -134,21 +125,12 @@ function tile(key: string) {
     );
 }
 
-const deleting = ref<App.Data.VisitRowData | null>(null);
-
-function confirmDelete() {
-    const visit = deleting.value;
-
-    if (visit === null) {
+async function removeVisit(visit: App.Data.VisitRowData) {
+    if (!(await confirmDelete())) {
         return;
     }
 
-    router.delete(destroy(visit.id).url, {
-        preserveScroll: true,
-        onSuccess: () => {
-            deleting.value = null;
-        },
-    });
+    router.delete(destroy(visit.id).url, { preserveScroll: true });
 }
 
 defineOptions({
@@ -450,7 +432,7 @@ defineOptions({
                                     class="text-destructive hover:text-destructive"
                                     :aria-label="`Remove the visit by ${visit.customer_name}`"
                                     :data-test="`delete-${visit.id}`"
-                                    @click="deleting = visit"
+                                    @click="removeVisit(visit)"
                                 >
                                     <Trash2 />
                                 </Button>
@@ -472,41 +454,4 @@ defineOptions({
             </template>
         </Card>
     </div>
-
-    <Dialog
-        :open="deleting !== null"
-        @update:open="!$event && (deleting = null)"
-    >
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Remove this visit?</DialogTitle>
-                <DialogDescription>
-                    It comes off the log and out of the counts behind it. The
-                    customer and the products it names are untouched, and the
-                    record can be brought back.
-                </DialogDescription>
-            </DialogHeader>
-
-            <div
-                class="flex flex-col gap-1.5 rounded-lg bg-muted/60 p-3.5 text-xs"
-            >
-                <span class="font-bold">{{ deleting?.customer_name }}</span>
-                <span class="text-faint">
-                    {{ deleting?.purpose_label }} -
-                    {{ deleting?.visited_on }} at {{ deleting?.visited_time }}
-                </span>
-            </div>
-
-            <DialogFooter>
-                <Button variant="quiet" @click="deleting = null">Cancel</Button>
-                <Button
-                    variant="destructive"
-                    data-test="confirm-delete-visit"
-                    @click="confirmDelete"
-                >
-                    Remove visit
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
 </template>

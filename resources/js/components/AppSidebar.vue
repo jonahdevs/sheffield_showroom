@@ -84,6 +84,12 @@ const adminNavItems = computed<NavItem[]>(() =>
                   title: 'Roles',
                   href: rolesIndex(),
                   icon: Shield,
+                  /* The accounts are filed under `/admin/users` but reached
+                     from here, so this row stays lit while one is open. A
+                     literal path rather than a route function because there
+                     is no users index to name - the list of people is a panel
+                     on the Roles screen, not a page of its own. */
+                  activeFor: ['/admin/users'],
               },
               {
                   title: 'Permissions',

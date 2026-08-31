@@ -4,7 +4,6 @@ import {
     ArrowRight,
     ImageOff,
     Package,
-    Repeat,
     UserRound,
     UserRoundPlus,
     Users,
@@ -89,14 +88,13 @@ const { theme } = useChartTheme();
  * The icon and wash each figure wears.
  *
  * Coloured off the same palette the donuts spend, so the row belongs to the
- * page rather than being five tiles that happen to be near it. Keyed by the
+ * page rather than being four tiles that happen to be near it. Keyed by the
  * server's `key` so an added figure is a line here and not a rewrite.
  */
 const TILES: Record<string, { icon: Component; colour: string }> = {
     visits: { icon: Users, colour: CHART_PALETTE[0] },
     customers: { icon: UserRound, colour: CHART_PALETTE[1] },
     new_customers: { icon: UserRoundPlus, colour: CHART_PALETTE[2] },
-    returning_customers: { icon: Repeat, colour: CHART_PALETTE[4] },
     product_interests: { icon: Package, colour: CHART_PALETTE[3] },
 };
 
@@ -265,9 +263,9 @@ function barWidth(visits: number): string {
             :class="processing ? 'opacity-60' : ''"
             :aria-busy="processing"
         >
-            <div
-                class="grid gap-4 @lg/page:grid-cols-2 @3xl/page:grid-cols-3 @5xl/page:grid-cols-5"
-            >
+            <!-- Two then four: four tiles halve evenly, so there is no width
+                 at which the row ends on an orphan. -->
+            <div class="grid gap-4 @lg/page:grid-cols-2 @3xl/page:grid-cols-4">
                 <StatTile
                     v-for="stat in props.stats"
                     :key="stat.key"

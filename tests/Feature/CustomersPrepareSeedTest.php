@@ -20,7 +20,7 @@ it('writes the rows the seeder reads', function () {
         ->toHaveCount(1)
         ->and(json_decode((string) file_get_contents($output), true)[0])
         ->name->toBe('Wanjiru Kamau')
-        ->phone->toBe('0722000111');
+        ->phone->toBe('+254722000111');
 
     unlink($source);
     unlink($output);

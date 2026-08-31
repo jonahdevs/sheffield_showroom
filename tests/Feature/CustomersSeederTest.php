@@ -92,7 +92,9 @@ it('imports a company with its company columns filled in', function () {
         'name' => 'ISABELLA MUTHONI',
         'company_name' => 'ASAI TREATS',
         'industry' => 'BAKERIES',
-        'phone' => '0746211877',
+        /* Written `0746211877` in the extract, stored the way the form
+           stores one - see `LegacyExtract::phone`. */
+        'phone' => '+254746211877',
         'email' => 'asaitreatske@gmail.com',
         'city' => 'KAREN',
         'country' => 'Kenya',

@@ -102,6 +102,7 @@ declare namespace App {
             group: string;
             group_label: string;
             roles: string[];
+            users: string[];
         };
         export type ProductData = {
             id: number;
@@ -139,6 +140,16 @@ declare namespace App {
             name: string;
             email: string;
             roles: string[];
+            is_self: boolean;
+            direct_permissions: number;
+            is_manageable: boolean;
+        };
+        export type UserFormData = {
+            id: number;
+            name: string;
+            email: string;
+            roles: string[];
+            permissions: string[];
             is_self: boolean;
         };
         export type VisitFormData = {
@@ -216,7 +227,9 @@ declare namespace App {
             | 'roles.assign'
             | 'users.view.any'
             | 'users.create'
-            | 'users.update';
+            | 'users.update'
+            | 'users.permissions'
+            | 'profile.email.update';
         export type ProductSource = 'manual' | 'website';
         export type ProductStatus =
             'draft' | 'published' | 'inactive' | 'archived';

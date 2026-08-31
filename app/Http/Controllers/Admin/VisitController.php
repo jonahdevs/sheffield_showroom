@@ -71,7 +71,6 @@ class VisitController extends Controller
             /* Only the formats this host can actually produce - see
                `ExportResponse::available()`. */
             'formats' => ExportResponse::available(),
-            'total' => $this->visible($viewer)->count(),
             'stats' => $this->stats($viewer),
             /* A salesperson sees their own visits; saying so stops the list
                reading as though the showroom had a quiet week. */
