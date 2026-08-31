@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Rewards;
 
+use App\Enums\PoolEntryStatus;
 use App\Enums\ShuffleSessionStatus;
+use App\Models\CampaignReward;
 use App\Models\Purchase;
 use App\Models\RewardCampaign;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Whether a purchase has earned somebody a turn.
@@ -93,7 +96,72 @@ class RewardEligibilityService
             return 'Every reward in this campaign has been won.';
         }
 
+        /* Last, and only when something is paired. Everything above is about
+           the sale; this is about what is left that this particular sale can
+           win, which is a different question and a more expensive one. */
+        if ($this->availableCountFor($campaign, $purchase->product_id) === 0) {
+            return $purchase->product_id === null
+                ? 'The rewards left in this campaign are all paired to a product, and no product was recorded on this purchase.'
+                : 'Nothing left in this campaign is paired with what this customer bought.';
+        }
+
         return null;
+    }
+
+    /**
+     * The attachments in this campaign that a purchase of this product is in
+     * the running for.
+     *
+     * A reward naming no products qualifies against anything - that is the
+     * common case and the reason pairing is opt-in. A reward that does name
+     * products is in the running only for the ones it named, so a purchase
+     * with nothing recorded on it wins only from the unpaired set.
+     *
+     * One query, and deliberately separate from the claim. `ShuffleRewardService`
+     * calls this before it opens its locking statement so that statement stays
+     * one table and one index - see `.ai/rules/rewards.md`.
+     *
+     * @return array<int, int>
+     */
+    public function qualifyingRewardIds(RewardCampaign $campaign, ?int $productId): array
+    {
+        return CampaignReward::query()
+            ->where('campaign_id', $campaign->id)
+            ->where('is_active', true)
+            ->where(function (Builder $query) use ($productId): void {
+                $query->whereDoesntHave('qualifyingProducts');
+
+                if ($productId !== null) {
+                    $query->orWhereHas(
+                        'qualifyingProducts',
+                        fn (Builder $products) => $products->whereKey($productId),
+                    );
+                }
+            })
+            ->pluck('id')
+            ->map(fn (int|string $id): int => (int) $id)
+            ->all();
+    }
+
+    /**
+     * How many units this purchase could actually win.
+     *
+     * Not the same as `RewardCampaign::availableCount()`, which counts the
+     * whole drawer. A campaign can be full of trays and have nothing at all
+     * for somebody who did not buy an oven.
+     */
+    public function availableCountFor(RewardCampaign $campaign, ?int $productId): int
+    {
+        $rewardIds = $this->qualifyingRewardIds($campaign, $productId);
+
+        if ($rewardIds === []) {
+            return 0;
+        }
+
+        return $campaign->poolEntries()
+            ->where('status', PoolEntryStatus::Available)
+            ->whereIn('campaign_reward_id', $rewardIds)
+            ->count();
     }
 
     /** Whether a turn can be minted for this purchase. */

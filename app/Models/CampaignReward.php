@@ -5,32 +5,32 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\PoolEntryStatus;
-use App\Enums\RewardType;
-use App\Enums\RewardValueUnit;
 use Carbon\CarbonImmutable;
 use Database\Factories\CampaignRewardFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 /**
- * One kind of reward inside a campaign, and how many of it exist.
+ * One catalogue reward put into one campaign, and how many of it exist.
  *
- * A definition rather than a reward. `quantity` is what was loaded and never
- * falls; what is left is counted off the pool, because that is the only place
- * that can answer it correctly while somebody is claiming a row.
+ * An attachment rather than a reward. What the thing is belongs to `Reward`
+ * and is not repeated here; this row carries only what the campaign decides -
+ * `quantity`, `validity_days`, whether it is switched on, and which products
+ * a customer must have bought to be in the running for it.
+ *
+ * `quantity` is what was loaded and never falls; what is left is counted off
+ * the pool, because that is the only place that can answer it correctly while
+ * somebody is claiming a row.
  *
  * @property int $id
  * @property int $campaign_id
- * @property string $name
- * @property string|null $description
- * @property RewardType $type
- * @property string|null $value
- * @property RewardValueUnit|null $value_unit
+ * @property int $reward_id
  * @property int $quantity
  * @property int|null $validity_days
- * @property string|null $terms
  * @property bool $is_active
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
@@ -42,14 +42,9 @@ class CampaignReward extends Model
 
     protected $fillable = [
         'campaign_id',
-        'name',
-        'description',
-        'type',
-        'value',
-        'value_unit',
+        'reward_id',
         'quantity',
         'validity_days',
-        'terms',
         'is_active',
     ];
 
@@ -59,9 +54,6 @@ class CampaignReward extends Model
     protected function casts(): array
     {
         return [
-            'type' => RewardType::class,
-            'value' => 'decimal:2',
-            'value_unit' => RewardValueUnit::class,
             'quantity' => 'integer',
             'validity_days' => 'integer',
             'is_active' => 'boolean',
@@ -77,6 +69,30 @@ class CampaignReward extends Model
     }
 
     /**
+     * What is being handed out. Everything readable about this attachment -
+     * its name, type, worth and terms - is read through here.
+     *
+     * @return BelongsTo<Reward, $this>
+     */
+    public function reward(): BelongsTo
+    {
+        return $this->belongsTo(Reward::class);
+    }
+
+    /**
+     * What somebody has to have bought to be in the running for this.
+     *
+     * Empty is the common case and means any purchase qualifies - see
+     * `campaign_reward_product`. A pairing is the exception, not the rule.
+     *
+     * @return BelongsToMany<Product, $this>
+     */
+    public function qualifyingProducts(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'campaign_reward_product');
+    }
+
+    /**
      * @return HasMany<RewardPoolEntry, $this>
      */
     public function poolEntries(): HasMany
@@ -85,18 +101,29 @@ class CampaignReward extends Model
     }
 
     /**
-     * The number on the card as somebody reads it: "10%" rather than "10".
+     * Whether a purchase of this product would be in the running for this
+     * reward.
      *
-     * Null when the reward carries no figure, which is most of them - a free
-     * kitchen audit is worth what its terms say it is.
+     * A reward that names no products qualifies against anything, which is
+     * what makes pairing an opt-in rather than something every campaign has to
+     * remember to switch off.
+     *
+     * Reads the loaded relation where there is one, so checking a campaign's
+     * whole set costs one query rather than one per reward.
      */
-    public function readableValue(): ?string
+    public function qualifiesFor(?int $productId): bool
     {
-        if ($this->value === null || $this->value_unit === null) {
-            return null;
+        /** @var Collection<int, Product> $named */
+        $named = $this->relationLoaded('qualifyingProducts')
+            ? $this->qualifyingProducts
+            : $this->qualifyingProducts()->get();
+
+        if ($named->isEmpty()) {
+            return true;
         }
 
-        return $this->value_unit->format((float) $this->value);
+        return $productId !== null
+            && $named->contains(fn (Product $product): bool => $product->id === $productId);
     }
 
     /** How many units of this reward are still there to be won. */

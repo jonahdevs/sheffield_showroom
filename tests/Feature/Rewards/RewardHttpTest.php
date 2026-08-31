@@ -5,10 +5,13 @@ use App\Enums\Permission;
 use App\Enums\PurchaseStatus;
 use App\Enums\RewardResultStatus;
 use App\Enums\RewardType;
+use App\Enums\RewardValueUnit;
 use App\Enums\ShuffleSessionStatus;
 use App\Models\CampaignReward;
 use App\Models\Customer;
+use App\Models\Product;
 use App\Models\Purchase;
+use App\Models\Reward;
 use App\Models\RewardCampaign;
 use App\Models\Role;
 use App\Models\ShuffleResult;
@@ -106,14 +109,19 @@ it('refuses to mint a turn without rewards.shuffle', function () {
 it('creates a campaign with its drawer in one go', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
+    $discount = Reward::factory()->discount(10)->create();
+    $installation = Reward::factory()
+        ->ofType(RewardType::Installation, 'Free installation')
+        ->create();
+
     $this->actingAs($actor)
         ->post(route('admin.rewards.store'), [
             'name' => 'August showroom rewards',
             'max_shuffles_per_customer' => 1,
             'minimum_purchase_amount' => '100000.00',
             'rewards' => [
-                ['name' => '10% discount', 'type' => RewardType::Discount->value, 'quantity' => 20, 'value' => '10.00', 'value_unit' => 'percentage'],
-                ['name' => 'Free installation', 'type' => RewardType::Installation->value, 'quantity' => 15],
+                ['reward_id' => $discount->id, 'quantity' => 20],
+                ['reward_id' => $installation->id, 'quantity' => 15],
             ],
         ])
         ->assertSessionHasNoErrors();
@@ -124,6 +132,107 @@ it('creates a campaign with its drawer in one go', function () {
         ->and($campaign->rewards()->count())->toBe(2)
         /* Nothing is loaded until it is published. */
         ->and($campaign->poolEntries()->count())->toBe(0);
+});
+
+/**
+ * The catalogue suggests a deadline and the campaign may override it. Without
+ * the fallback a form that left the box empty would attach a reward that never
+ * lapses, which is a promise nobody meant to make.
+ */
+it('takes the validity the catalogue suggests when the form leaves it out', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
+
+    $suggests = Reward::factory()->create(['default_validity_days' => 45]);
+    $overridden = Reward::factory()->discount()->create(['default_validity_days' => 45]);
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.store'), [
+            'name' => 'Deadlines',
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $suggests->id, 'quantity' => 5],
+                ['reward_id' => $overridden->id, 'quantity' => 5, 'validity_days' => 7],
+            ],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $campaign = RewardCampaign::query()->sole();
+
+    expect($campaign->rewards()->where('reward_id', $suggests->id)->sole()->validity_days)->toBe(45)
+        ->and($campaign->rewards()->where('reward_id', $overridden->id)->sole()->validity_days)->toBe(7);
+});
+
+/**
+ * `campaign_rewards` is uniquely indexed on `(campaign_id, reward_id)`, so a
+ * form naming one reward twice would otherwise reach the database and throw.
+ */
+it('refuses the same reward twice on one campaign', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
+
+    $reward = Reward::factory()->create();
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.store'), [
+            'name' => 'Doubled up',
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $reward->id, 'quantity' => 5],
+                ['reward_id' => $reward->id, 'quantity' => 5],
+            ],
+        ])
+        ->assertSessionHasErrors('rewards.1.reward_id');
+
+    expect(RewardCampaign::query()->count())->toBe(0);
+});
+
+/**
+ * Retiring a reward stops it going into anything new. It must not lock the
+ * campaigns already carrying it, which is why the check only looks at what the
+ * form is adding.
+ */
+it('refuses to put a retired reward into a campaign', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
+
+    $retired = Reward::factory()->inactive()->create();
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.store'), [
+            'name' => 'Digging one out',
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $retired->id, 'quantity' => 5],
+            ],
+        ])
+        ->assertSessionHasErrors('rewards.0.reward_id');
+});
+
+/**
+ * Pairing is what makes "buy the oven, win the tray" possible, and it is set
+ * per campaign rather than on the reward itself.
+ */
+it('records the products a reward is paired to', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
+
+    $reward = Reward::factory()->create();
+    $oven = Product::factory()->create();
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.store'), [
+            'name' => 'Paired',
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                [
+                    'reward_id' => $reward->id,
+                    'quantity' => 5,
+                    'qualifying_product_ids' => [$oven->id],
+                ],
+            ],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $attachment = RewardCampaign::query()->sole()->rewards()->sole();
+
+    expect($attachment->qualifyingProducts->pluck('id')->all())->toBe([$oven->id]);
 });
 
 /**
@@ -142,7 +251,7 @@ it('runs an end date to the close of its day', function () {
             'starts_at' => '2026-09-01',
             'ends_at' => '2026-09-28',
             'rewards' => [
-                ['name' => 'Audit', 'type' => RewardType::KitchenAudit->value, 'quantity' => 5],
+                ['reward_id' => Reward::factory()->create()->id, 'quantity' => 5],
             ],
         ])
         ->assertSessionHasNoErrors();
@@ -166,7 +275,7 @@ it('leaves an end date alone when it already carries a time', function () {
             'max_shuffles_per_customer' => 1,
             'ends_at' => '2026-09-28 12:00:00',
             'rewards' => [
-                ['name' => 'Audit', 'type' => RewardType::KitchenAudit->value, 'quantity' => 5],
+                ['reward_id' => Reward::factory()->create()->id, 'quantity' => 5],
             ],
         ])
         ->assertSessionHasNoErrors();
@@ -187,18 +296,24 @@ it('refuses a campaign with no rewards in it', function () {
         ->assertSessionHasErrors('rewards');
 });
 
-it('refuses a figure with nothing saying how to read it', function () {
-    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
+/**
+ * A figure with no unit reads as nothing: "10" is not ten per cent and not ten
+ * shillings. The campaign form no longer carries the figure at all - it lives
+ * on the catalogue reward now - so what this holds is the other half of that
+ * rule: an unreadable figure is never printed as a bare number.
+ */
+it('shows no figure for a reward whose number has no unit', function () {
+    $ambiguous = Reward::factory()->create([
+        'type' => RewardType::Discount,
+        'value' => '10.00',
+        'value_unit' => null,
+    ]);
 
-    $this->actingAs($actor)
-        ->post(route('admin.rewards.store'), [
-            'name' => 'Ambiguous',
-            'max_shuffles_per_customer' => 1,
-            'rewards' => [
-                ['name' => 'Ten of something', 'type' => RewardType::Discount->value, 'quantity' => 5, 'value' => '10.00'],
-            ],
-        ])
-        ->assertSessionHasErrors('rewards.0.value_unit');
+    expect($ambiguous->readableValue())->toBeNull();
+
+    $ambiguous->update(['value_unit' => RewardValueUnit::Percentage]);
+
+    expect($ambiguous->fresh()->readableValue())->toBe('10%');
 });
 
 it('publishes a draft and loads the pool', function () {
@@ -233,14 +348,14 @@ it('ignores reward changes posted at a published campaign', function () {
             'name' => 'Renamed',
             'max_shuffles_per_customer' => 1,
             'rewards' => [
-                ['name' => 'Sneaky extra', 'type' => RewardType::Discount->value, 'quantity' => 500],
+                ['reward_id' => Reward::factory()->create()->id, 'quantity' => 500],
             ],
         ])
         ->assertSessionHasNoErrors();
 
     expect($campaign->refresh()->name)->toBe('Renamed')
         ->and($campaign->rewards()->count())->toBe(1)
-        ->and($campaign->rewards()->sole()->name)->toBe('Audit')
+        ->and($campaign->rewards()->sole()->reward->name)->toBe('Audit')
         ->and($campaign->poolEntries()->count())->toBe(10);
 });
 

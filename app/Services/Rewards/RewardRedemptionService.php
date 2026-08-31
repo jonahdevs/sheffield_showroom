@@ -33,7 +33,7 @@ class RewardRedemptionService
     public function find(string $code): ?ShuffleResult
     {
         return ShuffleResult::query()
-            ->with(['poolEntry.reward', 'session.customer', 'redemption.redeemer'])
+            ->with(['poolEntry.reward.reward.product:id,name', 'session.customer', 'redemption.redeemer'])
             ->where('code', $this->normalise($code))
             ->first();
     }

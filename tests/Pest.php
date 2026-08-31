@@ -3,6 +3,8 @@
 use App\Enums\CampaignStatus;
 use App\Enums\RewardType;
 use App\Models\CampaignReward;
+use App\Models\Product;
+use App\Models\Purchase;
 use App\Models\RewardCampaign;
 use App\Models\ShuffleSession;
 use App\Services\Rewards\CampaignService;
@@ -67,11 +69,46 @@ function campaignHolding(array $quantities, ?float $minimum = null): RewardCampa
     ]);
 
     foreach ($quantities as $name => $quantity) {
-        CampaignReward::factory()->quantity($quantity)->create([
-            'campaign_id' => $campaign->id,
-            'name' => $name,
-            'type' => RewardType::KitchenAudit,
-        ]);
+        /* The name is the catalogue's now, so it is set through `ofType()`
+           rather than on the attachment - the attachment only knows how many
+           there are. */
+        CampaignReward::factory()
+            ->quantity($quantity)
+            ->ofType(RewardType::KitchenAudit, $name)
+            ->create(['campaign_id' => $campaign->id]);
+    }
+
+    app(CampaignService::class)->publish($campaign);
+
+    return $campaign->refresh();
+}
+
+/**
+ * A published campaign whose rewards are paired to products.
+ *
+ * Same shape as `campaignHolding`, except each pile names the product somebody
+ * must have bought to be in the running for it. A pile mapped to `null` is
+ * left unpaired, which is what most rewards are.
+ *
+ * @param  array<string, array{0: int, 1: ?Product}>  $piles  reward name to [quantity, qualifying product]
+ */
+function campaignPairing(array $piles, ?float $minimum = null): RewardCampaign
+{
+    $campaign = RewardCampaign::factory()->create([
+        'status' => CampaignStatus::Draft,
+        'minimum_purchase_amount' => $minimum,
+    ]);
+
+    foreach ($piles as $name => [$quantity, $product]) {
+        $factory = CampaignReward::factory()
+            ->quantity($quantity)
+            ->ofType(RewardType::KitchenAudit, $name);
+
+        if ($product !== null) {
+            $factory = $factory->qualifyingFor($product);
+        }
+
+        $factory->create(['campaign_id' => $campaign->id]);
     }
 
     app(CampaignService::class)->publish($campaign);
@@ -83,4 +120,24 @@ function campaignHolding(array $quantities, ?float $minimum = null): RewardCampa
 function sessionOn(RewardCampaign $campaign): ShuffleSession
 {
     return ShuffleSession::factory()->create(['campaign_id' => $campaign->id]);
+}
+
+/**
+ * A pending turn earned by a purchase of this product.
+ *
+ * The purchase is what carries the product, and the product is what decides
+ * which paired rewards the turn can reach - so a test about pairing needs the
+ * whole chain rather than a bare session.
+ */
+function sessionForPurchaseOf(RewardCampaign $campaign, ?Product $product): ShuffleSession
+{
+    $purchase = Purchase::factory()->create([
+        'product_id' => $product?->id,
+    ]);
+
+    return ShuffleSession::factory()->create([
+        'campaign_id' => $campaign->id,
+        'customer_id' => $purchase->customer_id,
+        'purchase_id' => $purchase->id,
+    ]);
 }

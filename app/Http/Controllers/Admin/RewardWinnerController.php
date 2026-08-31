@@ -175,8 +175,11 @@ class RewardWinnerController extends Controller
             )
             ->when(
                 $filters['type'] !== '',
+                /* Through the attachment to the catalogue: what kind of thing
+                   a reward is belongs to the reward, not to the campaign's
+                   copy of how many there were. */
                 fn (Builder $query) => $query->whereHas(
-                    'poolEntry.reward',
+                    'poolEntry.reward.reward',
                     fn (Builder $reward) => $reward->where('type', $filters['type']),
                 ),
             )

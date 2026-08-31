@@ -150,6 +150,113 @@ it('gives a manager every visit on the floor', function () {
     );
 });
 
+/**
+ * Somebody whose whole job is the front desk.
+ *
+ * The role's *name* is what decides the sheet, not its permissions - see
+ * `VisitReport::forViewer()` - so this cannot go through `transferStaff()`,
+ * which invents one.
+ *
+ * @param  array<int, Permission>  $permissions
+ */
+function receptionStaff(array $permissions = [Permission::VisitsViewAny, Permission::VisitsExport]): User
+{
+    foreach (Permission::values() as $name) {
+        Spatie\Permission\Models\Permission::findOrCreate($name, 'web');
+    }
+
+    $role = Role::query()->create([
+        'name' => Role::RECEPTION,
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+
+    $role->syncPermissions(array_map(fn (Permission $case) => $case->value, $permissions));
+
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    return User::factory()->create()->assignRole($role);
+}
+
+it('hands reception the front desk sheet rather than the full log', function () {
+    Excel::fake();
+
+    Visit::factory()->for(Customer::factory())->create();
+
+    $this->actingAs(receptionStaff())
+        ->get(route('admin.visits.export'))
+        ->assertSuccessful();
+
+    Excel::assertDownloaded(
+        'reception-visits-'.now()->toDateString().'.csv',
+        fn (VisitExport $export) => $export->headings() === [
+            'Visitor name',
+            'Company',
+            'Contact',
+            'Nature of visit',
+            'Respondent',
+        ],
+    );
+});
+
+/**
+ * The notes column is the write-up of what was actually said on the floor. It
+ * is the reason the full export exists and the one column that must not follow
+ * the sheet out to the front desk.
+ */
+it('keeps the write-up off reception\'s sheet', function () {
+    Excel::fake();
+
+    $visit = Visit::factory()->for(Customer::factory())->create([
+        'notes' => 'Haggled hard on the oven; go in at 12% next time.',
+    ]);
+
+    $this->actingAs(receptionStaff())
+        ->get(route('admin.visits.export'))
+        ->assertSuccessful();
+
+    Excel::assertDownloaded(
+        'reception-visits-'.now()->toDateString().'.csv',
+        function (VisitExport $export) use ($visit): bool {
+            $printed = implode('|', array_map(strval(...), $export->map($visit)));
+
+            return ! in_array('Notes', $export->headings(), true)
+                && ! str_contains($printed, 'Haggled hard');
+        },
+    );
+});
+
+/**
+ * A wider role must never be quietly narrowed by a second one. A manager who
+ * also covers the desk keeps the log they had, or they lose the notes column
+ * with nothing on the screen to say why.
+ */
+it('leaves the full log with a manager who also covers the front desk', function () {
+    Excel::fake();
+
+    $manager = transferStaff([Permission::VisitsViewAny, Permission::VisitsExport]);
+
+    $reception = Role::query()->create([
+        'name' => Role::RECEPTION,
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+
+    $manager->assignRole($reception);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    Visit::factory()->for(Customer::factory())->create();
+
+    $this->actingAs($manager)
+        ->get(route('admin.visits.export'))
+        ->assertSuccessful();
+
+    Excel::assertDownloaded(
+        'visits-'.now()->toDateString().'.csv',
+        fn (VisitExport $export) => in_array('Notes', $export->headings(), true),
+    );
+});
+
 it('typesets the same rows the spreadsheet carries', function () {
     /* The paper format goes through a headless Chrome the CI box may not have,
        so the renderer is stood in for. What is asserted here is the wiring -

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Data\ShuffleCampaignData;
 use App\Data\ShuffleRewardData;
 use App\Exceptions\ShuffleUnavailableException;
+use App\Models\CampaignReward;
 use App\Models\ShuffleSession;
 use App\Services\Rewards\ShuffleRewardService;
 use App\Services\Rewards\ShuffleSessionService;
@@ -47,7 +48,10 @@ class ShuffleController extends Controller
     public function show(string $token): Response
     {
         $session = ShuffleSession::query()
-            ->with(['campaign.rewards', 'result.poolEntry.reward'])
+            ->with([
+                'campaign.rewards.reward',
+                'result.poolEntry.reward.reward.product:id,name',
+            ])
             ->where('token', $token)
             ->first();
 
@@ -119,12 +123,15 @@ class ShuffleController extends Controller
             'cards' => $session->campaign->rewards
                 ->where('is_active', true)
                 ->values()
-                ->map(fn ($item) => [
-                    'name' => $item->name,
-                    'type' => $item->type->value,
-                    'type_label' => $item->type->label(),
-                    'value' => $item->readableValue(),
-                    'terms' => $item->terms,
+                /* Through the attachment to the catalogue: the row on the
+                   campaign knows how many there are, and the card is drawn
+                   entirely from what the reward is. */
+                ->map(fn (CampaignReward $item) => [
+                    'name' => $item->reward->readableName(),
+                    'type' => $item->reward->type->value,
+                    'type_label' => $item->reward->type->label(),
+                    'value' => $item->reward->readableValue(),
+                    'terms' => $item->reward->terms,
                 ])
                 ->all(),
         ]);

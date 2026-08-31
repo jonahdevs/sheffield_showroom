@@ -50,6 +50,14 @@ class PurchaseRequest extends FormRequest
                 Rule::exists('visits', 'id')->whereNull('deleted_at'),
             ],
 
+            /* The main item bought, where anybody recorded one. Read only by
+               rewards paired to a product - buy the oven, win the tray - so
+               most sales leave it empty and nothing asks. */
+            'product_id' => [
+                'nullable',
+                Rule::exists('products', 'id')->whereNull('deleted_at'),
+            ],
+
             'reference' => ['nullable', 'string', 'max:255'],
 
             /* Two decimal places, matching the column. `decimal:0,2` rather

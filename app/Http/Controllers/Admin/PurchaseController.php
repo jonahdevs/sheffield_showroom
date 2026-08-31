@@ -84,6 +84,7 @@ class PurchaseController extends Controller
                 'id' => $purchase->id,
                 'customer_id' => $purchase->customer_id,
                 'visit_id' => $purchase->visit_id,
+                'product_id' => $purchase->product_id,
                 'reference' => $purchase->reference,
                 'amount' => $purchase->amount,
                 'status' => $purchase->status->value,

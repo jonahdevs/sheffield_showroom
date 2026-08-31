@@ -75,6 +75,33 @@ class RolesSeeder extends Seeder
                 ],
             ],
 
+            Role::RECEPTION => [
+                'description' => 'Signs visitors in at the front desk and reads the day off the log.',
+                'is_system' => false,
+                'permissions' => [
+                    /* The whole log rather than their own. A receptionist did
+                       not take these visits - they wrote them down as people
+                       walked in, and a front desk that could only see what it
+                       had logged itself could not tell somebody where their
+                       appointment went. */
+                    PermissionEnum::VisitsViewAny,
+                    PermissionEnum::VisitsCreate,
+
+                    /* The narrow sheet, not the full log - which is a decision
+                       about columns rather than permissions, and is made in
+                       `VisitReport::forViewer()`. */
+                    PermissionEnum::VisitsExport,
+
+                    /* A visitor who has never been in before has to be put on
+                       file before their arrival can be. Reading and adding
+                       only: correcting the book is the floor's job, and
+                       `customers.export` is deliberately absent - the contact
+                       details reception needs are on the visits sheet. */
+                    PermissionEnum::CustomersViewAny,
+                    PermissionEnum::CustomersCreate,
+                ],
+            ],
+
             'sales' => [
                 'description' => 'Logs the visits they take and reads the catalogue behind them.',
                 'is_system' => false,

@@ -15,6 +15,7 @@ use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
 use App\Enums\Permission;
 use App\Enums\VisitPurpose;
+use App\Enums\VisitReport;
 use App\Exports\VisitExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\VisitRequest;
@@ -232,11 +233,18 @@ class VisitController extends Controller
             ->orderByDesc('visited_at')
             ->orderByDesc('id');
 
+        /* Which columns, decided by the desk rather than asked for. Reception
+           presses the same button as everybody else and is handed the sheet
+           its job needs - see `VisitReport::forViewer()`. The rows are the
+           same either way: this query was filtered and authorised above, and a
+           report only ever narrows what is printed off it. */
+        $report = VisitReport::forViewer($viewer);
+
         return ExportResponse::make(
-            new VisitExport($query),
-            'visits-'.CarbonImmutable::today()->toDateString(),
+            new VisitExport($query, $report),
+            $report->basename().'-'.CarbonImmutable::today()->toDateString(),
             ExportResponse::format($request->query('format')),
-            'Visits',
+            $report->title(),
             $this->exportSubtitle($viewer, $filters),
         );
     }

@@ -9,6 +9,6 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/** | .ai/rules/js.md |
 | database/migrations/** | .ai/rules/migrations.md |
 | app/Services/Products/** | .ai/rules/products.md |
-| app/Services/Rewards/** | .ai/rules/rewards.md |
+| app/Services/Rewards/**, the reward models and their migrations | .ai/rules/rewards.md |
 | database/seeders/** | .ai/rules/seeders.md |
 | app/Services/Visits/** | .ai/rules/visits.md |

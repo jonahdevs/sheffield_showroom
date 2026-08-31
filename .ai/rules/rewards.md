@@ -1,9 +1,27 @@
 ---
 paths:
   - 'app/Services/Rewards/**'
+  - 'app/Models/{Reward,CampaignReward,RewardCampaign,RewardPoolEntry,ShuffleResult,ShuffleSession}.php'
+  - 'database/migrations/*_{rewards,campaign_rewards,campaign_reward_product,reward_pool_entries,shuffle_results,shuffle_sessions}_table.php'
 ---
 
 # Rewards
+
+## Rewards live in a catalogue; `campaign_rewards` is the attachment
+`rewards` is what the showroom can give away, described once and reused — name, type, worth, terms, and `product_id` when the reward is a thing off the floor (a tray, an accessory). `campaign_rewards` is one catalogue row put into one campaign, and carries only what a campaign decides: `quantity`, `validity_days`, `is_active`.
+
+The pivot deliberately keeps the name `campaign_rewards` and its own `id`. Every unit in `reward_pool_entries` points at a row here, the claim statement narrows by `campaign_reward_id`, and `shuffle_results.expires_at` is stamped from `campaign_rewards.validity_days` — so the load-bearing parts of the shuffle were untouched by rewards moving up into a catalogue. Do not rename this table or repoint the pool at `rewards`.
+
+`validity_days` is copied down from `rewards.default_validity_days` when the reward is attached, never read through at win time. Retuning the catalogue must not move a deadline a campaign has already promised.
+
+`reward_id` is `restrictOnDelete` and unique per campaign. A reward a campaign is handing out cannot be deleted — retire it with `rewards.is_active`, which stops it going into anything new while leaving the campaigns already holding it alone. `RewardCampaignRequest` only refuses a retired reward that is being *added*, for that reason.
+
+## Product pairing is resolved before the lock, never joined into it
+A reward may name the products that qualify for it — buy the oven, win the tray — in `campaign_reward_product`, per campaign. **A reward naming no products qualifies against any purchase**, and that silence is the common case.
+
+`ShuffleRewardService` resolves the qualifying `campaign_reward_id`s in one cheap query *before* the transaction takes any lock (`RewardEligibilityService::qualifyingRewardIds()`), then narrows the locking statement with a literal `whereIn`. Do not turn this into a join or a `whereHas` on the claim: the whole point of the denormalised `campaign_id` is that the hot statement reads one table through one index.
+
+A purchase with no `product_id` draws only from the unpaired rewards. It has not met "buy the oven", and guessing otherwise hands the tray to anybody. `purchases.product_id` is one nullable column, not line items — the sale is still an eligibility record, not a ledger.
 
 ## The reward claim is one statement, and the unique indexes are the backstop
 Claiming a reward must select and lock in the same statement — a randomised `lockForUpdate()` over `reward_pool_entries` where `campaign_id = ? and status = 'available'`. Do not follow the order in the architecture document ("lock an available entry, then randomly choose one"): locking first and choosing second lets two concurrent shuffles pick the same row.

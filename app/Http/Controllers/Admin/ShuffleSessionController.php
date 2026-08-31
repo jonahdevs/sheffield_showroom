@@ -71,7 +71,7 @@ class ShuffleSessionController extends Controller
     {
         $this->authorize('view', $session);
 
-        $session->load(['customer', 'campaign', 'result.poolEntry.reward']);
+        $session->load(['customer', 'campaign', 'result.poolEntry.reward.reward.product:id,name']);
 
         $viewer = $request->user();
 

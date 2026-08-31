@@ -40,6 +40,15 @@ class Role extends SpatieRole
 
     public const SUPER_ADMIN = 'super-admin';
 
+    /**
+     * The front desk.
+     *
+     * Named here because `VisitReport::forViewer()` reads it: the export a
+     * receptionist gets is narrower than their permissions are, so nothing
+     * about what they may do can be used to work it out.
+     */
+    public const RECEPTION = 'reception';
+
     protected function casts(): array
     {
         return [

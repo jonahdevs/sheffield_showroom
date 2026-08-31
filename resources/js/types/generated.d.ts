@@ -2,10 +2,13 @@ declare namespace App {
     namespace Data {
         export type CampaignRewardData = {
             id: number;
+            reward_id: number;
             name: string;
             description: string | null;
             type: App.Enums.RewardType;
             type_label: string;
+            product_id: number | null;
+            product_name: string | null;
             value: string | null;
             value_unit: App.Enums.RewardValueUnit | null;
             value_label: string | null;
@@ -16,6 +19,10 @@ declare namespace App {
             validity_days: number | null;
             terms: string | null;
             is_active: boolean;
+            qualifying_products: {
+                id: number;
+                name: string;
+            }[];
         };
         export type CustomerFormData = {
             id: number;
@@ -256,15 +263,6 @@ declare namespace App {
             permissions: string[];
             is_self: boolean;
         };
-        export type UserFormData = {
-            id: number;
-            name: string;
-            email: string;
-            roles: string[];
-            role_ids: number[];
-            permissions: string[];
-            is_self: boolean;
-        };
         export type VisitFormData = {
             id: number;
             customer_id: number;
@@ -367,6 +365,7 @@ declare namespace App {
             'unredeemed' | 'redeemed' | 'expired' | 'cancelled';
         export type RewardType =
             | 'discount'
+            | 'product'
             | 'drawing_layout'
             | 'kitchen_audit'
             | 'complimentary_service'
@@ -384,5 +383,6 @@ declare namespace App {
             | 'complaint'
             | 'collection'
             | 'other';
+        export type VisitReport = 'full' | 'reception';
     }
 }

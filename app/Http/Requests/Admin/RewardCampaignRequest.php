@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
-use App\Enums\RewardType;
-use App\Enums\RewardValueUnit;
+use App\Models\Reward;
 use App\Models\RewardCampaign;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -17,6 +16,11 @@ use Illuminate\Validation\Validator;
  * They arrive together because they are one decision: a promotion is its dates
  * and its drawer, and asking somebody to save a campaign and then go and fill
  * it would let them publish an empty one by forgetting.
+ *
+ * What arrives under `rewards` is a list of attachments, not descriptions. A
+ * reward is written once in the catalogue and chosen here by its id, so this
+ * form decides only how many, for how long, and what somebody must have bought
+ * to be in the running - never what the thing is.
  *
  * The important rule here is what happens after publication. A published
  * campaign's quantities are controlled inventory - people have been told there
@@ -79,19 +83,31 @@ class RewardCampaignRequest extends FormRequest
 
         if ($this->editsRewards()) {
             $rules['rewards'] = ['present', 'array', 'max:20'];
-            $rules['rewards.*.name'] = ['required', 'string', 'max:150'];
-            $rules['rewards.*.description'] = ['nullable', 'string', 'max:2000'];
-            $rules['rewards.*.type'] = ['required', Rule::enum(RewardType::class)];
+
+            /* The catalogue row being attached. What the reward *is* is no
+               longer typed on this form - it is chosen, and everything
+               describing it is read from `rewards`. */
+            $rules['rewards.*.reward_id'] = [
+                'required',
+                'integer',
+                Rule::exists('rewards', 'id'),
+            ];
 
             /* A quantity of zero is a reward that exists on the form and not
                in the drawer, which is the shape of a promotion that quietly
                promises something it cannot hand over. */
             $rules['rewards.*.quantity'] = ['required', 'integer', 'min:1', 'max:100000'];
 
-            $rules['rewards.*.value'] = ['nullable', 'decimal:0,2', 'min:0', 'max:99999999.99'];
-            $rules['rewards.*.value_unit'] = ['nullable', Rule::enum(RewardValueUnit::class)];
             $rules['rewards.*.validity_days'] = ['nullable', 'integer', 'min:1', 'max:3650'];
-            $rules['rewards.*.terms'] = ['nullable', 'string', 'max:2000'];
+
+            /* What somebody must have bought to be in the running. Absent or
+               empty is the common case and means any purchase qualifies - see
+               `campaign_reward_product`. */
+            $rules['rewards.*.qualifying_product_ids'] = ['sometimes', 'array', 'max:50'];
+            $rules['rewards.*.qualifying_product_ids.*'] = [
+                'integer',
+                Rule::exists('products', 'id'),
+            ];
         }
 
         return $rules;
@@ -117,21 +133,83 @@ class RewardCampaignRequest extends FormRequest
                     return;
                 }
 
-                /* A number with no unit reads as nothing: "10" is not ten per
-                   cent and not ten shillings. Either both or neither. */
-                foreach ($this->rewards() as $index => $reward) {
-                    $hasValue = ($reward['value'] ?? null) !== null;
-                    $hasUnit = ($reward['value_unit'] ?? null) !== null;
-
-                    if ($hasValue !== $hasUnit) {
-                        $validator->errors()->add(
-                            "rewards.{$index}.value_unit",
-                            'Say whether the figure is a percentage or an amount.',
-                        );
-                    }
-                }
+                $this->refuseRepeatedRewards($validator);
+                $this->refuseRetiredRewards($validator);
             },
         ];
+    }
+
+    /**
+     * One row per reward.
+     *
+     * `campaign_rewards` holds a unique index on `(campaign_id, reward_id)`,
+     * so a form naming the same reward twice would reach the database and
+     * throw. Caught here instead, where it can be said in words and pointed at
+     * the row that repeated it.
+     */
+    private function refuseRepeatedRewards(Validator $validator): void
+    {
+        $seen = [];
+
+        foreach ($this->rewards() as $index => $reward) {
+            $rewardId = $reward['reward_id'] ?? null;
+
+            if ($rewardId === null) {
+                continue;
+            }
+
+            if (isset($seen[$rewardId])) {
+                $validator->errors()->add(
+                    "rewards.{$index}.reward_id",
+                    'This reward is already in the campaign. Change its quantity rather than adding it twice.',
+                );
+
+                continue;
+            }
+
+            $seen[$rewardId] = $index;
+        }
+    }
+
+    /**
+     * A retired reward may stay where it already is and go into nothing new.
+     *
+     * Checked against what the campaign already holds rather than refused
+     * outright: `rewards.is_active` is switched off to stop a reward being
+     * offered again, and a draft that has held it since before that must still
+     * be saveable - otherwise retiring a reward would quietly lock every
+     * campaign carrying it.
+     */
+    private function refuseRetiredRewards(Validator $validator): void
+    {
+        $held = $this->subject()?->rewards()->pluck('reward_id')->all() ?? [];
+
+        $incoming = array_filter(array_column($this->rewards(), 'reward_id'));
+
+        $added = array_diff($incoming, $held);
+
+        if ($added === []) {
+            return;
+        }
+
+        $retired = Reward::query()
+            ->whereIn('id', $added)
+            ->where('is_active', false)
+            ->pluck('id')
+            ->all();
+
+        if ($retired === []) {
+            return;
+        }
+
+        foreach ($this->rewards() as $index => $reward) {
+            if (in_array($reward['reward_id'] ?? null, $retired, true)) {
+                $validator->errors()->add(
+                    "rewards.{$index}.reward_id",
+                    'This reward has been retired and cannot be added to a campaign.',
+                );
+            }
+        }
     }
 
     /**

@@ -50,12 +50,14 @@ class ShuffleRewardData extends Data
      */
     public static function fromModel(ShuffleResult $result, bool $withCustomer = false): self
     {
-        $reward = $result->poolEntry->reward;
+        /* The pool entry names the attachment - how many, for how long - and
+           what was actually won is the catalogue row behind it. */
+        $reward = $result->poolEntry->reward->reward;
         $redemption = $result->relationLoaded('redemption') ? $result->redemption : null;
 
         return new self(
             code: $result->code,
-            name: $reward->name,
+            name: $reward->readableName(),
             description: $reward->description,
             type: $reward->type,
             type_label: $reward->type->label(),

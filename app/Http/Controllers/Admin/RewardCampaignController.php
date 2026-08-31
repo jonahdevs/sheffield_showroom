@@ -6,11 +6,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Data\RewardCampaignData;
 use App\Enums\Permission;
-use App\Enums\RewardType;
-use App\Enums\RewardValueUnit;
 use App\Exceptions\CampaignStateException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RewardCampaignRequest;
+use App\Models\Reward;
 use App\Models\RewardCampaign;
 use App\Services\Rewards\CampaignService;
 use App\Services\Rewards\RewardPoolService;
@@ -72,8 +71,7 @@ class RewardCampaignController extends Controller
 
         return Inertia::render('admin/rewards/Form', [
             'campaign' => null,
-            'reward_types' => RewardType::options(),
-            'value_units' => RewardValueUnit::options(),
+            'catalogue' => $this->catalogue(),
             'can' => ['update' => true, 'publish' => false, 'delete' => false],
         ]);
     }
@@ -90,14 +88,22 @@ class RewardCampaignController extends Controller
     {
         $this->authorize('view', $campaign);
 
-        $campaign->load('rewards')->loadCount('sessions');
+        /* Three hops for one table: the attachment, the catalogue row it names
+           and the products it is paired to. Loading them here is what keeps
+           `CampaignRewardData::fromModel` from asking per row. */
+        $campaign->load([
+            'rewards.reward.product:id,name',
+            'rewards.qualifyingProducts:id,name',
+        ])->loadCount('sessions');
 
         $viewer = $request->user();
 
         return Inertia::render('admin/rewards/Form', [
             'campaign' => RewardCampaignData::fromModel($campaign, $this->pool->inventory($campaign)),
-            'reward_types' => RewardType::options(),
-            'value_units' => RewardValueUnit::options(),
+            /* Everything still on offer, plus whatever this campaign already
+               holds - a retired reward stays pickable on the draft that had it
+               before it was retired, or the form would drop a row on save. */
+            'catalogue' => $this->catalogue($campaign),
             'can' => [
                 'update' => $viewer->can('update', $campaign),
                 'publish' => $viewer->can('publish', $campaign),
@@ -238,26 +244,83 @@ class RewardCampaignController extends Controller
     }
 
     /**
-     * The reward definitions, as the form sent them.
+     * The rewards the form may choose from.
+     *
+     * The active catalogue, plus anything this campaign already holds. A
+     * reward retired after a draft picked it up has to stay in the list, or
+     * reopening that draft would show a blank row and saving it would drop the
+     * reward - see `RewardCampaignRequest::refuseRetiredRewards()`, which
+     * refuses only newly added retired rewards for the same reason.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function catalogue(?RewardCampaign $campaign = null): array
+    {
+        $held = $campaign?->rewards->pluck('reward_id')->all() ?? [];
+
+        return Reward::query()
+            ->with('product:id,name')
+            ->where(fn ($query) => $query->where('is_active', true)->orWhereIn('id', $held))
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Reward $reward): array => [
+                'id' => $reward->id,
+                'name' => $reward->readableName(),
+                'description' => $reward->description,
+                'type' => $reward->type,
+                'type_label' => $reward->type->label(),
+                'product_id' => $reward->product_id,
+                'product_name' => $reward->product?->name,
+                'value_label' => $reward->readableValue(),
+                'terms' => $reward->terms,
+                'default_validity_days' => $reward->default_validity_days,
+                'is_active' => $reward->is_active,
+            ])
+            ->all();
+    }
+
+    /**
+     * The reward attachments, as the form sent them.
      *
      * Rewritten wholesale rather than diffed: this only ever runs on a draft,
-     * where nothing points at a definition yet, so replacing them is both
+     * where nothing points at an attachment yet, so replacing them is both
      * simpler and impossible to get subtly wrong.
+     *
+     * Nothing describing the reward is written here. The row names a catalogue
+     * entry and carries only what the campaign decides - how many, how long,
+     * and which products put somebody in the running.
      */
     private function writeRewards(RewardCampaign $campaign, RewardCampaignRequest $request): void
     {
+        /* One query for the whole form rather than one per row, and the
+           source of the fallback below. */
+        $catalogue = Reward::query()
+            ->whereIn('id', array_column($request->rewards(), 'reward_id'))
+            ->get()
+            ->keyBy('id');
+
         foreach ($request->rewards() as $reward) {
-            $campaign->rewards()->create([
-                'name' => $reward['name'],
-                'description' => $reward['description'] ?? null,
-                'type' => $reward['type'],
-                'value' => $reward['value'] ?? null,
-                'value_unit' => $reward['value_unit'] ?? null,
+            $catalogueRow = $catalogue->get($reward['reward_id']);
+
+            $attachment = $campaign->rewards()->create([
+                'reward_id' => $reward['reward_id'],
                 'quantity' => $reward['quantity'],
-                'validity_days' => $reward['validity_days'] ?? null,
-                'terms' => $reward['terms'] ?? null,
+                /* The campaign's own deadline, falling back to whatever the
+                   catalogue suggests. Copied down rather than read through at
+                   win time, so retuning the catalogue later cannot move a
+                   deadline this campaign has already promised. */
+                'validity_days' => $reward['validity_days']
+                    ?? $catalogueRow?->default_validity_days,
                 'is_active' => true,
             ]);
+
+            $productIds = array_values(array_unique(
+                array_map('intval', $reward['qualifying_product_ids'] ?? []),
+            ));
+
+            if ($productIds !== []) {
+                $attachment->qualifyingProducts()->sync($productIds);
+            }
         }
     }
 }

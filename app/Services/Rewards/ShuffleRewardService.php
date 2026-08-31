@@ -29,8 +29,11 @@ use Illuminate\Support\Facades\DB;
  *     both proceeding.
  *  2. Re-check the state under that lock. The screen checked it too, but that
  *     was a moment ago and a moment is enough.
- *  3. Pick and lock an available pool entry in one statement - see `claim()`.
- *  4. Mark it claimed, write the result, mark the session shuffled.
+ *  3. Work out what this purchase is even in the running for. Rewards may be
+ *     paired to a product - buy the oven, win the tray - and that is resolved
+ *     here, before anything is locked, so the statement below stays narrow.
+ *  4. Pick and lock an available pool entry in one statement - see `claim()`.
+ *  5. Mark it claimed, write the result, mark the session shuffled.
  *
  * The architecture document describes this as "lock an available entry, then
  * randomly choose one". That order is wrong: locking first and choosing second
@@ -44,7 +47,10 @@ use Illuminate\Support\Facades\DB;
  */
 class ShuffleRewardService
 {
-    public function __construct(private readonly ShuffleSessionService $sessions) {}
+    public function __construct(
+        private readonly ShuffleSessionService $sessions,
+        private readonly RewardEligibilityService $eligibility,
+    ) {}
 
     /**
      * Runs the shuffle and returns what was won.
@@ -62,7 +68,7 @@ class ShuffleRewardService
                is held, which is what makes the whole operation one-at-a-time
                per session. */
             $session = ShuffleSession::query()
-                ->with('campaign')
+                ->with(['campaign', 'purchase'])
                 ->lockForUpdate()
                 ->find($session->id);
 
@@ -74,7 +80,18 @@ class ShuffleRewardService
                true when it ran and may not be now. */
             $this->sessions->assertShuffleable($session, $at);
 
-            $entry = $this->lockAvailableEntry($session->campaign_id);
+            /* Resolved before the lock is taken, never during it. This is the
+               one thing standing between a paired reward and the wrong
+               customer, and it costs a single query - see
+               `RewardEligibilityService::qualifyingRewardIds()`. */
+            $rewardIds = $this->eligibility->qualifyingRewardIds(
+                $session->campaign,
+                $session->purchase?->product_id,
+            );
+
+            $entry = $rewardIds === []
+                ? null
+                : $this->lockAvailableEntry($session->campaign_id, $rewardIds);
 
             if ($entry === null) {
                 /* Nothing is spent. The turn stays pending because the
@@ -107,7 +124,8 @@ class ShuffleRewardService
     }
 
     /**
-     * One available unit of this campaign, locked for the caller.
+     * One available unit of this campaign that this customer may win, locked
+     * for the caller.
      *
      * Selection and locking in a single statement, which is the point. The
      * random order is what makes it a shuffle; `lockForUpdate` is what makes
@@ -118,13 +136,21 @@ class ShuffleRewardService
      * Ordering by a random expression rather than shuffling in PHP, because
      * PHP would have to read the whole pool to shuffle it and would then be
      * choosing from rows it never locked.
+     *
+     * `$rewardIds` narrows the draw to what the purchase qualifies for, as a
+     * literal `IN` rather than a join to `campaign_reward_product`. The ids
+     * were resolved above, before the transaction took any lock, precisely so
+     * this statement still reads one table through one index.
+     *
+     * @param  array<int, int>  $rewardIds
      */
-    private function lockAvailableEntry(int $campaignId): ?RewardPoolEntry
+    private function lockAvailableEntry(int $campaignId, array $rewardIds): ?RewardPoolEntry
     {
         return RewardPoolEntry::query()
-            ->with('reward')
+            ->with('reward.reward')
             ->where('campaign_id', $campaignId)
             ->where('status', PoolEntryStatus::Available)
+            ->whereIn('campaign_reward_id', $rewardIds)
             ->inRandomOrder()
             ->lockForUpdate()
             ->first();

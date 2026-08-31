@@ -22,6 +22,7 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 enum RewardType: string
 {
     case Discount = 'discount';
+    case Product = 'product';
     case DrawingLayout = 'drawing_layout';
     case KitchenAudit = 'kitchen_audit';
     case ComplimentaryService = 'complimentary_service';
@@ -31,11 +32,25 @@ enum RewardType: string
     {
         return match ($this) {
             self::Discount => 'Discount',
+            self::Product => 'Product',
             self::DrawingLayout => 'Drawing & layout',
             self::KitchenAudit => 'Kitchen audit',
             self::ComplimentaryService => 'Complimentary service',
             self::Installation => 'Installation',
         };
+    }
+
+    /**
+     * Whether this kind of reward is a thing off the floor, and so names a
+     * row in `products`.
+     *
+     * The one type whose worth is not written in its terms and not a figure
+     * either - it is whatever the product is. `RewardRequest` requires a
+     * `product_id` for it and refuses one for everything else.
+     */
+    public function isProduct(): bool
+    {
+        return $this === self::Product;
     }
 
     /**

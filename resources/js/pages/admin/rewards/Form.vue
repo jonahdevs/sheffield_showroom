@@ -23,13 +23,6 @@ import {
     NativeSelect,
     NativeSelectOption,
 } from '@/components/ui/native-select';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
@@ -44,8 +37,10 @@ import {
 
 const props = defineProps<{
     campaign: App.Data.RewardCampaignData | null;
-    reward_types: { value: string; label: string }[];
-    value_units: { value: string; label: string }[];
+    /* Everything on offer, plus anything this campaign already holds - a
+       reward retired after a draft picked it up stays pickable here, or
+       reopening the draft would blank the row. */
+    catalogue: CatalogueReward[];
     can: { update: boolean; publish: boolean; delete: boolean };
 }>();
 
@@ -86,15 +81,33 @@ const isClosed = computed(
 // The form
 // -----------------------------------------------------------------------------
 
+/**
+ * One attachment, as the form holds it.
+ *
+ * Only four fields, and none of them describes the reward: what the thing is
+ * lives in the catalogue and is chosen by `reward_id`. Everything the row
+ * shows beside the picker is read out of `props.catalogue` rather than typed,
+ * so a campaign can never hold its own drifted copy of a reward's terms.
+ */
 type RewardRow = {
-    name: string;
-    description: string;
-    type: string;
+    reward_id: string;
     quantity: string;
-    value: string;
-    value_unit: string;
     validity_days: string;
-    terms: string;
+    qualifying_product_ids: number[];
+};
+
+type CatalogueReward = {
+    id: number;
+    name: string;
+    description: string | null;
+    type: string;
+    type_label: string;
+    product_id: number | null;
+    product_name: string | null;
+    value_label: string | null;
+    terms: string | null;
+    default_validity_days: number | null;
+    is_active: boolean;
 };
 
 type CampaignForm = {
@@ -142,15 +155,18 @@ function toDateInput(value: string | null): string {
  */
 function blankReward(): RewardRow {
     return {
-        name: '',
-        description: '',
-        type: props.reward_types[0]?.value ?? '',
+        reward_id: '',
         quantity: '1',
-        value: '',
-        value_unit: '',
         validity_days: '',
-        terms: '',
+        qualifying_product_ids: [],
     };
+}
+
+/** The catalogue entry a row has chosen, for the summary beside the picker. */
+function chosen(row: RewardRow): CatalogueReward | null {
+    const id = Number(row.reward_id);
+
+    return props.catalogue.find((reward) => reward.id === id) ?? null;
 }
 
 /**
@@ -164,21 +180,18 @@ function blankReward(): RewardRow {
 function savedRewards(campaign: App.Data.RewardCampaignData): RewardRow[] {
     return campaign.rewards.map((reward) => {
         return {
-            name: reward.name,
-            description: reward.description ?? '',
-            type: reward.type,
+            reward_id: String(reward.reward_id),
             quantity: String(reward.loaded),
-            /* Straight back out of the columns they went into.
-               `CampaignRewardData` carries the raw figure and its unit
-               alongside the formatted `value_label`, precisely so this can
-               refill the boxes rather than parsing the display string. */
-            value: reward.value ?? '',
-            value_unit: reward.value_unit ?? '',
             validity_days:
                 reward.validity_days === null
                     ? ''
                     : String(reward.validity_days),
-            terms: reward.terms ?? '',
+            /* Carried straight back out and posted unchanged. There is no
+               picker for these yet, so a save that dropped them would quietly
+               unpair a reward somebody had paired. */
+            qualifying_product_ids: reward.qualifying_products.map(
+                (product) => product.id,
+            ),
         };
     });
 }
@@ -278,14 +291,10 @@ function submit() {
         return {
             ...campaign,
             rewards: data.rewards.map((reward) => ({
-                name: reward.name,
-                description: blankToNull(reward.description),
-                type: reward.type,
+                reward_id: numberOrNull(reward.reward_id),
                 quantity: numberOrNull(reward.quantity),
-                value: blankToNull(reward.value),
-                value_unit: blankToNull(reward.value_unit),
                 validity_days: numberOrNull(reward.validity_days),
-                terms: blankToNull(reward.terms),
+                qualifying_product_ids: reward.qualifying_product_ids,
             })),
         };
     });
@@ -813,51 +822,76 @@ defineOptions({
                         <div
                             class="mt-3 flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-4 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
                         >
+                            <!-- The reward itself is chosen, never typed. It
+                                 is described once in the catalogue, so a
+                                 campaign holding its own copy of the terms is
+                                 how two promotions end up offering subtly
+                                 different versions of one thing. -->
                             <div class="@2xl/page:col-span-2">
-                                <Label :for="`reward-${position}-name`">
-                                    Name <span class="text-primary">*</span>
+                                <Label :for="`reward-${position}-reward-id`">
+                                    Reward <span class="text-primary">*</span>
                                 </Label>
-                                <Input
-                                    :id="`reward-${position}-name`"
-                                    v-model="reward.name"
-                                    class="mt-2.25"
+                                <NativeSelect
+                                    :id="`reward-${position}-reward-id`"
+                                    v-model="reward.reward_id"
+                                    class="mt-2.25 w-full"
                                     :disabled="readOnly"
-                                    placeholder="e.g. 10% off your kitchen"
-                                    :data-test="`reward-${position}-name`"
-                                />
+                                    :data-test="`reward-${position}-reward-id`"
+                                >
+                                    <NativeSelectOption value="">
+                                        Choose a reward
+                                    </NativeSelectOption>
+                                    <NativeSelectOption
+                                        v-for="option in props.catalogue"
+                                        :key="option.id"
+                                        :value="String(option.id)"
+                                    >
+                                        {{ option.name }} ({{
+                                            option.type_label
+                                        }}){{
+                                            option.is_active ? '' : ' — retired'
+                                        }}
+                                    </NativeSelectOption>
+                                </NativeSelect>
                                 <InputError
-                                    :message="rewardError(position, 'name')"
+                                    :message="
+                                        rewardError(position, 'reward_id')
+                                    "
                                 />
                             </div>
 
-                            <div>
-                                <Label :for="`reward-${position}-type`">
-                                    Type <span class="text-primary">*</span>
-                                </Label>
-                                <Select
-                                    v-model="reward.type"
-                                    :disabled="readOnly"
+                            <!-- What that choice means, read out of the
+                                 catalogue rather than editable here. -->
+                            <div class="@2xl/page:col-span-2">
+                                <span class="text-sm text-muted-foreground">
+                                    Reward details
+                                </span>
+                                <div
+                                    v-if="chosen(reward)"
+                                    class="mt-2.25 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground"
+                                    :data-test="`reward-${position}-summary`"
                                 >
-                                    <SelectTrigger
-                                        :id="`reward-${position}-type`"
-                                        class="mt-2.25 w-full"
-                                        :data-test="`reward-${position}-type`"
-                                    >
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem
-                                            v-for="option in props.reward_types"
-                                            :key="option.value"
-                                            :value="option.value"
-                                        >
-                                            {{ option.label }}
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <InputError
-                                    :message="rewardError(position, 'type')"
-                                />
+                                    <p v-if="chosen(reward)?.value_label">
+                                        Worth
+                                        {{ chosen(reward)?.value_label }}
+                                    </p>
+                                    <p v-if="chosen(reward)?.product_name">
+                                        Hands over
+                                        {{ chosen(reward)?.product_name }}
+                                    </p>
+                                    <p v-if="chosen(reward)?.description">
+                                        {{ chosen(reward)?.description }}
+                                    </p>
+                                    <p v-if="chosen(reward)?.terms">
+                                        {{ chosen(reward)?.terms }}
+                                    </p>
+                                </div>
+                                <p
+                                    v-else
+                                    class="mt-2.25 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground"
+                                >
+                                    Choose a reward to see what it is.
+                                </p>
                             </div>
 
                             <!-- How many units of this reward go into the
@@ -880,65 +914,6 @@ defineOptions({
                                 />
                                 <InputError
                                     :message="rewardError(position, 'quantity')"
-                                />
-                            </div>
-
-                            <!-- The figure and its unit are one answer given
-                                 in two boxes, and the request refuses either
-                                 without the other: "10" is neither ten per
-                                 cent nor ten shillings. Most rewards here are
-                                 services and carry no figure at all, which is
-                                 what the empty unit means. -->
-                            <div>
-                                <Label :for="`reward-${position}-value`">
-                                    Figure
-                                </Label>
-                                <Input
-                                    :id="`reward-${position}-value`"
-                                    v-model="reward.value"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    class="mt-2.25"
-                                    :disabled="readOnly"
-                                    placeholder="e.g. 10"
-                                    :data-test="`reward-${position}-value`"
-                                />
-                                <InputError
-                                    :message="rewardError(position, 'value')"
-                                />
-                            </div>
-
-                            <!-- A native select rather than the app's usual
-                                 one: this is the single control on the screen
-                                 that has to offer "nothing", and the styled
-                                 select cannot hold an empty choice. -->
-                            <div>
-                                <Label :for="`reward-${position}-value-unit`">
-                                    Read as
-                                </Label>
-                                <NativeSelect
-                                    :id="`reward-${position}-value-unit`"
-                                    v-model="reward.value_unit"
-                                    class="mt-2.25 w-full"
-                                    :disabled="readOnly"
-                                    :data-test="`reward-${position}-value-unit`"
-                                >
-                                    <NativeSelectOption value="">
-                                        No figure
-                                    </NativeSelectOption>
-                                    <NativeSelectOption
-                                        v-for="unit in props.value_units"
-                                        :key="unit.value"
-                                        :value="unit.value"
-                                    >
-                                        {{ unit.label }}
-                                    </NativeSelectOption>
-                                </NativeSelect>
-                                <InputError
-                                    :message="
-                                        rewardError(position, 'value_unit')
-                                    "
                                 />
                             </div>
 
@@ -973,42 +948,35 @@ defineOptions({
                                 </p>
                             </div>
 
-                            <div class="@2xl/page:col-span-2">
-                                <Label :for="`reward-${position}-description`">
-                                    Description
-                                </Label>
-                                <Textarea
-                                    :id="`reward-${position}-description`"
-                                    v-model="reward.description"
-                                    class="mt-2.25"
-                                    :disabled="readOnly"
-                                    rows="2"
-                                    placeholder="What the customer is actually getting."
-                                    :data-test="`reward-${position}-description`"
-                                />
-                                <InputError
-                                    :message="
-                                        rewardError(position, 'description')
-                                    "
-                                />
-                            </div>
-
-                            <div class="@2xl/page:col-span-2">
-                                <Label :for="`reward-${position}-terms`">
-                                    Terms
-                                </Label>
-                                <Textarea
-                                    :id="`reward-${position}-terms`"
-                                    v-model="reward.terms"
-                                    class="mt-2.25"
-                                    :disabled="readOnly"
-                                    rows="2"
-                                    placeholder="What the reward is conditional on, as it will be printed."
-                                    :data-test="`reward-${position}-terms`"
-                                />
-                                <InputError
-                                    :message="rewardError(position, 'terms')"
-                                />
+                            <!-- What somebody must have bought to be in the
+                                 running. Carried through a save but not yet
+                                 editable here - pairing is set up alongside
+                                 the catalogue, which has no screen of its own
+                                 yet. -->
+                            <div
+                                v-if="
+                                    reward.qualifying_product_ids.length > 0
+                                "
+                                class="@2xl/page:col-span-2"
+                            >
+                                <span class="text-sm text-muted-foreground">
+                                    Paired to
+                                </span>
+                                <p
+                                    class="mt-2.25 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground"
+                                    :data-test="`reward-${position}-paired`"
+                                >
+                                    Only a purchase of
+                                    {{ reward.qualifying_product_ids.length }}
+                                    named
+                                    {{
+                                        reward.qualifying_product_ids
+                                            .length === 1
+                                            ? 'product'
+                                            : 'products'
+                                    }}
+                                    can win this.
+                                </p>
                             </div>
                         </div>
                     </div>

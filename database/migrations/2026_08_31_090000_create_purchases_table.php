@@ -16,10 +16,16 @@ use Illuminate\Support\Facades\Schema;
  * answer.
  *
  * It is deliberately narrow. This is an eligibility record, not a ledger:
- * there are no line items, no tax, no payment method and no reconciliation,
- * because nothing here needs them and every column added would be a second
- * place holding a number the till already holds. `reference` is the hook for
- * the day somebody wants to tie one of these back to a receipt.
+ * there is no tax, no payment method and no reconciliation, because nothing
+ * here needs them and every column added would be a second place holding a
+ * number the till already holds. `reference` is the hook for the day somebody
+ * wants to tie one of these back to a receipt.
+ *
+ * `product_id` is the one concession to that, and it is a single column rather
+ * than the line items this table still refuses. Rewards can be paired to what
+ * was bought - buy the oven, win the tray - and that pairing needs to know the
+ * oven. One column answers it; a line-item table would answer it and drag a
+ * ledger in behind it.
  */
 return new class extends Migration
 {
@@ -38,6 +44,17 @@ return new class extends Migration
                a sale can be settled over the phone against a visit logged
                weeks earlier, or against none at all. */
             $table->foreignId('visit_id')->nullable()->constrained()->nullOnDelete();
+
+            /* The main thing bought, where it matters. Nullable and expected
+               to stay empty on most rows: it is read only by rewards that name
+               the products qualifying for them, and a promotion that pairs
+               nothing needs nothing here.
+
+               One product rather than all of them. A sale of two qualifying
+               items records the one the salesperson picked, which is the
+               honest limit of a single column - see
+               `campaign_reward_product`. */
+            $table->foreignId('product_id')->nullable()->constrained()->nullOnDelete();
 
             /* The receipt or invoice number as the till wrote it. Free text
                and not unique - it is somebody else's key, typed in by hand,

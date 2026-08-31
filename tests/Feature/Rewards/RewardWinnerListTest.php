@@ -186,10 +186,9 @@ it('narrows by status, by reward type and by campaign', function () {
     $festive = RewardCampaign::factory()->active()->create(['name' => 'Festive Draw']);
 
     $discount = CampaignReward::factory()->discount(10)->create(['campaign_id' => $clearance->id]);
-    $audit = CampaignReward::factory()->create([
-        'campaign_id' => $clearance->id,
-        'type' => RewardType::KitchenAudit,
-    ]);
+    $audit = CampaignReward::factory()
+        ->ofType(RewardType::KitchenAudit, 'Free kitchen audit')
+        ->create(['campaign_id' => $clearance->id]);
     $festiveReward = CampaignReward::factory()->create(['campaign_id' => $festive->id]);
 
     $customer = Customer::factory()->create();

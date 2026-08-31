@@ -44,6 +44,7 @@ class Purchase extends Model
     protected $fillable = [
         'customer_id',
         'visit_id',
+        'product_id',
         'reference',
         'amount',
         'status',
@@ -80,6 +81,20 @@ class Purchase extends Model
     public function visit(): BelongsTo
     {
         return $this->belongsTo(Visit::class);
+    }
+
+    /**
+     * The main item bought, where anybody recorded one.
+     *
+     * Read by rewards that name the products qualifying for them - buy the
+     * oven, win the tray. Null on most rows, and a campaign that pairs nothing
+     * never asks.
+     *
+     * @return BelongsTo<Product, $this>
+     */
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 
     /**

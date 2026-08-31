@@ -40,7 +40,11 @@ class RewardWinnerRowData extends Data
     public const RELATIONS = [
         'session.customer',
         'session.campaign:id,name',
-        'poolEntry.reward',
+        /* Two hops rather than one since rewards moved into a catalogue: the
+           pool entry names the attachment, and what the thing actually is
+           hangs off that. A product reward needs its product too, because
+           `readableName()` falls back to it. */
+        'poolEntry.reward.reward.product:id,name',
         'redemption.redeemer:id,name',
     ];
 
@@ -69,7 +73,9 @@ class RewardWinnerRowData extends Data
     public static function fromModel(ShuffleResult $result): self
     {
         $customer = $result->session?->customer;
-        $reward = $result->poolEntry->reward;
+        /* The pool entry names the attachment - how many, for how long - and
+           what was actually won is the catalogue row behind it. */
+        $reward = $result->poolEntry->reward->reward;
         $redemption = $result->redemption;
 
         return new self(
@@ -85,7 +91,7 @@ class RewardWinnerRowData extends Data
             customer_company: $customer?->company_name,
             customer_phone: $customer?->phone,
             campaign_name: $result->session?->campaign?->name ?? 'Unknown campaign',
-            reward_name: $reward->name,
+            reward_name: $reward->readableName(),
             type: $reward->type,
             type_label: $reward->type->label(),
             value: $reward->readableValue(),
