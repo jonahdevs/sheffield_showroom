@@ -41,9 +41,17 @@ const LOGO = '/images/sheffield-logo.png';
   can run taller than a phone, and a centred flex child that overflows its
   container is clipped at the top with no way to scroll back up to it.
 
-  The footer's padding reads `env(safe-area-inset-bottom)` because this is the
-  only screen in the application that is genuinely never on a desktop - on a
-  notched phone the home indicator would otherwise sit on top of it.
+  That container carries its bottom padding by hand, as `pt-8` plus an inline
+  `env(safe-area-inset-bottom)`, rather than closing the `py-8` rhythm the
+  obvious way. This is the only screen in the application that is genuinely
+  never on a desktop - it opens from a QR code on a customer's phone - and on a
+  handset with a home indicator that strip is drawn over the bottom of the
+  page, which on a tall reward is exactly where the code the customer came for
+  ends up. `env()` asks the device how deep its own indicator is; a fixed extra
+  `pb-12` would be a guess that is wrong on every phone and wasteful on the
+  ones without an indicator at all. It hangs off this container rather than
+  `main` because the inset has to be inside the scrolling content to be
+  reachable, and this is now the last thing on the page.
 -->
 <template>
     <div class="flex min-h-svh flex-col bg-background">
@@ -72,16 +80,12 @@ const LOGO = '/images/sheffield-logo.png';
         </header>
 
         <main class="flex flex-1 flex-col">
-            <div class="container mx-auto my-auto w-full px-5 py-8">
+            <div
+                class="container mx-auto my-auto w-full px-5 pt-8"
+                style="padding-bottom: calc(2rem + env(safe-area-inset-bottom))"
+            >
                 <slot />
             </div>
         </main>
-
-        <footer
-            class="px-5 pt-4 text-center text-xs text-muted-foreground"
-            style="padding-bottom: calc(1rem + env(safe-area-inset-bottom))"
-        >
-            Sheffield Africa
-        </footer>
     </div>
 </template>

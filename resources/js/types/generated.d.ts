@@ -174,6 +174,25 @@ declare namespace App {
             turns_given: number;
             rewards: App.Data.CampaignRewardData[];
         };
+        export type RewardWinnerRowData = {
+            id: number;
+            code: string;
+            customer_name: string;
+            customer_type: App.Enums.CustomerType;
+            customer_company: string | null;
+            customer_phone: string | null;
+            campaign_name: string;
+            reward_name: string;
+            type: App.Enums.RewardType;
+            type_label: string;
+            value: string | null;
+            won_on: string;
+            expires_on: string | null;
+            status: App.Enums.RewardResultStatus;
+            status_label: string;
+            redeemed_on: string | null;
+            redeemed_by: string | null;
+        };
         export type RoleData = {
             id: number;
             name: string;
@@ -200,6 +219,7 @@ declare namespace App {
             runs_to: string | null;
             minimum_purchase: string | null;
             shuffles_per_customer: number;
+            terms: string[];
         };
         export type ShuffleRewardData = {
             code: string;
@@ -252,7 +272,6 @@ declare namespace App {
             source: App.Enums.CustomerSource;
             respondent: string | null;
             expected_follow_up_on: string | null;
-            duration_minutes: number | null;
             notes: string | null;
             products: App.Data.ProductOptionData[];
             customer_label: string;
@@ -267,7 +286,6 @@ declare namespace App {
             purpose_label: string;
             visited_on: string;
             visited_time: string;
-            duration: string | null;
             products: string[];
             attended_by: string | null;
             has_notes: boolean;

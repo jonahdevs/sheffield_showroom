@@ -32,6 +32,8 @@ const props = defineProps<{
     products: App.Data.DashboardProductInterestData[];
     respondents: App.Data.DashboardRespondentData[];
     recent: App.Data.VisitRowData[];
+    /** The named windows the picker offers, shortest first. */
+    presets: { value: string; label: string }[];
     /** The download formats this host can actually produce. */
     formats: string[];
     /** True for a salesperson, whose figures are their own work. */
@@ -77,6 +79,35 @@ const { query, processing, apply } = useFilters({
 function chooseWindow(from: string, to: string): void {
     apply({ range: 'custom', from, to });
 }
+
+/**
+ * A window chosen by name rather than drawn.
+ *
+ * Clears the dates rather than leaving them behind. The server would ignore a
+ * stale pair under a named window anyway, but a URL carrying
+ * `range=this_month&from=2026-02-01` is one somebody will eventually read as a
+ * contradiction and try to honour - and a bookmarked "this month" has to still
+ * open this month next month, not the days it happened to mean when it was
+ * saved.
+ */
+function choosePreset(range: string): void {
+    apply({ range, from: '', to: '' });
+}
+
+/**
+ * What the closed picker reads.
+ *
+ * A named window reads by its name - "This month" rather than the two dozen
+ * characters of dates it resolved to - because the name is what was clicked,
+ * and a button that answers a click with something the reader has to decode
+ * reads as though it did something else. The calendar inside still highlights
+ * the days, so the dates are one click away for anybody who wants them.
+ */
+const windowLabel = computed(
+    () =>
+        props.presets.find((preset) => preset.value === props.range.preset)
+            ?.label ?? props.range.label,
+);
 
 const { theme } = useChartTheme();
 
@@ -239,9 +270,12 @@ function barWidth(visits: number): string {
                 <DateRangePicker
                     :from="props.range.from"
                     :to="props.range.to"
-                    :label="props.range.label"
+                    :label="windowLabel"
+                    :presets="props.presets"
+                    :active="props.range.preset"
                     data-test="dashboard-range"
                     @update="chooseWindow"
+                    @preset="choosePreset"
                 />
 
                 <!-- The download follows the window, so the file is the page

@@ -61,6 +61,12 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             ...$this->panels($viewer, $range),
             'recent' => $this->recentVisits($viewer, $range),
+            /* The named windows the picker offers as one click each - the same
+               list the visits log and the rewards list are handed, so "this
+               month" means the same days on all three. Sent as a prop rather
+               than written into the template, because the labels belong beside
+               the dates they resolve to. */
+            'presets' => DashboardRangeData::options(),
             /* Only the formats this host can actually produce. Paper needs a
                headless browser the machine may not have, and a download button
                that always fails is worse than one format fewer. */

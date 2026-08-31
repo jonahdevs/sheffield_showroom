@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\RewardCampaignController;
 use App\Http\Controllers\Admin\RewardRedemptionController;
+use App\Http\Controllers\Admin\RewardWinnerController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ShuffleSessionController;
 use App\Http\Controllers\Admin\UserController;
@@ -267,6 +268,13 @@ Route::middleware(['auth', 'verified'])
                 Route::get('/', 'index')->middleware('permission:rewards.view')->name('index');
                 Route::post('/', 'store')->middleware('permission:rewards.redeem')->name('store');
             });
+
+        /* Ahead of `{campaign}` for the same reason. Read-only, so it needs
+           nothing beyond `rewards.view` - handing a reward over is Redeem's
+           door and carries its own permission. */
+        Route::get('rewards/winners', [RewardWinnerController::class, 'index'])
+            ->middleware('permission:rewards.view')
+            ->name('rewards.winners.index');
 
         Route::controller(RewardCampaignController::class)
             ->prefix('rewards')

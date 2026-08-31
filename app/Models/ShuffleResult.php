@@ -99,6 +99,34 @@ class ShuffleResult extends Model
     }
 
     /**
+     * Rewards matching what somebody typed into the search box.
+     *
+     * Two questions in one field, because they are asked at the same desk with
+     * the same keystrokes: the code off a customer's phone, and the person who
+     * won it. The customer half is delegated to `Customer::search()` rather
+     * than written again here - that scope already knows to strip the spaces
+     * and the country code out of a phone number before comparing it, so
+     * typing 0712 finds a customer stored as +254712, and a second
+     * hand-rolled `like` on `phone` would quietly fail to.
+     *
+     * @param  Builder<ShuffleResult>  $query
+     */
+    #[Scope]
+    protected function search(Builder $query, string $term): void
+    {
+        if ($term === '') {
+            return;
+        }
+
+        $query->where(fn (Builder $inner) => $inner
+            ->where('code', 'like', '%'.$term.'%')
+            ->orWhereHas(
+                'session.customer',
+                fn (Builder $customer) => $customer->search($term),
+            ));
+    }
+
+    /**
      * The rewards whose date has passed but which are still marked unredeemed,
      * which is what `rewards:expire` sweeps.
      *

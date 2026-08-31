@@ -64,7 +64,6 @@ it('records the whole log as walk-ins that nobody here logged', function () {
 
     expect(Visit::query()->where('source', 'walk_in')->count())->toBe(IMPORTED_VISITS)
         ->and(Visit::query()->whereNotNull('created_by')->count())->toBe(0)
-        ->and(Visit::query()->whereNotNull('duration_minutes')->count())->toBe(0)
         ->and(Visit::query()->whereNotNull('expected_follow_up_on')->count())->toBe(0);
 });
 

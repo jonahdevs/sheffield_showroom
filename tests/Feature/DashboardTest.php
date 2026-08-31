@@ -102,6 +102,18 @@ it('takes the window from the range the page was asked for', function () {
             ->has('trend', 30));
 });
 
+it('offers the same named windows the other lists offer', function () {
+    $this->actingAs(dashboardManager())
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('presets', count(App\Data\DashboardRangeData::PRESETS))
+            /* Shortest first, so the rail reads as a dial from "just now"
+               outwards rather than something to be searched. */
+            ->where('presets.0.value', 'today')
+            ->where('presets.0.label', 'Today'));
+});
+
 it('counts only the visits that landed inside the window', function () {
     visitOn(2);
     visitOn(4);

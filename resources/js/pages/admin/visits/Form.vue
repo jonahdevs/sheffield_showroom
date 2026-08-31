@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ImageOff, Trash2 } from '@lucide/vue';
 import { computed } from 'vue';
 import DatePicker from '@/components/DatePicker.vue';
@@ -55,13 +55,6 @@ function nowParts(): { date: string; time: string } {
 
 const now = nowParts();
 
-/*
-  Whoever is signed in took the visit, until they say otherwise. A manager
-  writing up somebody else's afternoon changes it; the salesperson logging
-  their own does not have to think about the field at all.
-*/
-const page = usePage();
-
 const form = useForm({
     customer_id: props.visit?.customer_id ?? (null as number | null),
     customer_type: props.visit?.customer_type ?? 'individual',
@@ -77,9 +70,16 @@ const form = useForm({
     /* Most people who walk into a showroom walked in. Pre-set rather than
        blank so the common case costs nobody a decision. */
     source: props.visit?.source ?? 'walk_in',
-    respondent: props.visit?.respondent ?? page.props.auth.user.name,
+    /* Blank on a new visit, deliberately.
+   
+       It used to arrive pre-filled with whoever was signed in, on the
+       assumption that the person typing is the person who took the visit. On
+       a showroom floor that is often false - a manager writes up the day's
+       calls at five o'clock - and a pre-filled name is one nobody rereads, so
+       the wrong salesperson ends up credited with the visit. An empty box
+       asks the question. */
+    respondent: props.visit?.respondent ?? '',
     expected_follow_up_on: props.visit?.expected_follow_up_on ?? '',
-    duration_minutes: props.visit?.duration_minutes ?? (null as number | null),
     notes: props.visit?.notes ?? '',
     /* The whole row per product rather than a bare id: the table under the
        box shows a model number and takes an interest level, and both belong
@@ -223,21 +223,6 @@ function changeType(next: App.Enums.CustomerType) {
 const heading = computed(() =>
     props.visit ? `Visit by ${props.visit.customer_label}` : 'New visit',
 );
-
-/*
-  The box holds a string and the column holds a number or nothing. Cleared
-  reads back as null rather than 0, because an unrecorded duration is not a
-  visit of zero length and an average has to tell those apart.
-*/
-const duration = computed<string>({
-    get: () =>
-        form.duration_minutes === null ? '' : String(form.duration_minutes),
-    set: (value) => {
-        const trimmed = value.trim();
-
-        form.duration_minutes = trimmed === '' ? null : Number(trimmed);
-    },
-});
 
 /** A number identifies the customer, so nothing can be filed without one. */
 const canSubmit = computed(() => {
@@ -612,8 +597,14 @@ defineOptions({
                             </div>
 
                             <div>
+                                <!-- The column and the enum behind this are
+                                     still `purpose`; only what the floor is
+                                     asked has changed. Renaming them to match
+                                     would have moved a filter's query string
+                                     key and every saved link built on it, for
+                                     a word nobody sees. -->
                                 <Label for="purpose">
-                                    Purpose of visit
+                                    Nature of visit
                                     <span class="text-primary">*</span>
                                 </Label>
                                 <Select v-model="form.purpose">
@@ -639,7 +630,7 @@ defineOptions({
 
                             <div>
                                 <Label for="respondent">
-                                    Assigned staff
+                                    Respondent
                                     <span class="text-primary">*</span>
                                 </Label>
                                 <Input
@@ -666,31 +657,6 @@ defineOptions({
                                 </div>
                                 <InputError
                                     :message="form.errors.expected_follow_up_on"
-                                />
-                            </div>
-
-                            <div>
-                                <Label for="duration_minutes"> Duration </Label>
-                                <div class="relative mt-2.25">
-                                    <Input
-                                        id="duration_minutes"
-                                        v-model="duration"
-                                        type="number"
-                                        inputmode="numeric"
-                                        min="1"
-                                        max="720"
-                                        class="pr-16"
-                                        placeholder="45"
-                                        data-test="field-duration"
-                                    />
-                                    <span
-                                        class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-faint"
-                                    >
-                                        minutes
-                                    </span>
-                                </div>
-                                <InputError
-                                    :message="form.errors.duration_minutes"
                                 />
                             </div>
                         </div>

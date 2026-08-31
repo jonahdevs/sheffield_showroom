@@ -31,6 +31,31 @@ class DashboardRangeData extends Data
     public const CUSTOM = 'custom';
 
     /**
+     * Every window that has a name, in the order a control should offer them.
+     *
+     * Ordered shortest-first rather than alphabetically, because a rail of them
+     * is read as a dial from "just now" outwards and a list that jumped from
+     * last month back to today would have to be searched instead of aimed at.
+     *
+     * The list is public because the visits log borrows this same vocabulary
+     * for its own picker. Two screens naming windows differently - "week to
+     * date" here, "this week" there, resolving to different days - is exactly
+     * the drift a shared list prevents, and it is cheaper to share the six
+     * names than to reconcile two sets of dates later.
+     *
+     * @var array<string, string>
+     */
+    public const PRESETS = [
+        'today' => 'Today',
+        'this_week' => 'This week',
+        'last_7_days' => 'Last 7 days',
+        'last_30_days' => 'Last 30 days',
+        'last_90_days' => 'Last 90 days',
+        'this_month' => 'This month',
+        'last_month' => 'Last month',
+    ];
+
+    /**
      * The longest window the dashboard will draw.
      *
      * The trend line carries a point per day, and a hand-typed query string can
@@ -66,18 +91,63 @@ class DashboardRangeData extends Data
     }
 
     /**
+     * The named windows, for a control that offers them as buttons.
+     *
+     * Shaped like every other option list the pages are handed - `VisitPurpose::options()`,
+     * `PageSize::OPTIONS` - so a picker consumes it without a special case, and
+     * so the labels are written once here rather than typed again in whichever
+     * templates happen to show them.
+     *
+     * @return array<int, array{value: string, label: string}>
+     */
+    public static function options(): array
+    {
+        $options = [];
+
+        foreach (self::PRESETS as $value => $label) {
+            $options[] = ['value' => $value, 'label' => $label];
+        }
+
+        return $options;
+    }
+
+    /**
+     * Whether a string off a query string names a window.
+     *
+     * Worth asking before calling `preset()`, because that method answers
+     * anything at all with the default week - which is right for the dashboard,
+     * where some window must be drawn, and wrong anywhere a missing or mangled
+     * name should mean "no window was named" rather than "here is a week you
+     * did not ask for".
+     */
+    public static function isPreset(string $preset): bool
+    {
+        return array_key_exists($preset, self::PRESETS);
+    }
+
+    /**
      * A window named rather than drawn.
      *
-     * The control on the page is a calendar and offers none of these; they stay
-     * because the default window is one of them, and because a link somebody
-     * kept - `?range=last_30_days` - should still open the month it promised
-     * rather than silently showing a week.
+     * All three screens that read by date - the dashboard, the visits log and
+     * the list of won rewards - offer these as buttons beside the calendar, so
+     * the common questions are one click rather than two dates typed twice.
+     * They would still be needed if none of them did: the default window is one
+     * of them, and a link somebody kept - `?range=last_30_days` - should open
+     * the month it promised rather than silently showing a week.
      */
     public static function preset(string $preset): self
     {
         $today = CarbonImmutable::today();
 
         return match ($preset) {
+            /* A single day, so `previous()` gives yesterday - which is what the
+               visits log's old "Today" tile was compared against, kept reachable
+               now that the tile itself follows the picker. */
+            'today' => self::between($preset, $today, $today),
+            /* Week to date rather than a rolling seven days: the two are
+               different questions, and `last_7_days` sits immediately below it
+               for whoever wanted the other one. */
+            'this_week' => self::between($preset, $today->startOfWeek(), $today),
             'last_30_days' => self::between($preset, $today->subDays(29), $today),
             'last_90_days' => self::between($preset, $today->subDays(89), $today),
             'this_month' => self::between($preset, $today->startOfMonth(), $today),

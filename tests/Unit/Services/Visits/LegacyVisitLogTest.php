@@ -193,14 +193,12 @@ it('records every visit in the log as a walk-in', function () {
 });
 
 /**
- * The extract carries none of this. An invented duration cannot be told apart
- * from a measured one in an average, a follow-up nobody asked for is a chase
- * in somebody's diary, and crediting the log to whoever ran the seeder would
- * put all 419 visits into that one person's list.
+ * The extract carries none of this. A follow-up nobody asked for is a chase in
+ * somebody's diary, and crediting the log to whoever ran the seeder would put
+ * all 419 visits into that one person's list.
  */
 it('invents nothing the extract does not hold', function () {
     expect(visitLog()->toSeedRow(loggedRow()))
-        ->duration_minutes->toBeNull()
         ->expected_follow_up_on->toBeNull()
         ->created_by->toBeNull();
 });

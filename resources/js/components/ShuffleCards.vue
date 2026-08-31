@@ -78,6 +78,23 @@ type Phase = 'ready' | 'shuffling' | 'picking' | 'revealing';
 const phase = ref<Phase>('ready');
 const chosen = ref<number | null>(null);
 
+/**
+ * Whether this is a turn that was played before the page was loaded.
+ *
+ * `chosen` is component state, so a refresh forgets which card was tapped.
+ * Without this the table comes back dealt face up with all five names on it -
+ * as though nothing had happened - over a heading that says "Your reward" and
+ * a panel showing the code. The customer is told they won and shown an
+ * un-played game in the same breath.
+ *
+ * There is nothing to restore: which card they touched decided nothing and is
+ * not worth a column. So a reload draws the one card that matters, face up,
+ * and no table at all.
+ */
+const alreadyWon = computed(
+    () => props.reward !== null && chosen.value === null,
+);
+
 /** Card index to the slot it currently occupies. */
 const slotOf = ref<number[]>(props.cards.map((_, index) => index));
 
@@ -99,7 +116,7 @@ const tableWidth = ref(0);
 
 /** Three to a row, so five cards read as three and two rather than a smear. */
 const PER_ROW = 3;
-const GAP = 12;
+const GAP = 16;
 const RATIO = 1.4;
 
 const perRow = computed(() => Math.min(props.cards.length || 1, PER_ROW));
@@ -115,18 +132,42 @@ const rows = computed(() =>
  * far more than a playing card wants to be.
  */
 const MIN_CARD = 84;
-const MAX_CARD = 176;
+const MAX_CARD = 240;
+
+/**
+ * How many cards have to fit across, which is three - or one, on a turn that
+ * was already played and now draws a single card. Dividing the table by three
+ * there would draw that card at a third of the room it has.
+ */
+const across = computed(() => (alreadyWon.value ? 1 : perRow.value));
 
 const cardWidth = computed(() => {
-    const available = tableWidth.value - GAP * (perRow.value - 1);
+    const available = tableWidth.value - GAP * (across.value - 1);
 
     return Math.max(
         MIN_CARD,
-        Math.min(MAX_CARD, Math.floor(available / perRow.value)),
+        Math.min(MAX_CARD, Math.floor(available / across.value)),
     );
 });
 
 const cardHeight = computed(() => Math.round(cardWidth.value * RATIO));
+
+/*
+ * The glyph and the label are sized off the card rather than fixed.
+ *
+ * The card itself swings from 84px on the narrowest phone to 240px on a
+ * showroom monitor - close to three times - and a fixed icon would be a
+ * postage stamp at one end and swallow the card at the other. Both are
+ * clamped, because type below about eleven pixels stops being readable across
+ * a counter however much room there is.
+ */
+const iconSize = computed(() =>
+    Math.max(20, Math.min(64, Math.round(cardWidth.value * 0.28))),
+);
+
+const labelSize = computed(() =>
+    Math.max(11, Math.min(16, Math.round(cardWidth.value * 0.085))),
+);
 
 const tableHeight = computed(
     () => rows.value * cardHeight.value + (rows.value - 1) * GAP,
@@ -288,6 +329,14 @@ function begin(): void {
     void shuffleCards();
 }
 
+/**
+ * The half turn that starts the moment a card is touched.
+ *
+ * Held so the reveal can wait for it rather than fighting it - see the watcher
+ * below, which picks the card up from wherever this left it.
+ */
+let edgeOn: gsap.core.Tween | null = null;
+
 function pick(index: number): void {
     if (phase.value !== 'picking') {
         return;
@@ -296,11 +345,18 @@ function pick(index: number): void {
     chosen.value = index;
     phase.value = 'revealing';
 
+    const element = cardEls.value[index];
+    const inner = innerEls.value[index];
+
+    emit('pick');
+
+    if (reducedMotion()) {
+        return;
+    }
+
     /* The chosen card lifts and the others fade back, so the eye is already on
        the right card before the answer lands. */
-    const element = cardEls.value[index];
-
-    if (element && !reducedMotion()) {
+    if (element) {
         gsap.to(element, { scale: 1.08, zIndex: 20, duration: 0.25 });
         gsap.to(
             cardEls.value.filter((_, other) => other !== index),
@@ -308,19 +364,47 @@ function pick(index: number): void {
         );
     }
 
-    emit('pick');
+    /*
+     * And the card starts turning at once, on the tap rather than on the
+     * answer.
+     *
+     * It used to stand still until `props.reward` arrived, which meant the
+     * whole request sat visibly between the touch and any movement - the card
+     * enlarged, face down, waiting. On a counter that reads as the game going
+     * away to ask a computer something, which is exactly what it must not look
+     * like.
+     *
+     * So it turns to 270 degrees and stops: edge-on, where a card is a line
+     * and discloses nothing. The reward is still the server's to decide and
+     * still has not been asked for - all this buys is that the round trip
+     * happens behind a motion already underway rather than in front of a
+     * motionless one.
+     */
+    if (inner) {
+        edgeOn = gsap.to(inner, {
+            rotationY: 270,
+            duration: 0.3,
+            ease: 'power2.in',
+        });
+    }
 }
 
 /**
- * The turn.
+ * The rest of the turn, once there is something to turn onto.
  *
  * Driven by the reward arriving rather than by the request finishing, because
  * a refusal - a double tap, an expired link, an empty drawer - comes back on
  * the same round trip and must not be celebrated.
+ *
+ * It waits for the half turn `pick()` started rather than starting its own:
+ * two tweens on one property fight, and the loser is whichever the customer
+ * was watching. Awaiting it also means a fast answer simply carries straight
+ * on through the edge - the card never stops - while a slow one rests
+ * side-on until it can be honoured.
  */
 watch(
     () => props.reward,
-    (reward) => {
+    async (reward) => {
         if (reward === null || chosen.value === null) {
             return;
         }
@@ -331,10 +415,14 @@ watch(
             return;
         }
 
+        if (edgeOn !== null) {
+            await edgeOn;
+        }
+
         gsap.to(element, {
             rotationY: 360,
-            duration: 0.55,
-            ease: 'power3.inOut',
+            duration: 0.3,
+            ease: 'power2.out',
             onComplete: burst,
         });
     },
@@ -427,12 +515,44 @@ function iconOf(card: ShuffleCard, index: number): Component {
 -->
 <template>
     <div class="flex w-full flex-col items-center gap-4">
+        <!--
+          The opening line, and it points at the button rather than describing
+          the table.
+
+          It was asked for as "Click the button below to reveal your reward",
+          and that is the sentence this is - minus the verb, which was the one
+          word it could not keep. This component is held two ways: most
+          customers scan the QR code and play on their own phone, where nothing
+          is clicked, and the ones whose camera will not cooperate are handed
+          the showroom monitor, which runs this very page. "Click" would have
+          been wrong in front of the majority, and it would have sat two
+          elements above a prompt that names no input device on purpose - see
+          the note on `prompt-pick`, which sets out why the `(pointer: coarse)`
+          branch that would let both lines name a gesture accurately was
+          rejected. One prompt cannot spend that argument and the next one
+          ignore it. "Use" covers a finger, a mouse and the keyboard the focus
+          ring below already supports, exactly as "Choose" does further down.
+
+          The other half of the old line - "here is what is on the table" - is
+          gone rather than kept, which was the harder call. It was narration:
+          the cards are dealt face up with their names printed across them
+          precisely so that the table can be read before anything moves (see
+          the note on `Phase`), and a sentence telling somebody to look at what
+          they are already looking at is a sentence spent. The panel headed
+          "What you could win" in `pages/rewards/Shuffle.vue` says the same
+          thing in full, with values, for anybody who wants it in words. The
+          cost is on a phone, where that panel stacks below the table and is
+          not on screen at first glance - but the face-up cards are, and they
+          are the better answer anyway. What replaces the narration is the one
+          thing five pieces of artwork genuinely cannot say: that this ends in
+          a reward, and that the button is how it starts.
+        -->
         <p
-            v-if="phase === 'ready' && props.playable"
+            v-if="phase === 'ready' && props.playable && !alreadyWon"
             class="text-sm text-muted-foreground"
             data-test="prompt-ready"
         >
-            Here is what is on the table. Shuffle them, then pick one.
+            Click the button below to reveal your reward.
         </p>
         <p
             v-else-if="phase === 'shuffling'"
@@ -440,15 +560,80 @@ function iconOf(card: ShuffleCard, index: number): Component {
         >
             Shuffling&hellip;
         </p>
+        <!--
+          The one instruction on the screen, and it deliberately names no
+          input device.
+
+          This table is held two ways. Most customers scan the QR code and
+          play on their own phone, where the verb is "tap"; the ones whose
+          camera will not cooperate are handed the showroom monitor, which
+          runs this very page - see the "Shuffle on this screen" button on the
+          staff screen - and there the verb is "click". "Tap a card" was
+          simply wrong on the second of those, in front of the customer least
+          able to work out what was meant.
+
+          The considered alternative was reading `(pointer: coarse)` at the
+          moment the prompt appears and printing "Tap" or "Click" to match.
+          It was rejected on grounds of accuracy rather than effort: that
+          query reports the *primary* pointer, so a showroom monitor with a
+          touch panel answers "coarse" while somebody drives it with a mouse,
+          and a touchscreen laptop flips its answer when it is docked. It
+          would have been a branch that got the showroom - the case it exists
+          for - wrong about as often as it got it right, plus a
+          `window.matchMedia` guard for the browsers that lack it, all to
+          choose between two words.
+
+          Naming the reward instead of the gesture also does more work than
+          the old line did: it says what picking a card is *for*, which is the
+          one thing a customer looking at five identical backs cannot infer.
+          "Choose" covers a finger, a mouse and the keyboard the focus ring
+          below already supports.
+        -->
         <p
             v-else-if="phase === 'picking'"
             class="text-sm font-bold text-primary"
             data-test="prompt-pick"
         >
-            Tap a card
+            Choose a card to reveal your reward
         </p>
 
+        <!--
+          A turn played before this page existed - see `alreadyWon`. One card,
+          face up, at the size the table would have drawn it.
+        -->
         <div
+            v-if="alreadyWon"
+            ref="table"
+            class="flex w-full justify-center"
+            data-test="won-card"
+        >
+            <span
+                class="relative flex flex-col items-center justify-center gap-1.5 rounded-sm bg-cover bg-center px-[14%] py-[12%]"
+                :style="{
+                    backgroundImage: `url(${CARD_FRONT})`,
+                    width: `${cardWidth}px`,
+                    height: `${cardHeight}px`,
+                }"
+            >
+                <component
+                    :is="rewardIcon(props.reward?.type ?? '')"
+                    class="text-amber-300"
+                    :style="{
+                        width: `${iconSize}px`,
+                        height: `${iconSize}px`,
+                    }"
+                />
+                <span
+                    class="text-center leading-tight font-bold text-white"
+                    :style="{ fontSize: `${labelSize}px` }"
+                >
+                    {{ props.reward?.name }}
+                </span>
+            </span>
+        </div>
+
+        <div
+            v-else
             ref="table"
             class="relative w-full"
             :style="{ height: `${tableHeight}px` }"
@@ -499,10 +684,15 @@ function iconOf(card: ShuffleCard, index: number): Component {
                     >
                         <component
                             :is="iconOf(card, index)"
-                            class="size-10 text-amber-300"
+                            class="text-amber-300"
+                            :style="{
+                                width: `${iconSize}px`,
+                                height: `${iconSize}px`,
+                            }"
                         />
                         <span
-                            class="text-center text-xs leading-tight font-bold text-white"
+                            class="text-center leading-tight font-bold text-white"
+                            :style="{ fontSize: `${labelSize}px` }"
                         >
                             {{ faceOf(card, index) }}
                         </span>

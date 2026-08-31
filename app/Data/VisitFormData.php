@@ -44,7 +44,6 @@ class VisitFormData extends Data
         public CustomerSource $source,
         public ?string $respondent,
         public ?string $expected_follow_up_on,
-        public ?int $duration_minutes,
         public ?string $notes,
         /* What they were shown and how keen they were on each. Carries the
            whole row rather than an id, so a product dropped from the catalogue
@@ -73,7 +72,6 @@ class VisitFormData extends Data
             source: $visit->source,
             respondent: $visit->respondent,
             expected_follow_up_on: $visit->expected_follow_up_on?->format('Y-m-d'),
-            duration_minutes: $visit->duration_minutes,
             notes: $visit->notes,
             products: $visit->products
                 ->map(ProductOptionData::fromVisitProduct(...))

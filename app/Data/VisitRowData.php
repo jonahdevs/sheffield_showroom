@@ -50,7 +50,6 @@ class VisitRowData extends Data
         public string $purpose_label,
         public string $visited_on,
         public string $visited_time,
-        public ?string $duration,
         /**
          * What they were shown, by name.
          *
@@ -76,7 +75,6 @@ class VisitRowData extends Data
             purpose_label: $visit->purpose->label(),
             visited_on: $visit->visited_at->format('j M Y'),
             visited_time: $visit->visited_at->format('H:i'),
-            duration: $visit->durationLabel(),
             products: $visit->products->pluck('name')->all(),
             attended_by: $visit->respondent ?? $visit->creator?->name,
             has_notes: filled($visit->notes),

@@ -5,6 +5,7 @@ import {
     Gift,
     KeyRound,
     LayoutGrid,
+    Megaphone,
     Package,
     Receipt,
     Shield,
@@ -30,6 +31,7 @@ import { index as productsIndex } from '@/routes/admin/products';
 import { index as purchasesIndex } from '@/routes/admin/purchases';
 import { index as rewardsIndex } from '@/routes/admin/rewards';
 import { index as redeemIndex } from '@/routes/admin/rewards/redeem';
+import { index as winnersIndex } from '@/routes/admin/rewards/winners';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { index as visitsIndex } from '@/routes/admin/visits';
 import type { NavItem } from '@/types';
@@ -120,11 +122,18 @@ const adminNavItems = computed<NavItem[]>(() =>
 /*
   The promotions rail. Its own group rather than a row under Administration,
   because a campaign is operational work - somebody runs it from the floor -
-  and it owns two screens that are used at different desks: the campaigns
-  themselves, and the counter where a reward is handed over.
+  and it owns three screens that are used at different desks.
 
-  `rewards.view` opens both. Redeeming needs more, and the screen says so
-  rather than the rail hiding a door somebody is allowed to look through.
+  The group is "Promotions" rather than "Rewards", which is what it was called
+  until the middle row below existed. "Rewards" is the better name for the
+  things people have won, and a group and one of its own rows cannot both
+  carry it - a rail reading Rewards > Campaigns, Rewards, Redeem makes the
+  reader work out which of the two they clicked.
+
+  The three read as the life of a promotion in order: it is set up, somebody
+  wins something, somebody comes back for it. All three open on `rewards.view`.
+  Redeeming needs more, and the screen says so rather than the rail hiding a
+  door somebody is allowed to look through.
 */
 const rewardNavItems = computed<NavItem[]>(() =>
     can('rewards.view')
@@ -132,11 +141,16 @@ const rewardNavItems = computed<NavItem[]>(() =>
               {
                   title: 'Campaigns',
                   href: rewardsIndex(),
-                  icon: Gift,
+                  icon: Megaphone,
                   /* The QR screen is filed under `/admin/shuffles`, but it is
                      reached from here, so this row stays lit while one is
                      open. */
                   activeFor: ['/admin/shuffles'],
+              },
+              {
+                  title: 'Rewards',
+                  href: winnersIndex(),
+                  icon: Gift,
               },
               {
                   title: 'Redeem',
@@ -167,7 +181,7 @@ const rewardNavItems = computed<NavItem[]>(() =>
             <NavMain
                 v-if="rewardNavItems.length > 0"
                 :items="rewardNavItems"
-                label="Rewards"
+                label="Promotions"
             />
             <NavMain
                 v-if="adminNavItems.length > 0"

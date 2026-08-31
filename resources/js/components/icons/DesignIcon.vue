@@ -9,13 +9,21 @@
  * The paths carry no fill of their own, so the currentColor on the root
  * is what colours it - which is what lets it sit in the same class list
  * as every lucide icon around it and take its colour from the card.
+ *
+ * The viewBox is square and fitted to what this icon actually draws,
+ * rather than the one the export shipped with. Those were all 110 by
+ * 135 - taller than wide, so a square box letterboxed them - and the
+ * artwork inside filled anywhere from 61% to 85% of it, which is why
+ * the five of them came out visibly different sizes side by side.
+ * Measured with getBBox() against the rendered page, then padded by
+ * six per cent on every edge so they sit at one weight.
  */
 </script>
 
 <template>
     <svg
         xmlns="http://www.w3.org/2000/svg"
-        viewBox="-5.0 -10.0 110.0 135.0"
+        viewBox="-2.51 -2.5 105.0 105.0"
         fill="currentColor"
         aria-hidden="true"
     >

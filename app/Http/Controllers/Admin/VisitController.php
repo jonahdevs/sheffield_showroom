@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Data\CustomerOptionData;
+use App\Data\DashboardRangeData;
 use App\Data\DashboardStatData;
 use App\Data\ProductOptionData;
 use App\Data\VisitFormData;
@@ -21,8 +22,8 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Visit;
+use App\Support\Http\DateWindow;
 use App\Support\Http\ExportResponse;
-use App\Support\Http\ExportWindow;
 use App\Support\Http\PageSize;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -66,12 +67,29 @@ class VisitController extends Controller
         return Inertia::render('admin/visits/Index', [
             'visits' => $visits,
             'filters' => $filters,
+            /* The window in words, resolved here rather than on the page. The
+               server is what settles a pair the wrong way round or a date that
+               would not parse, so the calendar has to read its label off the
+               answer instead of off the click - and it is the same sentence the
+               printed export carries, so a sheet and the screen it came from
+               cannot describe their window differently. */
+            'date_label' => $this->windowLabel($filters),
+            /* The named windows the picker offers as one click each. Borrowed
+               from the dashboard's list rather than written again here, so
+               "this month" means the same days on both screens. */
+            'presets' => DashboardRangeData::options(),
+            /* How long the chosen window is, which is the only thing the tiles'
+               "vs previous N days" caption needs and is null where the window
+               has no length to speak of - see `precedingWindow()`. The sentence
+               itself is built on the page, because how a figure is captioned is
+               presentation and a controller has no business writing it. */
+            'window_days' => $this->precedingWindow($filters)['days'] ?? null,
             'purposes' => VisitPurpose::options(),
             'page_sizes' => PageSize::OPTIONS,
             /* Only the formats this host can actually produce - see
                `ExportResponse::available()`. */
             'formats' => ExportResponse::available(),
-            'stats' => $this->stats($viewer),
+            'stats' => $this->stats($viewer, $filters),
             /* A salesperson sees their own visits; saying so stops the list
                reading as though the showroom had a quiet week. */
             'scoped_to_own' => ! $viewer->can(Permission::VisitsViewAny->value),
@@ -85,62 +103,112 @@ class VisitController extends Controller
     }
 
     /**
-     * The four figures above the list, each against the window before it.
+     * The three figures above the list, each for the window the page is being
+     * read under and each against the equally long window immediately before
+     * it.
      *
-     * Deliberately NOT narrowed by the search or the purpose filter. These
-     * answer "how busy has the floor been", which is a standing question about
-     * the log rather than about whatever is currently typed in the box - and
-     * the pager already says how many rows a filter matched, so repeating that
-     * here would be a second answer to a question nobody asked twice.
+     * This row used to hold four fixed windows - a running total, today, this
+     * week, this month - counted in one pass with conditional aggregates. That
+     * set could not survive the date picker moving to the top of the page: a
+     * reader who asks for February and is answered with "today" and "this
+     * month" is being shown a row that has nothing to do with the list under
+     * it, and there is no honest way to compose a fixed window with an
+     * arbitrary one. The named windows themselves are not lost - the picker
+     * offers today, this week and this month as presets, so those readings are
+     * still one click away and now bring the list with them.
      *
-     * Counted in one pass with conditional aggregates rather than eight round
-     * trips: `visited_at` is indexed and every window is a bound on that one
-     * column, so the database can answer them together.
+     * Still deliberately NOT narrowed by the search or the purpose filter.
+     * Those two ask "which of these rows did I mean", where the window asks
+     * "which stretch of the log am I reading" - and the pager already says how
+     * many rows a search matched, so repeating that here would be a second
+     * answer to a question nobody asked twice.
      *
+     * Which three: the count, because it is the shape of the window; the people
+     * behind it, because forty visits from twenty-five customers is a different
+     * fortnight from forty visits from thirty-nine and the list itself cannot
+     * show that without being read end to end; and the follow-ups promised,
+     * because it is the only figure here that is work outstanding rather than
+     * work done, which is what somebody scanning a visits list is usually about
+     * to go and do something about. Products named and new customers were the
+     * other candidates and were left to the dashboard - this screen is the log,
+     * not the analysis of it, and a row of tiles that duplicates the dashboard
+     * gives a reader no reason to have come here.
+     *
+     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      * @return array<int, DashboardStatData>
      */
-    private function stats(User $viewer): array
+    private function stats(User $viewer, array $filters): array
     {
-        $now = CarbonImmutable::now();
-        $day = $now->startOfDay();
-        $week = $now->startOfWeek();
-        $month = $now->startOfMonth();
+        $now = $this->totals($viewer, $filters['from'], $filters['to']);
+        $preceding = $this->precedingWindow($filters);
 
-        /* `CASE WHEN` rather than `SUM(visited_at >= ?)`: the shorthand leans
-           on booleans summing as integers, which is true of MySQL and SQLite
-           but is not something to bet a figure on. */
-        $since = 'COUNT(CASE WHEN visited_at >= ? THEN 1 END)';
-        $between = 'COUNT(CASE WHEN visited_at >= ? AND visited_at < ? THEN 1 END)';
-
-        $row = $this->visible($viewer)
-            ->selectRaw('COUNT(*) AS total')
-            ->selectRaw("{$since} AS today", [$day])
-            ->selectRaw("{$since} AS this_week", [$week])
-            ->selectRaw("{$since} AS this_month", [$month])
-            ->selectRaw("{$between} AS yesterday", [$day->subDay(), $day])
-            ->selectRaw("{$between} AS last_week", [$week->subWeek(), $week])
-            ->selectRaw("{$between} AS last_month", [$month->subMonth(), $month])
-            ->first();
-
-        $count = fn (string $key): int => (int) ($row?->{$key} ?? 0);
+        /* No window, or one open at the back, has nothing of equal length
+           before it, so every figure is compared against zero. `compare()`
+           reads that as "nothing to measure against" and the tile prints so,
+           which is the truthful answer for a reader looking at the whole log -
+           the alternative, inventing some earlier stretch to hold up beside it,
+           would be a percentage about a period nobody chose. */
+        $before = $preceding === null
+            ? ['visits' => 0, 'customers' => 0, 'follow_ups' => 0]
+            : $this->totals($viewer, $preceding['from'], $preceding['to']);
 
         return [
-            /* Compared against nothing, because a running total has nothing
-               before it - it is every visit there has ever been. The tile
-               renders that as "Nothing before it to compare" rather than
-               inventing a window for it. */
             DashboardStatData::compare(
-                'total',
-                /* Claiming a floor-wide total while showing a personal one
+                'visits',
+                /* Claiming a floor-wide count while showing a personal one
                    would be a quiet lie, so the label says which it is. */
                 $viewer->can(Permission::VisitsViewAny->value) ? 'Total visits' : 'Visits you logged',
-                $count('total'),
-                previous: 0,
+                $now['visits'],
+                $before['visits'],
             ),
-            DashboardStatData::compare('today', 'Today', $count('today'), $count('yesterday')),
-            DashboardStatData::compare('week', 'This week', $count('this_week'), $count('last_week')),
-            DashboardStatData::compare('month', 'This month', $count('this_month'), $count('last_month')),
+            DashboardStatData::compare('customers', 'Unique customers', $now['customers'], $before['customers']),
+            DashboardStatData::compare('follow_ups', 'Follow-ups promised', $now['follow_ups'], $before['follow_ups']),
         ];
+    }
+
+    /**
+     * The three figures for one window, in a single round trip.
+     *
+     * One query rather than three: they read the same rows behind the same
+     * visibility split and the same two bounds on `visited_at`, which is
+     * indexed, so the database can answer all three off one pass rather than
+     * being asked to find the same rows again twice.
+     *
+     * `toBase()` because the aliases here - `visits`, `customers` - would
+     * otherwise be read off a hydrated `Visit`, where a name that happens to
+     * match a relation or an accessor resolves to that instead of to the
+     * column. A plain row has no such opinions.
+     *
+     * @return array{visits: int, customers: int, follow_ups: int}
+     */
+    private function totals(User $viewer, string $from, string $to): array
+    {
+        $counted = $this->betweenDates($this->visible($viewer), $from, $to)
+            ->selectRaw('COUNT(*) AS visits')
+            ->selectRaw('COUNT(DISTINCT visits.customer_id) AS customers')
+            /* `COUNT` over a nullable column counts the rows that have one,
+               which is exactly what a pencilled-in follow-up is. */
+            ->selectRaw('COUNT(visits.expected_follow_up_on) AS follow_ups')
+            ->toBase()
+            ->first();
+
+        return [
+            'visits' => (int) ($counted?->visits ?? 0),
+            'customers' => (int) ($counted?->customers ?? 0),
+            'follow_ups' => (int) ($counted?->follow_ups ?? 0),
+        ];
+    }
+
+    /**
+     * The equally long stretch of log immediately before the chosen window,
+     * and how many days that is.
+     *
+     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     * @return array{days: int, from: string, to: string}|null
+     */
+    private function precedingWindow(array $filters): ?array
+    {
+        return DateWindow::preceding($filters['from'], $filters['to']);
     }
 
     /**
@@ -291,12 +359,12 @@ class VisitController extends Controller
      * cannot quietly widen past either the filters the viewer set or the
      * visibility split they sit behind.
      *
-     * @param  array{search: string, purpose: string}  $filters
+     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      * @return Builder<Visit>
      */
     private function filtered(User $viewer, array $filters): Builder
     {
-        return $this->visible($viewer)
+        $query = $this->visible($viewer)
             ->when(
                 $filters['search'] !== '',
                 fn (Builder $query) => $query->search($filters['search']),
@@ -304,6 +372,51 @@ class VisitController extends Controller
             ->when(
                 $filters['purpose'] !== '',
                 fn (Builder $query) => $query->forPurpose(VisitPurpose::from($filters['purpose'])),
+            );
+
+        return $this->betweenDates($query, $filters['from'], $filters['to']);
+    }
+
+    /**
+     * A query narrowed to a window, either end of which may be blank for an
+     * open one.
+     *
+     * Its own method because the list, the download and the figures above them
+     * all have to draw the window the same way. They did not, briefly - the
+     * tiles counted fixed windows of their own - and a screen whose figures
+     * describe a different fortnight from the rows beneath them is the sort of
+     * disagreement nobody notices until a number is quoted in a meeting.
+     *
+     * Both ends are dates, `visited_at` is a datetime, and the two ends
+     * therefore need opposite treatment. The near end is the opening midnight,
+     * which is the first instant of that day. The far end is written as `< the
+     * following midnight` rather than `<= 23:59:59`: a window closing on the
+     * 28th is meant to hold everything logged during the 28th, and the
+     * second-precision reading quietly drops a visit stamped in the last second
+     * of the day - and would drop rather more of them on any host storing
+     * fractional seconds.
+     *
+     * @param  Builder<Visit>  $query
+     * @return Builder<Visit>
+     */
+    private function betweenDates(Builder $query, string $from, string $to): Builder
+    {
+        return $query
+            ->when(
+                $from !== '',
+                fn (Builder $query) => $query->where(
+                    'visits.visited_at',
+                    '>=',
+                    CarbonImmutable::parse($from)->startOfDay(),
+                ),
+            )
+            ->when(
+                $to !== '',
+                fn (Builder $query) => $query->where(
+                    'visits.visited_at',
+                    '<',
+                    CarbonImmutable::parse($to)->addDay()->startOfDay(),
+                ),
             );
     }
 
@@ -315,7 +428,7 @@ class VisitController extends Controller
      * a short month on the floor, and a sheet that does not say so is one
      * somebody will read as the whole showroom's.
      *
-     * @param  array{search: string, purpose: string}  $filters
+     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      */
     private function exportSubtitle(User $viewer, array $filters): string
     {
@@ -323,10 +436,11 @@ class VisitController extends Controller
             $viewer->can(Permission::VisitsViewAny->value)
                 ? 'Every visit'
                 : 'Visits logged by '.$viewer->name,
-            /* The visits screen has no date filter, so the window is the whole
-               log - said out loud, because a printed sheet has nothing else on
-               it to say how far back it reaches. */
-            ExportWindow::label(null, null),
+            /* The window is printed even when none was picked, where it reads
+               "All dates": a sheet has nothing else on it to say how far back
+               it reaches, and a full history and a fortnight somebody happened
+               to pull are otherwise the same piece of paper. */
+            $this->windowLabel($filters),
         ];
 
         if ($filters['purpose'] !== '') {
@@ -378,15 +492,48 @@ class VisitController extends Controller
     }
 
     /**
-     * @return array{search: string, purpose: string}
+     * @return array{search: string, purpose: string, range: string, from: string, to: string}
      */
     private function filters(Request $request): array
     {
         $purpose = $request->string('purpose')->toString();
+        [$range, $from, $to] = $this->window($request);
 
         return [
             'search' => $request->string('search')->trim()->toString(),
             'purpose' => in_array($purpose, VisitPurpose::values(), true) ? $purpose : '',
+            /* The name of the window where one was named, blank where it was
+               drawn on the calendar or not chosen at all. Only the picker cares
+               which of the two it was - everything downstream reads the
+               resolved dates - but it has to know, or a preset would come back
+               from the server as a pair of dates and the button that produced
+               it would stop reading "This month" the moment it was clicked. */
+            'range' => $range,
+            'from' => $from,
+            'to' => $to,
         ];
+    }
+
+    /**
+     * The date window the log is being read under: the name of the window
+     * where one was named, and the pair of `Y-m-d` ends it resolves to, either
+     * of which may be blank for an open end.
+     *
+     * @return array{0: string, 1: string, 2: string}
+     */
+    private function window(Request $request): array
+    {
+        return DateWindow::fromRequest($request);
+    }
+
+    /**
+     * The window as a sentence, for the calendar's closed button and for the
+     * line under a printed export's title.
+     *
+     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     */
+    private function windowLabel(array $filters): string
+    {
+        return DateWindow::label($filters['from'], $filters['to']);
     }
 }

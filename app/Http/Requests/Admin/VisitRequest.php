@@ -26,9 +26,6 @@ use Illuminate\Validation\Rule;
  */
 class VisitRequest extends FormRequest
 {
-    /** Nobody sat with a customer for two days. */
-    private const MAX_DURATION_MINUTES = 720;
-
     /** Past this it is a typo, not an order the showroom floor took. */
     private const MAX_QUANTITY = 9999;
 
@@ -88,8 +85,6 @@ class VisitRequest extends FormRequest
 
             /* You chase somebody after seeing them, never before. */
             'expected_follow_up_on' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:visited_on'],
-
-            'duration_minutes' => ['nullable', 'integer', 'min:1', 'max:'.self::MAX_DURATION_MINUTES],
 
             'notes' => ['nullable', 'string', 'max:2000'],
 
@@ -248,7 +243,6 @@ class VisitRequest extends FormRequest
             'source',
             'respondent',
             'expected_follow_up_on',
-            'duration_minutes',
             'notes',
         ]);
     }
@@ -264,11 +258,9 @@ class VisitRequest extends FormRequest
             'customer_name' => 'customer name',
             'company_name' => 'company or organisation',
             'phone' => 'phone number',
-            'respondent' => 'assigned staff',
             'visited_on' => 'visit date',
             'visited_time' => 'visit time',
             'expected_follow_up_on' => 'expected follow-up',
-            'duration_minutes' => 'duration',
             'products' => 'products viewed',
             'products.*.quantity' => 'quantity',
             'products.*.interest_level' => 'interest level',
@@ -287,7 +279,6 @@ class VisitRequest extends FormRequest
             'respondent.required' => 'Say who took the visit.',
             'visited_on.before_or_equal' => 'A visit cannot be logged for a future date.',
             'expected_follow_up_on.after_or_equal' => 'The follow-up cannot be before the visit.',
-            'duration_minutes.max' => 'That is longer than a working day. Check the number.',
         ];
     }
 

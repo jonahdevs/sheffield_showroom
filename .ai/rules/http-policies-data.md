@@ -29,3 +29,10 @@ The permission matrix is drawn from the roles that are actually saved on edit, a
 No role grants `profile.email.update` by default (super admin has it only via `Permission::cases()`). The normal door for an email change is the Users screen, behind `users.update`, which also un-verifies the address.
 
 `settings/Profile.vue` reads the same permission through `usePermissions()` and renders the field disabled when it is missing — a disabled input posts nothing, which is what keeps the two halves in step.
+
+## Named date windows live in DashboardRangeData::PRESETS, and only there
+Both the dashboard and the visits list read by named windows (today, this_week, last_7_days, last_30_days, last_90_days, this_month, last_month). The names, their labels and the days they resolve to are declared once in `DashboardRangeData::PRESETS` / `preset()`, exposed as `options()` for a picker and `isPreset()` for a query string. Do not resolve a named window in a controller or in JavaScript - two screens naming the same window differently is the drift this list prevents.
+
+`preset()` answers an unrecognised name with the default week, which is right for the dashboard, where some window must be drawn, and wrong anywhere a missing name should mean "no window". Guard with `isPreset()` first - `VisitController::window()` does.
+
+The visits list resolves a named window into `filters['from']`/`filters['to']` and never uses `DashboardRangeData` for its own filtering: `custom()` clips an end in the future and caps the span at 366 days, both right for a trend line and wrong for a question about what is in the log.

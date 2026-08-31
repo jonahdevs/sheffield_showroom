@@ -215,9 +215,6 @@ const STEPS = [
     'Show the reward code at the showroom to claim it.',
 ];
 
-/** The rewards that actually carry terms, which is what the panel prints. */
-const termed = computed(() => props.cards.filter((card) => card.terms));
-
 defineOptions({ layout: PublicLayout });
 </script>
 
@@ -500,7 +497,15 @@ defineOptions({ layout: PublicLayout });
             </div>
         </div>
 
-        <!-- What is on offer, and the small print behind it. -->
+        <!--
+          What is on offer, and the small print behind it.
+
+          The list names the rewards and says nothing about how many of each
+          are left - see `ShuffleCampaignData`, which is a separate class from
+          `RewardCampaignData` for exactly this reason. Anybody holding a link
+          can open this page, and remaining counts are what would let them work
+          out the odds before tapping.
+        -->
         <div class="order-3 flex flex-col gap-4">
             <Card as="section" class="gap-0 p-0" data-test="panel-rewards">
                 <div class="border-b border-divider px-5 py-3.5">
@@ -534,21 +539,9 @@ defineOptions({ layout: PublicLayout });
                         </Badge>
                     </li>
                 </ul>
-
-                <!-- No counts anywhere in that list, on purpose - see
-                     `ShuffleCampaignData`. What is said instead is the honest
-                     version of the same thing. -->
-                <p class="border-t border-divider px-5 py-3 text-xs text-faint">
-                    One of these, drawn from what is still unclaimed.
-                </p>
             </Card>
 
-            <Card
-                v-if="termed.length > 0"
-                as="section"
-                class="gap-0 p-0"
-                data-test="panel-terms"
-            >
+            <Card as="section" class="gap-0 p-0" data-test="panel-terms">
                 <div class="border-b border-divider px-5 py-3.5">
                     <h2
                         class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
@@ -557,18 +550,34 @@ defineOptions({ layout: PublicLayout });
                     </h2>
                 </div>
 
-                <!-- The terms the campaign actually carries, per reward.
-                     Nothing is written here that an administrator did not type
-                     into the campaign: invented small print is small print
-                     nobody agreed to. -->
-                <dl class="flex flex-col gap-3 p-5 text-left text-xs">
-                    <div v-for="card in termed" :key="card.name">
-                        <dt class="font-bold">{{ card.name }}</dt>
-                        <dd class="mt-0.5 text-muted-foreground">
-                            {{ card.terms }}
-                        </dd>
-                    </div>
-                </dl>
+                <!--
+                  The promotion's own conditions, composed on the server rather
+                  than written into this template - see
+                  `ShuffleCampaignData::termsFor()`. One of them names the
+                  shuffle limit, and a page that said "only once" over a
+                  campaign set to three would be contradicting the rule the
+                  software actually enforces.
+
+                  What a particular reward entitles somebody to is its own
+                  small print, and that is shown on the reveal beside the
+                  reward carrying it, where it is about something they have
+                  actually won.
+                -->
+                <ul
+                    class="flex list-none flex-col gap-2.5 p-5 text-left text-xs text-muted-foreground"
+                >
+                    <li
+                        v-for="term in props.campaign.terms"
+                        :key="term"
+                        class="flex gap-2.5"
+                    >
+                        <span
+                            class="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <span>{{ term }}</span>
+                    </li>
+                </ul>
             </Card>
         </div>
     </div>

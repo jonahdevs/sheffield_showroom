@@ -5,12 +5,14 @@ use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
 use App\Enums\Permission;
 use App\Enums\VisitPurpose;
+use App\Exports\VisitExport;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Visit;
 use Carbon\CarbonImmutable;
+use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -120,7 +122,6 @@ function visitFields(): array
         'visited_time' => '14:30',
         'purpose' => VisitPurpose::Quotation->value,
         'source' => CustomerSource::Referral->value,
-        'duration_minutes' => 45,
         'notes' => 'Coming back on Friday.',
         'products' => [],
     ];
@@ -172,55 +173,134 @@ it('lists every visit to somebody who may see the floor', function () {
  * work, not the showroom's.
  */
 /**
- * The four figures above the list. Each window is a floor on `visited_at`, so
- * a visit today is also counted in the week and the month - they narrow, they
- * do not partition.
+ * The three figures above the list, all of them over the window the page is
+ * being read under. The row used to hold four fixed windows - a total, today,
+ * this week, this month - which said nothing about a reader who had asked for
+ * February; those readings now come off the picker's presets instead.
  */
-it('counts the log by today, this week and this month', function () {
-    $manager = visitManager();
+it('measures the figures over the window the page is read under', function () {
+    $regular = Customer::factory()->create();
 
-    /* Pinned to a Wednesday so "this week" has days either side of today
-       inside it, and the month boundary is nowhere near. */
-    $this->travelTo(CarbonImmutable::parse('2026-08-19 10:00:00'));
+    /* Two visits from one customer and one from another, all inside February,
+       so the count and the head count cannot be mistaken for each other. */
+    Visit::factory()->count(2)->create([
+        'customer_id' => $regular->id,
+        'visited_at' => '2026-02-14 11:00',
+        'expected_follow_up_on' => null,
+    ]);
+    Visit::factory()->create([
+        'visited_at' => '2026-02-20 09:00',
+        'expected_follow_up_on' => '2026-03-02',
+    ]);
 
-    Visit::factory()->count(2)->create(['visited_at' => now()]);
-    Visit::factory()->create(['visited_at' => now()->startOfWeek()->addHours(9)]);
-    Visit::factory()->create(['visited_at' => now()->startOfMonth()->addHours(9)]);
-    Visit::factory()->create(['visited_at' => now()->subMonths(3)]);
+    /* Outside the window on both sides, and one of them carrying a follow-up
+       so the third tile is proved to be windowed rather than counting the log. */
+    Visit::factory()->create([
+        'visited_at' => '2026-01-20 09:00',
+        'expected_follow_up_on' => '2026-02-01',
+    ]);
+    Visit::factory()->create([
+        'visited_at' => '2026-03-05 09:00',
+        'expected_follow_up_on' => null,
+    ]);
 
-    $this->actingAs($manager)
-        ->get(route('admin.visits.index'))
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-01', 'to' => '2026-02-28']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('stats.0.value', 5)
+            ->where('stats.0.key', 'visits')
+            ->where('stats.0.value', 3)
+            ->where('stats.1.key', 'customers')
             ->where('stats.1.value', 2)
-            ->where('stats.2.value', 3)
-            ->where('stats.3.value', 4));
+            ->where('stats.2.key', 'follow_ups')
+            ->where('stats.2.value', 1)
+            /* The caption's arithmetic, so the tiles can say what the delta is
+               measured against. February 2026 is a 28-day month. */
+            ->where('window_days', 28));
 });
 
 /**
- * Each window carries the same window before it, so the tile can say which way
- * the floor is going rather than only how busy it is.
+ * Every figure is held up against the equally long stretch of log immediately
+ * before the window, which is the one comparison that composes with a window
+ * somebody drew themselves. The dashboard measures its own row the same way.
  */
-it('compares each window against the one before it', function () {
-    $this->travelTo(CarbonImmutable::parse('2026-08-19 10:00:00'));
+it('compares the window against the equally long one before it', function () {
+    /* A fortnight, 15 to 28 February, so the window before it is 1 to 14. */
+    Visit::factory()->count(4)->create(['visited_at' => '2026-02-20 11:00']);
+    Visit::factory()->count(2)->create(['visited_at' => '2026-02-10 11:00']);
 
-    /* Four today against two yesterday: up a hundred per cent. */
-    Visit::factory()->count(4)->create(['visited_at' => now()]);
-    Visit::factory()->count(2)->create(['visited_at' => now()->subDay()]);
+    /* A day earlier than the preceding window reaches, so a comparison that
+       quietly counted everything before the window would come out at three. */
+    Visit::factory()->create(['visited_at' => '2026-01-31 11:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-15', 'to' => '2026-02-28']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('window_days', 14)
+            ->where('stats.0.value', 4)
+            ->where('stats.0.previous', 2)
+            ->where('stats.0.change', 100));
+});
+
+/**
+ * The whole log has nothing of equal length before it, so the tiles say so
+ * rather than holding the figure up against some earlier stretch nobody chose.
+ */
+it('leaves the figures nothing to compare against where no window is set', function () {
+    Visit::factory()->count(2)->create();
 
     $this->actingAs(visitManager())
         ->get(route('admin.visits.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('stats.1.key', 'today')
-            ->where('stats.1.value', 4)
-            ->where('stats.1.previous', 2)
-            ->where('stats.1.change', 100)
-            /* A running total has nothing before it - every visit there has
-               ever been is already in the figure. */
-            ->where('stats.0.key', 'total')
+            ->where('window_days', null)
+            ->where('stats.0.value', 2)
+            ->where('stats.0.previous', 0)
             ->where('stats.0.change', null));
+});
+
+/**
+ * The presets are what keeps today, this week and this month one click away now
+ * that the tiles no longer hold them. A named window resolves on the server, so
+ * a bookmark still means the same words next month rather than the days they
+ * happened to cover when it was saved.
+ */
+it('reads a named window off the query string', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-19 10:00:00'));
+
+    Visit::factory()->count(3)->create(['visited_at' => now()]);
+    Visit::factory()->create(['visited_at' => now()->subDay()]);
+    Visit::factory()->create(['visited_at' => now()->subMonths(3)]);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['range' => 'today']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 3)
+            /* Echoed back so the picker knows to read by name rather than by
+               the dates it resolved to. */
+            ->where('filters.range', 'today')
+            ->where('filters.from', '2026-08-19')
+            ->where('filters.to', '2026-08-19')
+            ->where('window_days', 1)
+            /* Yesterday is the window before a window one day long. */
+            ->where('stats.0.value', 3)
+            ->where('stats.0.previous', 1));
+});
+
+/** A window with no name is no window, not the week the dashboard falls back on. */
+it('reads a window name it does not recognise as no window at all', function () {
+    Visit::factory()->count(3)->create(['visited_at' => '2026-02-14 11:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['range' => 'since_the_beginning']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 3)
+            ->where('filters.range', '')
+            ->where('filters.from', '')
+            ->where('date_label', 'All dates'));
 });
 
 /** A salesperson's figures are their own log, not the floor's. */
@@ -299,7 +379,6 @@ it('logs a visit against the person who recorded it', function () {
         ->and($visit->created_by)->toBe($user->id)
         ->and($visit->purpose)->toBe(VisitPurpose::Quotation)
         ->and($visit->source)->toBe(CustomerSource::Referral)
-        ->and($visit->duration_minutes)->toBe(45)
         ->and($visit->visited_at->format('Y-m-d H:i'))
         ->toBe($payload['visited_on'].' 14:30');
 });
@@ -464,20 +543,6 @@ it('refuses a customer who is not on file', function () {
         ->assertSessionHasErrors('customer_id');
 });
 
-it('keeps a duration that was left blank as nothing rather than zero', function () {
-    $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
-        'duration_minutes' => null,
-    ]));
-
-    expect(Visit::query()->sole()->duration_minutes)->toBeNull();
-});
-
-it('refuses a duration longer than a working day', function () {
-    $this->actingAs(visitManager())
-        ->post(route('admin.visits.store'), visitPayload(['duration_minutes' => 5000]))
-        ->assertSessionHasErrors('duration_minutes');
-});
-
 it('lets a salesperson correct the visit they logged', function () {
     $salesperson = visitSalesperson();
     $visit = Visit::factory()->loggedBy($salesperson)->create();
@@ -548,6 +613,112 @@ it('narrows the list to one purpose', function () {
         ->get(route('admin.visits.index', ['purpose' => VisitPurpose::Complaint->value]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('visits.total', 2));
+});
+
+it('narrows the list to a window of dates', function () {
+    Visit::factory()->create(['visited_at' => '2026-02-09 16:00']);
+    Visit::factory()->count(2)->create(['visited_at' => '2026-02-14 11:00']);
+    Visit::factory()->create(['visited_at' => '2026-03-01 09:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-10', 'to' => '2026-02-28']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 2)
+            /* Echoed back so the calendar redraws from what the server
+               settled on rather than from the click. */
+            ->where('filters.from', '2026-02-10')
+            ->where('filters.to', '2026-02-28')
+            ->where('date_label', '2026-02-10 to 2026-02-28'));
+});
+
+/** Half a window is still a question: everything since a date, or up to one. */
+it('leaves the far end open where only the near one was picked', function () {
+    Visit::factory()->create(['visited_at' => '2026-02-09 16:00']);
+    Visit::factory()->count(2)->create(['visited_at' => '2026-02-14 11:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-10']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 2)
+            ->where('filters.to', '')
+            ->where('date_label', 'From 2026-02-10'));
+});
+
+/**
+ * The end of the window is a date and `visited_at` is a datetime, so the
+ * closing day is the trap: read as a bare midnight it would hold nothing that
+ * happened during that day, which is the opposite of what somebody picking it
+ * on a calendar meant.
+ */
+it('counts the whole of the closing day, not the midnight that opens it', function () {
+    Visit::factory()->create(['visited_at' => '2026-02-28 23:59:00']);
+    Visit::factory()->create(['visited_at' => '2026-03-01 00:01:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-01', 'to' => '2026-02-28']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('visits.total', 1));
+});
+
+/** Two ends of one window, whichever order they arrived in. */
+it('reads a window handed over back to front as the same window', function () {
+    Visit::factory()->create(['visited_at' => '2026-02-14 11:00']);
+    Visit::factory()->create(['visited_at' => '2026-03-20 11:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-28', 'to' => '2026-02-01']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 1)
+            ->where('filters.from', '2026-02-01')
+            ->where('filters.to', '2026-02-28'));
+});
+
+/**
+ * A mangled URL is a mistake, not an attack, and the screen it lands on has no
+ * form to show a validation error against - so the log comes back unfiltered
+ * rather than as a 500 or a redirect.
+ */
+it('reads a window it cannot make sense of as no window at all', function () {
+    Visit::factory()->count(3)->create(['visited_at' => '2026-02-14 11:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => 'last tuesday', 'to' => '28/02/2026']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.total', 3)
+            ->where('filters.from', '')
+            ->where('filters.to', '')
+            ->where('date_label', 'All dates'));
+});
+
+/**
+ * The download is meant to be the screen the reader was looking at, so the
+ * window has to reach it too - a file wider than the list it was taken off is
+ * the sort of thing nobody notices until it has been circulated.
+ */
+it('carries the window into the download', function () {
+    Excel::fake();
+
+    $manager = visitStaff([
+        Permission::VisitsViewAny,
+        Permission::VisitsViewOwn,
+        Permission::VisitsExport,
+    ]);
+
+    $inside = Visit::factory()->create(['visited_at' => '2026-02-14 11:00']);
+    Visit::factory()->create(['visited_at' => '2026-03-01 09:00']);
+
+    $this->actingAs($manager)
+        ->get(route('admin.visits.export', ['from' => '2026-02-01', 'to' => '2026-02-28']))
+        ->assertSuccessful();
+
+    Excel::assertDownloaded(
+        'visits-'.now()->toDateString().'.csv',
+        fn (VisitExport $export) => $export->query()->pluck('id')->all() === [$inside->id],
+    );
 });
 
 it('offers the form the customers and products it has to choose between', function () {
