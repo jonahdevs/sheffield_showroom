@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\InterestLevel;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -19,6 +20,11 @@ return new class extends Migration
     {
         Schema::create('visits', function (Blueprint $table) {
             $table->id();
+
+            /* Which row of the old system this note was read out of. See
+               `customers.legacy_id`: the two imports run at different times
+               and this is what ties a note to the customer it belongs to. */
+            $table->unsignedBigInteger('legacy_id')->nullable();
 
             /* Restricted rather than cascaded: a customer with visits against
                them is soft deleted, never dropped, and the day somebody
@@ -58,6 +64,8 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
+            $table->index('legacy_id');
+
             /* The shape the list asks for: a salesperson's own visits, newest
                first. */
             $table->index(['created_by', 'visited_at']);
@@ -67,6 +75,20 @@ return new class extends Migration
             $table->id();
             $table->foreignId('visit_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+
+            /* How many they were after. A showroom customer asks about twenty
+               sheets rather than one, and a write-up that records only which
+               product they looked at cannot tell a roofing job from a repair.
+               Defaulted to one, so adding a product costs nobody a number they
+               do not yet know. */
+            $table->unsignedInteger('quantity')->default(1);
+
+            /* How keen they were on this one, on the pivot rather than on the
+               visit: somebody shown four things is rarely equally interested
+               in all four, and which one they leaned towards is what the
+               write-up is for. Defaulted rather than nullable - being shown
+               something is itself a middling amount of interest. */
+            $table->string('interest_level')->default(InterestLevel::Medium->value);
 
             /* One product cannot be shown twice on the same visit. Without
                 this a double submit records the same tour twice. */

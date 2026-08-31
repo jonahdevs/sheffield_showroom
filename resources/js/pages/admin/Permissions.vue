@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { Search } from '@lucide/vue';
+import { Pin, Search } from '@lucide/vue';
 import { computed } from 'vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
 import TablePagination from '@/components/TablePagination.vue';
@@ -78,6 +78,11 @@ defineOptions({
   synced by `permissions:sync`, so nothing here is editable - a permission with
   no check behind it would be a promise the application never keeps. Which
   roles hand one out is changed on the Roles screen.
+
+  The people named in "Assigned to" are the reason it is worth reading twice.
+  A permission granted straight to an account appears nowhere on the Roles
+  screen, so unless this page names them an ability can outlive the role it
+  arrived with and no audit of roles would ever turn it up.
 -->
 <template>
     <Head title="Permissions" />
@@ -86,7 +91,8 @@ defineOptions({
         <div class="flex flex-col gap-2">
             <h1 class="text-2xl leading-tight">Permissions</h1>
             <p class="text-sm text-muted-foreground">
-                Capabilities defined in code and handed out through roles.
+                Capabilities defined in code, handed out through roles or pinned
+                to one account.
             </p>
         </div>
 
@@ -219,11 +225,36 @@ defineOptions({
                                     +{{ permission.roles.length - SHOWN }}
                                 </Badge>
                                 <span
-                                    v-if="permission.roles.length === 0"
+                                    v-if="
+                                        permission.roles.length === 0 &&
+                                        permission.users.length === 0
+                                    "
                                     class="text-xs text-muted-foreground"
                                 >
                                     Held by no role
                                 </span>
+
+                                <!-- Outlined and pinned, so a grant that came
+                                     with a job and one nailed to a person do
+                                     not read as the same thing. -->
+                                <Badge
+                                    v-for="user in permission.users.slice(
+                                        0,
+                                        SHOWN,
+                                    )"
+                                    :key="user"
+                                    variant="outline"
+                                    :data-test="`direct-${permission.value}`"
+                                >
+                                    <Pin class="size-3" />
+                                    {{ user }}
+                                </Badge>
+                                <Badge
+                                    v-if="permission.users.length > SHOWN"
+                                    variant="outline"
+                                >
+                                    +{{ permission.users.length - SHOWN }}
+                                </Badge>
                             </span>
                         </div>
                     </div>

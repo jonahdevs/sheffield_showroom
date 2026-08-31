@@ -5,6 +5,19 @@ use App\Http\Controllers\Settings\SecurityController;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
 
+/*
+ * `auth` without `verified`, unlike every other screen in the application and
+ * unlike the rest of this file.
+ *
+ * This is the one door an unverified account can still reach, and it has to
+ * be: the profile page is where the "re-send the verification email" link
+ * lives, so putting it behind `verified` would lock somebody out of the only
+ * way back in. An administrator changing an address on the Users screen sends
+ * that account here, which is exactly when it matters.
+ *
+ * It costs nothing: the name is all an unverified account can change from
+ * here, and the address needs `profile.email.update`, which no role grants.
+ */
 Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', '/settings/profile');
 

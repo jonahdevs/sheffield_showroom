@@ -226,10 +226,10 @@ it('adds the customers a file names', function () {
 
     expect($company->type)->toBe(CustomerType::Company)
         ->and($company->name)->toBe('Peter Mwangi')
-        /* Stored as it was typed. This application matches on a stripped copy
-           at query time, so rewriting it into +254 would only lose the shape
-           the person on the printed record recognises. */
-        ->and($company->phone)->toBe('020 271 1000')
+        /* A file is shaped by `LegacyExtract` on the way in, the same as the
+           legacy import, so a Kenyan number written the way it is dialled at
+           home lands in the shape the form stores one. */
+        ->and($company->phone)->toBe('+254202711000')
         ->and($company->created_by)->toBe($staff->id);
 });
 
@@ -344,7 +344,7 @@ it('reads its own export back without duplicating anybody', function () {
 
     expect($company->type)->toBe(CustomerType::Company)
         ->and($company->company_name)->toBe('Mwangi Builders Ltd')
-        ->and($company->phone)->toBe('020 271 1000')
+        ->and($company->phone)->toBe('+254202711000')
         /* The export heads this "County" and the leading zero on the postcode
            is only there because the column was written as text. */
         ->and($company->state)->toBe('Nairobi')

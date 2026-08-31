@@ -26,7 +26,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CarbonImmutable $visited_at
  * @property VisitPurpose $purpose
  * @property CustomerSource $source
- * @property int|null $duration_minutes
  * @property CarbonImmutable|null $expected_follow_up_on
  * @property string|null $notes
  * @property int|null $created_by
@@ -46,7 +45,6 @@ class Visit extends Model
         'visited_at',
         'purpose',
         'source',
-        'duration_minutes',
         'expected_follow_up_on',
         'notes',
     ];
@@ -58,7 +56,6 @@ class Visit extends Model
             'purpose' => VisitPurpose::class,
             'source' => CustomerSource::class,
             'expected_follow_up_on' => 'immutable_date',
-            'duration_minutes' => 'integer',
         ];
     }
 
@@ -88,27 +85,6 @@ class Visit extends Model
     {
         return $this->belongsToMany(Product::class)
             ->withPivot('quantity', 'interest_level');
-    }
-
-    /**
-     * How long they stayed, as somebody would say it out loud.
-     */
-    public function durationLabel(): ?string
-    {
-        $minutes = $this->duration_minutes;
-
-        if ($minutes === null) {
-            return null;
-        }
-
-        if ($minutes < 60) {
-            return $minutes.' min';
-        }
-
-        $hours = intdiv($minutes, 60);
-        $rest = $minutes % 60;
-
-        return $rest === 0 ? $hours.' hr' : $hours.' hr '.$rest.' min';
     }
 
     /**

@@ -1,5 +1,22 @@
 declare namespace App {
     namespace Data {
+        export type CampaignRewardData = {
+            id: number;
+            name: string;
+            description: string | null;
+            type: App.Enums.RewardType;
+            type_label: string;
+            value: string | null;
+            value_unit: App.Enums.RewardValueUnit | null;
+            value_label: string | null;
+            loaded: number;
+            available: number;
+            claimed: number;
+            void: number;
+            validity_days: number | null;
+            terms: string | null;
+            is_active: boolean;
+        };
         export type CustomerFormData = {
             id: number;
             type: App.Enums.CustomerType;
@@ -102,6 +119,7 @@ declare namespace App {
             group: string;
             group_label: string;
             roles: string[];
+            users: string[];
         };
         export type ProductData = {
             id: number;
@@ -124,6 +142,57 @@ declare namespace App {
             quantity: number;
             interest_level: App.Enums.InterestLevel | null;
         };
+        export type PurchaseRowData = {
+            id: number;
+            customer_name: string;
+            reference: string | null;
+            amount: string;
+            status: App.Enums.PurchaseStatus;
+            status_label: string;
+            purchased_on: string;
+            shuffle_id: number | null;
+            shuffle_status: string | null;
+            refusal: string | null;
+            can_delete: boolean;
+        };
+        export type RewardCampaignData = {
+            id: number;
+            name: string;
+            description: string | null;
+            status: App.Enums.CampaignStatus;
+            status_label: string;
+            is_published: boolean;
+            is_running: boolean;
+            starts_at: string | null;
+            ends_at: string | null;
+            max_shuffles_per_customer: number;
+            minimum_purchase_amount: string | null;
+            loaded: number;
+            available: number;
+            claimed: number;
+            void: number;
+            turns_given: number;
+            rewards: App.Data.CampaignRewardData[];
+        };
+        export type RewardWinnerRowData = {
+            id: number;
+            code: string;
+            customer_name: string;
+            customer_type: App.Enums.CustomerType;
+            customer_company: string | null;
+            customer_phone: string | null;
+            campaign_name: string;
+            reward_name: string;
+            type: App.Enums.RewardType;
+            type_label: string;
+            value: string | null;
+            won_on: string;
+            expires_on: string | null;
+            status: App.Enums.RewardResultStatus;
+            status_label: string;
+            redeemed_on: string | null;
+            redeemed_by: string | null;
+        };
         export type RoleData = {
             id: number;
             name: string;
@@ -139,6 +208,52 @@ declare namespace App {
             name: string;
             email: string;
             roles: string[];
+            is_self: boolean;
+            direct_permissions: number;
+            is_manageable: boolean;
+        };
+        export type ShuffleCampaignData = {
+            name: string;
+            description: string | null;
+            runs_from: string | null;
+            runs_to: string | null;
+            minimum_purchase: string | null;
+            shuffles_per_customer: number;
+            terms: string[];
+        };
+        export type ShuffleRewardData = {
+            code: string;
+            name: string;
+            description: string | null;
+            type: App.Enums.RewardType;
+            type_label: string;
+            value: string | null;
+            terms: string | null;
+            status: App.Enums.RewardResultStatus;
+            status_label: string;
+            won_on: string;
+            expires_on: string | null;
+            is_redeemable: boolean;
+            customer_name: string | null;
+            redeemed_on: string | null;
+            redeemed_by: string | null;
+        };
+        export type ShuffleSessionData = {
+            id: number;
+            customer_name: string;
+            status: App.Enums.ShuffleSessionStatus;
+            status_label: string;
+            url: string;
+            expires_at: string | null;
+            is_shuffleable: boolean;
+            reward: App.Data.ShuffleRewardData | null;
+        };
+        export type UserFormData = {
+            id: number;
+            name: string;
+            email: string;
+            roles: string[];
+            permissions: string[];
             is_self: boolean;
         };
         export type UserFormData = {
@@ -166,7 +281,6 @@ declare namespace App {
             source: App.Enums.CustomerSource;
             respondent: string | null;
             expected_follow_up_on: string | null;
-            duration_minutes: number | null;
             notes: string | null;
             products: App.Data.ProductOptionData[];
             customer_label: string;
@@ -181,13 +295,19 @@ declare namespace App {
             purpose_label: string;
             visited_on: string;
             visited_time: string;
-            duration: string | null;
             products: string[];
             attended_by: string | null;
             has_notes: boolean;
         };
     }
     namespace Enums {
+        export type CampaignStatus =
+            | 'draft'
+            | 'scheduled'
+            | 'active'
+            | 'paused'
+            | 'completed'
+            | 'cancelled';
         export type CustomerSource =
             | 'walk_in'
             | 'referral'
@@ -218,6 +338,16 @@ declare namespace App {
             | 'products.create'
             | 'products.update'
             | 'products.delete'
+            | 'purchases.view.any'
+            | 'purchases.create'
+            | 'purchases.update'
+            | 'purchases.delete'
+            | 'rewards.view'
+            | 'rewards.campaigns.create'
+            | 'rewards.campaigns.update'
+            | 'rewards.campaigns.delete'
+            | 'rewards.shuffle'
+            | 'rewards.redeem'
             | 'roles.view'
             | 'roles.create'
             | 'roles.update'
@@ -225,10 +355,25 @@ declare namespace App {
             | 'roles.assign'
             | 'users.view.any'
             | 'users.create'
-            | 'users.update';
+            | 'users.update'
+            | 'users.permissions'
+            | 'profile.email.update';
+        export type PoolEntryStatus = 'available' | 'claimed' | 'void';
         export type ProductSource = 'manual' | 'website';
         export type ProductStatus =
             'draft' | 'published' | 'inactive' | 'archived';
+        export type PurchaseStatus = 'pending' | 'completed' | 'cancelled';
+        export type RewardResultStatus =
+            'unredeemed' | 'redeemed' | 'expired' | 'cancelled';
+        export type RewardType =
+            | 'discount'
+            | 'drawing_layout'
+            | 'kitchen_audit'
+            | 'complimentary_service'
+            | 'installation';
+        export type RewardValueUnit = 'percentage' | 'currency';
+        export type ShuffleSessionStatus =
+            'pending' | 'shuffled' | 'expired' | 'cancelled';
         export type VisitPurpose =
             | 'new_enquiry'
             | 'quotation'

@@ -8,6 +8,7 @@ use App\Data\PermissionGroupData;
 use App\Data\PermissionRowData;
 use App\Data\RoleData;
 use App\Data\RoleHolderData;
+use App\Data\UserFormData;
 use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RoleRequest;
@@ -45,9 +46,14 @@ class RoleController extends Controller
             ->orderBy('name')
             ->get();
 
+        /* The people panel is behind its own permission now that there is more
+           to do from it than read a name. Somebody trusted to shape roles is
+           not automatically trusted to open the accounts holding them. */
+        $canViewUsers = $viewer->can('viewAny', User::class);
+
         return Inertia::render('admin/roles/Index', [
             'roles' => $roles->map(RoleData::fromModel(...))->all(),
-            'holders' => $this->holders($request),
+            'holders' => $canViewUsers ? $this->holders($request) : null,
             'filters' => $this->holderFilters($request),
             'page_sizes' => PageSize::OPTIONS,
             'can' => [
@@ -55,10 +61,12 @@ class RoleController extends Controller
                 'update' => $viewer->can(Permission::RolesUpdate->value),
                 'delete' => $viewer->can(Permission::RolesDelete->value),
                 'assign' => $viewer->can(Permission::RolesAssign->value),
-                /* The Users panel's two links. Adding and editing an account
-                   is a separate trust from handing out a role on one. */
-                'create_user' => $viewer->can('create', User::class),
-                'update_user' => $viewer->can(Permission::UsersUpdate->value),
+                'view_users' => $canViewUsers,
+                'create_users' => $viewer->can('create', User::class),
+                /* Per-row rather than blanket: whether this viewer may touch
+                   a given account also depends on what that account can do,
+                   so the row carries its own `is_manageable`. */
+                'update_users' => $viewer->can(Permission::UsersUpdate->value),
             ],
         ]);
     }
@@ -182,10 +190,32 @@ class RoleController extends Controller
 
     /**
      * Setting the roles one user holds, from the Roles screen's Users panel.
+     *
+     * The direct grants are trimmed against the new roles afterwards, so the
+     * two sets never overlap. A capability held twice - once through the job
+     * and once pinned to the person - is the failure mode this whole area has
+     * to avoid: taking the role away would leave the ability behind, and
+     * nothing on this screen would say why.
      */
     public function assign(UserRolesRequest $request, User $user): RedirectResponse
     {
-        $user->syncRoles($request->roles());
+        DB::transaction(function () use ($request, $user) {
+            $user->syncRoles($request->roles());
+
+            $user->load(['roles.permissions:id,name', 'permissions:id,name']);
+
+            $redundant = array_intersect(
+                $user->permissions->pluck('name')->all(),
+                array_keys(UserFormData::inherited($user)),
+            );
+
+            if ($redundant !== []) {
+                $user->syncPermissions(array_diff(
+                    $user->permissions->pluck('name')->all(),
+                    $redundant,
+                ));
+            }
+        });
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -209,6 +239,14 @@ class RoleController extends Controller
 
         $rows = collect(PermissionRowData::forRoles(
             Role::query()->with('permissions:id,name')->orderBy('name')->get(),
+            /* Only the accounts carrying a grant of their own. Everybody else
+               holds what their role holds, and that half of the answer is
+               already in the column beside it. */
+            User::query()
+                ->has('permissions')
+                ->with('permissions:id,name')
+                ->orderBy('name')
+                ->get(),
         ))
             ->when($group !== '', fn ($all) => $all->where('group', $group))
             ->when($search !== '', fn ($all) => $all->filter(
@@ -264,10 +302,14 @@ class RoleController extends Controller
     private function holders(Request $request): LengthAwarePaginator
     {
         $filters = $this->holderFilters($request);
-        $viewerId = $request->user()->id;
+        $viewer = $request->user();
 
         return User::query()
-            ->with('roles:id,name')
+            /* The permissions come with the rows because every row is asked
+               whether this viewer's reach covers it, and that question reads
+               what the account can do. Loading them here turns what would be
+               three queries per row into three for the page. */
+            ->with(['roles:id,name', 'roles.permissions:id,name', 'permissions:id,name'])
             ->when($filters['search'] !== '', fn (Builder $query) => $query->where(
                 fn (Builder $inner) => $inner
                     ->where('name', 'like', "%{$filters['search']}%")
@@ -284,7 +326,7 @@ class RoleController extends Controller
             ->orderBy('name')
             ->paginate(PageSize::from($request))
             ->withQueryString()
-            ->through(fn (User $user) => RoleHolderData::fromModel($user, $viewerId));
+            ->through(fn (User $user) => RoleHolderData::fromModel($user, $viewer));
     }
 
     /**

@@ -28,7 +28,6 @@ class VisitFactory extends Factory
             'visited_at' => fake()->dateTimeBetween('-6 months', 'now'),
             'purpose' => fake()->randomElement(VisitPurpose::cases()),
             'source' => fake()->randomElement(CustomerSource::cases()),
-            'duration_minutes' => fake()->optional()->numberBetween(5, 180),
             'notes' => fake()->optional()->sentence(),
             'expected_follow_up_on' => fake()->optional()->dateTimeBetween('now', '+2 months'),
             'respondent' => fake()->name(),

@@ -33,6 +33,15 @@ class LegacyExtract
     private const SUBSCRIBER_DIGITS = 9;
 
     /**
+     * The country behind a number written the way it is dialled at home.
+     *
+     * The extract is a Kenyan showroom's book: 419 of the 424 dialable rows
+     * are `07...` or `01...`, which is a Kenyan mobile with its trunk prefix
+     * on the front. The five that are not say where they are from themselves.
+     */
+    private const KENYA = '+254';
+
+    /**
      * The transformed rows, what was left out, and where the numbers collide.
      *
      * @return array{
@@ -236,14 +245,19 @@ class LegacyExtract
     }
 
     /**
-     * The number as it was written, or null when it is not a number at all.
+     * The number in the one shape this application stores a telephone: a `+`,
+     * a country code, and the subscriber number - no spaces, no trunk zero.
      *
-     * The leading apostrophe is an Excel artefact - it is how a spreadsheet
-     * keeps `0722...` from being read as the integer 722 - and it is not part
-     * of anybody's telephone. Beyond that the number is left in the shape it
-     * was given: this application stores what was typed and matches on a
-     * stripped copy at query time, so rewriting a Kenyan `07...` into `+254`
-     * would only lose the form the person on the printed record recognises.
+     * That is what `PhoneInput` writes for anything typed on the floor, so an
+     * imported `0722000111` is the same telephone spelled a second way. The
+     * database does not mind - `Customer::matchingPhone` compares stripped
+     * tails and calls them one number - but the form does: the box splits a
+     * stored value on its dialling code, and a number with no code to find
+     * opens on the wrong country with the trunk zero still in it.
+     *
+     * The leading apostrophe comes off first. It is an Excel artefact, how a
+     * spreadsheet keeps `0722...` from being read as the integer 722, and not
+     * part of anybody's telephone.
      *
      * Nine digits is the shortest thing that can be a subscriber number here.
      * Below that the value is punctuation somebody typed to get past a
@@ -251,9 +265,39 @@ class LegacyExtract
      */
     private function phone(mixed $value): ?string
     {
-        $phone = trim(ltrim(trim((string) $value), "'"));
+        $written = trim(ltrim(trim((string) $value), "'"));
+        $digits = $this->digits($written);
 
-        return strlen($this->digits($phone)) >= self::SUBSCRIBER_DIGITS ? $phone : null;
+        if (strlen($digits) < self::SUBSCRIBER_DIGITS) {
+            return null;
+        }
+
+        /* Already international. It says where it is from, so only the
+           separators come off. */
+        if (str_starts_with($written, '+')) {
+            return '+'.$digits;
+        }
+
+        if (str_starts_with($written, '0')) {
+            /* A trunk zero is not part of the number: `0722 000 111` dialled
+               from anywhere else is `+254 722 000 111`, and keeping both
+               would store a number nothing can call. */
+            $national = ltrim($digits, '0');
+
+            /* Unless the zeros were `00`, which is the old way of writing the
+               plus - that number already carries a country code and must not
+               gain a second one. */
+            return str_starts_with($national, ltrim(self::KENYA, '+'))
+                ? '+'.$national
+                : self::KENYA.$national;
+        }
+
+        /* No plus and no zero. Nine digits is a Kenyan national number typed
+           without its prefix; anything longer is already carrying a country
+           code and only wants the plus put back. */
+        return strlen($digits) === self::SUBSCRIBER_DIGITS
+            ? self::KENYA.$digits
+            : '+'.$digits;
     }
 
     /**

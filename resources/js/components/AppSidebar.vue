@@ -2,10 +2,14 @@
 import { Link } from '@inertiajs/vue3';
 import {
     ClipboardList,
+    Gift,
     KeyRound,
     LayoutGrid,
+    Megaphone,
     Package,
+    Receipt,
     Shield,
+    TicketCheck,
     Users,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -24,6 +28,10 @@ import { dashboard } from '@/routes';
 import { index as customersIndex } from '@/routes/admin/customers';
 import { index as permissionsIndex } from '@/routes/admin/permissions';
 import { index as productsIndex } from '@/routes/admin/products';
+import { index as purchasesIndex } from '@/routes/admin/purchases';
+import { index as rewardsIndex } from '@/routes/admin/rewards';
+import { index as redeemIndex } from '@/routes/admin/rewards/redeem';
+import { index as winnersIndex } from '@/routes/admin/rewards/winners';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { index as visitsIndex } from '@/routes/admin/visits';
 import type { NavItem } from '@/types';
@@ -70,6 +78,17 @@ const mainNavItems = computed<NavItem[]>(() => [
               },
           ]
         : []),
+    /* What was bought, which is also what earns a reward shuffle - the list
+       carries that question in a column rather than hiding it a screen away. */
+    ...(can('purchases.view.any')
+        ? [
+              {
+                  title: 'Purchases',
+                  href: purchasesIndex(),
+                  icon: Receipt,
+              },
+          ]
+        : []),
 ]);
 
 /*
@@ -84,11 +103,59 @@ const adminNavItems = computed<NavItem[]>(() =>
                   title: 'Roles',
                   href: rolesIndex(),
                   icon: Shield,
+                  /* The accounts are filed under `/admin/users` but reached
+                     from here, so this row stays lit while one is open. A
+                     literal path rather than a route function because there
+                     is no users index to name - the list of people is a panel
+                     on the Roles screen, not a page of its own. */
+                  activeFor: ['/admin/users'],
               },
               {
                   title: 'Permissions',
                   href: permissionsIndex(),
                   icon: KeyRound,
+              },
+          ]
+        : [],
+);
+
+/*
+  The promotions rail. Its own group rather than a row under Administration,
+  because a campaign is operational work - somebody runs it from the floor -
+  and it owns three screens that are used at different desks.
+
+  The group is "Promotions" rather than "Rewards", which is what it was called
+  until the middle row below existed. "Rewards" is the better name for the
+  things people have won, and a group and one of its own rows cannot both
+  carry it - a rail reading Rewards > Campaigns, Rewards, Redeem makes the
+  reader work out which of the two they clicked.
+
+  The three read as the life of a promotion in order: it is set up, somebody
+  wins something, somebody comes back for it. All three open on `rewards.view`.
+  Redeeming needs more, and the screen says so rather than the rail hiding a
+  door somebody is allowed to look through.
+*/
+const rewardNavItems = computed<NavItem[]>(() =>
+    can('rewards.view')
+        ? [
+              {
+                  title: 'Campaigns',
+                  href: rewardsIndex(),
+                  icon: Megaphone,
+                  /* The QR screen is filed under `/admin/shuffles`, but it is
+                     reached from here, so this row stays lit while one is
+                     open. */
+                  activeFor: ['/admin/shuffles'],
+              },
+              {
+                  title: 'Rewards',
+                  href: winnersIndex(),
+                  icon: Gift,
+              },
+              {
+                  title: 'Redeem',
+                  href: redeemIndex(),
+                  icon: TicketCheck,
               },
           ]
         : [],
@@ -111,6 +178,11 @@ const adminNavItems = computed<NavItem[]>(() =>
 
         <SidebarContent>
             <NavMain :items="mainNavItems" />
+            <NavMain
+                v-if="rewardNavItems.length > 0"
+                :items="rewardNavItems"
+                label="Promotions"
+            />
             <NavMain
                 v-if="adminNavItems.length > 0"
                 :items="adminNavItems"

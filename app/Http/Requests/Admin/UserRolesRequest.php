@@ -4,21 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
-use App\Concerns\RoleAssignmentRules;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
- * Setting which roles a user holds, from the Roles screen's Users panel. The
- * ceiling it enforces lives in `RoleAssignmentRules`, shared with the account
- * form, which sets the same thing from the other direction.
+ * Setting which roles a user holds. The same ceiling as `RoleRequest`, read
+ * one level up: a role you could not have built is a role you cannot hand out,
+ * or assigning becomes the way around the grant check.
  */
 class UserRolesRequest extends FormRequest
 {
-    use RoleAssignmentRules;
-
     public function authorize(): bool
     {
         return $this->user()->can('assignTo', [Role::class, $this->subject()]);
@@ -29,7 +27,10 @@ class UserRolesRequest extends FormRequest
      */
     public function rules(): array
     {
-        return $this->roleRules();
+        return [
+            'roles' => ['present', 'array'],
+            'roles.*' => ['string', Rule::exists('roles', 'name')],
+        ];
     }
 
     /**
@@ -37,7 +38,42 @@ class UserRolesRequest extends FormRequest
      */
     public function after(): array
     {
-        return [fn (Validator $validator) => $this->refuseRolesBeyondReach($validator)];
+        return [
+            function (Validator $validator) {
+                /* Super admin is named rather than read off its rows:
+                   `Gate::before` hands that role every ability while it may
+                   hold no permission row at all, so a subset test against the
+                   database says it grants nothing and anybody with
+                   `roles.assign` could hand it out. */
+                $beyondReach = Role::query()
+                    ->whereIn('name', (array) $this->input('roles', []))
+                    ->with('permissions:id,name')
+                    ->get()
+                    ->filter(fn (Role $role) => $role->isSuperAdmin()
+                        ? ! $this->user()->hasRole(Role::SUPER_ADMIN)
+                        : $role->permissions->contains(
+                            fn ($permission) => $this->user()->cannot($permission->name),
+                        ))
+                    ->pluck('name')
+                    ->all();
+
+                if ($beyondReach !== []) {
+                    $validator->errors()->add(
+                        'roles',
+                        'You cannot assign a role that holds permissions you do not: '
+                            .implode(', ', $beyondReach).'.',
+                    );
+                }
+            },
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function roles(): array
+    {
+        return array_values(array_unique((array) $this->validated('roles')));
     }
 
     public function subject(): User

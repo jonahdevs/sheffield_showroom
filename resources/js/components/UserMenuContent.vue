@@ -2,27 +2,19 @@
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { LogOut, Settings } from '@lucide/vue';
 import { computed } from 'vue';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { useInitials } from '@/composables/useInitials';
 import { logout } from '@/routes';
-import { edit } from '@/routes/profile';
+import { edit as settings } from '@/routes/profile';
 import type { User } from '@/types';
 
-const props = defineProps<{ user: User }>();
+defineProps<{ user: User }>();
 
 const page = usePage();
-
-const { getInitials } = useInitials();
-
-const hasAvatar = computed(
-    () => Boolean(props.user.avatar) && props.user.avatar !== '',
-);
 
 /**
  * The role they hold, headlined. Null when they hold none, rather than a
@@ -50,25 +42,20 @@ const handleLogout = () => {
   The identity block is tinted rather than ruled off, and the only separator
   sits above Sign Out - so the menu reads as "you, then what you can do, then
   the way out".
+
+  One door rather than two: Settings lands on the profile page, which is the
+  first tab of the settings screen and carries the rest beside it. A separate
+  Profile item pointed at that same page under a second name.
+
+  No avatar, here or on the trigger that opens this: nothing in the showroom
+  ever sets one, so the circle was always a pair of initials standing in for a
+  picture that does not exist. The name is already written underneath it.
 -->
 <template>
     <DropdownMenuLabel
-        class="mb-1 flex items-center gap-2.5 rounded-lg bg-brand-50 p-2.5 font-normal dark:bg-brand-950"
+        class="mb-1 rounded-lg bg-brand-50 p-2.5 font-normal dark:bg-brand-950"
     >
-        <Avatar class="size-9">
-            <AvatarImage
-                v-if="hasAvatar"
-                :src="user.avatar!"
-                :alt="user.name"
-            />
-            <AvatarFallback
-                class="bg-secondary text-xs font-bold text-secondary-foreground"
-            >
-                {{ getInitials(user.name) }}
-            </AvatarFallback>
-        </Avatar>
-
-        <div class="grid min-w-0 flex-1 text-left leading-tight">
+        <div class="grid min-w-0 text-left leading-tight">
             <span class="truncate text-xs font-bold">{{ user.name }}</span>
             <span class="truncate text-xs text-muted-foreground">
                 {{ user.email }}
@@ -85,7 +72,7 @@ const handleLogout = () => {
 
     <DropdownMenuGroup>
         <DropdownMenuItem :as-child="true">
-            <Link class="w-full cursor-pointer" :href="edit()" prefetch>
+            <Link class="w-full cursor-pointer" :href="settings()" prefetch>
                 <Settings class="size-3.5" :stroke-width="1.7" />
                 Settings
             </Link>

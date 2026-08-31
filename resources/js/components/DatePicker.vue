@@ -45,6 +45,15 @@ const props = withDefaults(
          * it a clock would ask for a precision nobody has.
          */
         withTime?: boolean;
+        /**
+         * Shown but not answerable.
+         *
+         * For the screen that opens a record read-only - a published reward
+         * campaign, say - where the date still has to be legible. Disabling
+         * the trigger is what does it: a popover nobody can open cannot be
+         * argued with, and the button keeps printing the date it holds.
+         */
+        disabled?: boolean;
     }>(),
     {
         id: undefined,
@@ -52,6 +61,7 @@ const props = withDefaults(
         dataTest: undefined,
         max: undefined,
         withTime: false,
+        disabled: false,
     },
 );
 
@@ -129,6 +139,7 @@ function onDatePicked(close: () => void) {
                 variant="outline"
                 class="w-full justify-start font-normal"
                 :class="value === undefined ? 'text-muted-foreground' : ''"
+                :disabled="props.disabled"
                 :data-test="props.dataTest"
             >
                 <CalendarIcon class="size-4" />

@@ -1,195 +1,409 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { Check, Eye, EyeOff, Minus } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { Check, KeyRound, Minus, Pin, Shield } from '@lucide/vue';
+import { computed, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import OptionMultiCombobox from '@/components/OptionMultiCombobox.vue';
+import PasswordInput from '@/components/PasswordInput.vue';
+import SetPasswordDialog from '@/components/SetPasswordDialog.vue';
+import type { PasswordSubject } from '@/components/SetPasswordDialog.vue';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import {
-    InputGroup,
-    InputGroupAddon,
-    InputGroupButton,
-    InputGroupInput,
-} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { store, update } from '@/routes/admin/users';
+import { update as updatePermissions } from '@/routes/admin/users/permissions';
+import { update as updateRoles } from '@/routes/admin/users/roles';
 
 const props = defineProps<{
     user: App.Data.UserFormData | null;
-    roles: App.Data.RoleData[];
     matrix: App.Data.PermissionGroupData[];
-    can_grant: boolean;
+    /** Permission value to the roles handing this account that permission. */
+    inherited: Record<string, string[]>;
+    roles: App.Data.RoleData[];
+    /** Role name to everything holding it grants, super admin spelled out. */
+    role_grants: Record<string, string[]>;
+    can: {
+        assign_roles: boolean;
+        permissions: boolean;
+        password: boolean;
+    };
 }>();
 
-const form = useForm<{
-    name: string;
-    email: string;
-    password: string;
-    password_confirmation: string;
-    roles: string[];
-    permissions: string[];
-}>({
+const heading = computed(() => props.user?.name ?? 'New user');
+
+function headline(name: string): string {
+    return name.replace(/-/g, ' ');
+}
+
+// -----------------------------------------------------------------------------
+// The account itself
+// -----------------------------------------------------------------------------
+
+/*
+ * A password is only on this form while the account is being made. Afterwards
+ * it has its own action behind its own check, so it cannot be moved by
+ * somebody who came here to correct a surname.
+ */
+const details = useForm({
     name: props.user?.name ?? '',
     email: props.user?.email ?? '',
     password: '',
     password_confirmation: '',
-    roles: [...(props.user?.roles ?? [])],
-    permissions: [...(props.user?.permissions ?? [])],
 });
 
-const isEditing = computed(() => props.user !== null);
+const canSaveDetails = computed(() => {
+    if (details.processing || details.name.trim() === '') {
+        return false;
+    }
 
-const heading = computed(() => props.user?.name ?? 'New user');
+    return props.user !== null || details.password !== '';
+});
 
 // -----------------------------------------------------------------------------
-// Roles
+// The roles the account holds
 // -----------------------------------------------------------------------------
 
 /*
-  The box chooses ids, because that is what every option list in this
-  application is keyed on. What goes over the wire stays the role's name, which
-  is what the server validates and what `syncRoles` takes - so the two shapes
-  are kept in step here rather than a second name-keyed picker existing for
-  this one screen.
-*/
-const chosenRoleIds = ref<number[]>([...(props.user?.role_ids ?? [])]);
+ * On the way in these ride with the details, because an account with no role
+ * keeps its login and loses every ability on it - that is a broken account,
+ * not a new one. Afterwards they are their own write, answering to
+ * `roles.assign` rather than to `users.update`, and it is the same write the
+ * Roles screen's people panel posts.
+ */
+const assignment = useForm<{ roles: string[] }>({
+    roles: [...(props.user?.roles ?? [])],
+});
 
+/**
+ * The roles as the combobox wants them: an id, a label and a line to tell two
+ * apart. The hint is searched as well as shown, so a role whose name means
+ * nothing to the reader is still findable by what it is for - and where nobody
+ * has written that down, by how much it hands over.
+ */
 const roleOptions = computed<App.Data.OptionData[]>(() =>
     props.roles.map((role) => ({
         value: role.id,
-        label: role.label,
-        hint: role.description,
+        label: headline(role.name),
+        hint: role.description ?? `Brings ${grantCount(role.name)}.`,
         image_url: null,
     })),
 );
 
-watch(chosenRoleIds, (ids) => {
-    form.roles = ids
-        .map((id) => props.roles.find((role) => role.id === id)?.name)
-        .filter((name): name is string => name !== undefined);
+/*
+ * The form posts role names, because that is what the two requests behind it
+ * read; the combobox picks by id, because that is what a row in one is keyed
+ * by. This is the join, and it is the only place the two spellings meet.
+ */
+const pickedRoleIds = computed<number[]>({
+    get: () =>
+        props.roles
+            .filter((role) => assignment.roles.includes(role.name))
+            .map((role) => role.id),
+    set: (ids) => {
+        assignment.roles = props.roles
+            .filter((role) => ids.includes(role.id))
+            .map((role) => role.name);
+    },
 });
 
-// -----------------------------------------------------------------------------
-// Direct permissions
-// -----------------------------------------------------------------------------
+/** What a role hands its holders, said in words. */
+function grantCount(name: string): string {
+    const count = props.role_grants[name]?.length ?? 0;
 
-function togglePermission(permission: string, checked: boolean) {
-    form.permissions = checked
-        ? [...new Set([...form.permissions, permission])]
-        : form.permissions.filter((value) => value !== permission);
+    return `${count} ${count === 1 ? 'permission' : 'permissions'}`;
 }
 
-function toggleGroup(group: App.Data.PermissionGroupData, checked: boolean) {
-    const grantable = group.permissions
-        .filter((permission) => permission.grantable)
-        .map((permission) => permission.value);
+// -----------------------------------------------------------------------------
+// Permissions granted straight to the account
+// -----------------------------------------------------------------------------
 
-    form.permissions = checked
-        ? [...new Set([...form.permissions, ...grantable])]
-        : form.permissions.filter((value) => !grantable.includes(value));
+const grants = useForm<{ permissions: string[] }>({
+    permissions: [...(props.user?.permissions ?? [])],
+});
+
+/**
+ * Which roles hand this account each permission.
+ *
+ * On an existing account this is the server's answer, about the roles that are
+ * actually saved: the roles card above is a separate write, so a box ticked
+ * there and not yet saved grants nothing yet and must not read as though it
+ * did. While the account is being made there is nothing to ask the server
+ * about, so it is worked out from the roles selected and what each one grants.
+ */
+const inherited = computed<Record<string, string[]>>(() => {
+    if (props.user !== null) {
+        return props.inherited;
+    }
+
+    const held: Record<string, string[]> = {};
+
+    for (const role of assignment.roles) {
+        for (const permission of props.role_grants[role] ?? []) {
+            held[permission] = [...(held[permission] ?? []), role];
+        }
+    }
+
+    return held;
+});
+
+/** Which roles hand this account the permission, if any do. */
+function via(permission: string): string[] {
+    return inherited.value[permission] ?? [];
 }
 
 /**
- * Only the grantable ones count towards the group box. A group where the rest
- * is out of reach would otherwise never read as fully ticked.
+ * A permission a role already carries is not offered as a direct grant. It is
+ * shown ticked and locked instead, because ticking it again would leave a
+ * second grant behind that the Roles screen never mentions - take the role
+ * away and the ability would stay.
+ */
+function isInherited(permission: string): boolean {
+    return via(permission).length > 0;
+}
+
+/**
+ * What was pinned to the account when the page loaded, read once rather than
+ * off the live form: the questions below are about the state on the server,
+ * and a box being unticked right now is the answer, not the question.
+ */
+const pinnedOnLoad = new Set(props.user?.permissions ?? []);
+
+/**
+ * Held twice: once through a role and once pinned to the account.
+ *
+ * Assigning a role clears these, so the only way one survives is a role that
+ * gained a permission its holder had already been given separately. It is
+ * called out rather than quietly folded into the role badge, because it is the
+ * exact shape of what this section exists to make visible - and clearing the
+ * box and saving is what removes it.
+ */
+function isDoubleHeld(permission: string): boolean {
+    return isInherited(permission) && pinnedOnLoad.has(permission);
+}
+
+/**
+ * A box is editable when it is about a direct grant. What a role brings is
+ * shown and locked, with the one exception above: a duplicate has to be
+ * clearable or there would be no way to undo it.
+ */
+function isEditable(permission: App.Data.PermissionOptionData): boolean {
+    return (
+        props.can.permissions &&
+        permission.grantable &&
+        (!isInherited(permission.value) || isDoubleHeld(permission.value))
+    );
+}
+
+/** Ticked because a role brings it, or because it is pinned to the account. */
+function isTicked(permission: string): boolean {
+    if (isInherited(permission) && !isDoubleHeld(permission)) {
+        return true;
+    }
+
+    return grants.permissions.includes(permission);
+}
+
+function togglePermission(permission: string, checked: boolean) {
+    grants.permissions = checked
+        ? [...new Set([...grants.permissions, permission])]
+        : grants.permissions.filter((value) => value !== permission);
+}
+
+function toggleGroup(group: App.Data.PermissionGroupData, checked: boolean) {
+    const editable = group.permissions
+        .filter(isEditable)
+        .map((permission) => permission.value);
+
+    grants.permissions = checked
+        ? [...new Set([...grants.permissions, ...editable])]
+        : grants.permissions.filter((value) => !editable.includes(value));
+}
+
+/**
+ * Only the editable ones count towards the group box. A group whose rest comes
+ * from a role, or sits above the viewer's own ceiling, would otherwise never
+ * read as fully ticked.
  */
 function groupState(
     group: App.Data.PermissionGroupData,
 ): boolean | 'indeterminate' {
-    const grantable = group.permissions.filter(
-        (permission) => permission.grantable,
-    );
-    const held = grantable.filter((permission) =>
-        form.permissions.includes(permission.value),
+    const editable = group.permissions.filter(isEditable);
+    const held = editable.filter((permission) =>
+        grants.permissions.includes(permission.value),
     );
 
     if (held.length === 0) {
         return false;
     }
 
-    return held.length === grantable.length ? true : 'indeterminate';
+    return held.length === editable.length ? true : 'indeterminate';
 }
 
+const inheritedCount = computed(() => Object.keys(inherited.value).length);
+
+/**
+ * The roles the matrix below is actually drawn from - saved ones once the
+ * account exists, because that is what `inherited` answers about. It is not
+ * the same list as the picker above while an edit is unsaved, which is the
+ * point of showing it here.
+ */
+const effectiveRoles = computed(() => props.user?.roles ?? assignment.roles);
+
+/**
+ * A direct grant that the roles now selected would cover. Only reachable while
+ * creating, where both halves move at once: tick the permission, then tick a
+ * role that already carries it. The server refuses the overlap, so it is said
+ * here first rather than after a round trip.
+ */
+const redundant = computed(() =>
+    props.user !== null
+        ? []
+        : grants.permissions.filter((permission) => isInherited(permission)),
+);
+
 // -----------------------------------------------------------------------------
-// The form itself
+// Saving
 // -----------------------------------------------------------------------------
 
-const showPassword = ref(false);
-const showConfirmation = ref(false);
-
-const canSubmit = computed(() => {
-    if (
-        form.processing ||
-        form.name.trim() === '' ||
-        form.email.trim() === ''
-    ) {
-        return false;
-    }
-
-    /* Only a new account has to carry one; on an existing one the field is a
-       replacement, and blank means leave it alone. */
-    return isEditing.value || form.password !== '';
-});
-
-function submit() {
-    if (props.user) {
-        form.patch(update(props.user.id).url);
+/**
+ * Creating posts the whole account at once - details, roles and direct grants
+ * are one thing to fill in, not three. Editing splits them, because each half
+ * answers to a different permission and an administrator who may correct a
+ * surname is not automatically one who may widen what somebody can do.
+ */
+function saveDetails() {
+    if (props.user === null) {
+        details
+            .transform((data) => ({
+                ...data,
+                roles: assignment.roles,
+                permissions: grants.permissions,
+            }))
+            .post(store().url);
 
         return;
     }
 
-    form.post(store().url);
+    details
+        .transform(({ name, email }) => ({ name, email }))
+        .patch(update(props.user.id).url);
 }
 
+function saveRoles() {
+    if (props.user === null) {
+        saveDetails();
+
+        return;
+    }
+
+    assignment.patch(updateRoles(props.user.id).url, { preserveScroll: true });
+}
+
+function saveGrants() {
+    if (props.user === null) {
+        saveDetails();
+
+        return;
+    }
+
+    grants.patch(updatePermissions(props.user.id).url, {
+        preserveScroll: true,
+    });
+}
+
+/*
+ * While creating there is one submit, so an error about a role or a grant
+ * comes back on the form that carried it - which declares neither field, hence
+ * the widening. Editing posts three forms, each holding its own errors.
+ */
+const detailsErrors = computed(
+    () => details.errors as Record<string, string | undefined>,
+);
+
+const rolesError = computed(() =>
+    props.user === null ? detailsErrors.value.roles : assignment.errors.roles,
+);
+
+const permissionsError = computed(() =>
+    props.user === null
+        ? detailsErrors.value.permissions
+        : grants.errors.permissions,
+);
+
+// -----------------------------------------------------------------------------
+// Password
+// -----------------------------------------------------------------------------
+
+const settingPassword = ref<PasswordSubject | null>(null);
+
+/*
+ * The same layout callback the other forms in this application use: one
+ * component serves creating and editing, and only the page's own props know
+ * which one this is. The trail stops at Roles because that is where the list
+ * of people actually lives - it is a panel on that screen, not a page of its
+ * own - and a crumb has to go where it says it goes.
+ */
 defineOptions({
     layout: (page: { user: App.Data.UserFormData | null }) => ({
         breadcrumbs: [
             { title: 'Dashboard', href: dashboard() },
             { title: 'Roles', href: rolesIndex().url },
-            { title: page.user ? 'Edit user' : 'New user' },
+            { title: page.user === null ? 'New user' : 'Edit user' },
         ],
     }),
 });
 </script>
 
 <!--
-  The account, then the way into it, then what it may do - which is the order
-  the sections are trusted in. The email sits in the first section rather than
-  beside the password because it is who this person is on the system, and it is
-  here rather than on their own profile screen for the same reason: an address
-  somebody can rewrite themselves is not an identity anyone else can rely on.
+  One account, and everything about it.
 
-  Roles first and permissions under them, because a role is the answer nearly
-  every time. The matrix below is for the exception a role would be a bad name
-  for - the one person who also needs to pull the catalogue.
+  No back link: the crumb trail sits directly above this, and a second way to
+  the same place one row down reads as a mistake rather than a convenience.
+
+  The cards are separate writes on purpose once the account exists. Correcting
+  a name, moving somebody between roles, pinning a capability to a person and
+  setting the password behind the login are four different kinds of trust, each
+  answering to its own permission - so they get four forms rather than one Save
+  that quietly does all of it. Creating is the exception: there is nothing to
+  edit piecemeal yet, so one button posts the lot.
 -->
 <template>
     <Head :title="heading" />
 
     <div class="flex flex-col gap-5">
         <div>
-            <h1 class="text-2xl leading-tight">{{ heading }}</h1>
+            <div class="flex flex-wrap items-center gap-3">
+                <h1 class="text-2xl leading-tight">{{ heading }}</h1>
+                <Badge
+                    v-if="props.user?.is_self"
+                    variant="secondary"
+                    data-test="is-self"
+                >
+                    You
+                </Badge>
+            </div>
+
             <p class="mt-2 text-sm text-muted-foreground">
                 {{
-                    isEditing
-                        ? 'Their name, the address they sign in with, and what they may do here.'
-                        : 'Open an account for somebody on the floor. They sign in with the email you set here.'
+                    props.user
+                        ? 'The account itself: who it belongs to, the roles it holds, and anything pinned to the person rather than the job.'
+                        : 'A name, an address to sign in with, and a password to start on. Put them in a role now or nothing they can see will work.'
                 }}
             </p>
         </div>
 
-        <form class="flex flex-col gap-5" @submit.prevent="submit">
+        <form id="user-details" @submit.prevent="saveDetails">
             <Card as="section" class="gap-0 p-0">
                 <div class="border-b border-divider px-5 py-3.5">
                     <h2
                         class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
                     >
-                        Account
+                        Account details
                     </h2>
                 </div>
 
@@ -203,288 +417,473 @@ defineOptions({
                             </Label>
                             <Input
                                 id="name"
-                                v-model="form.name"
+                                v-model="details.name"
                                 class="mt-2.25"
                                 placeholder="e.g. Achieng Odhiambo"
                                 autocomplete="name"
                                 data-test="field-name"
                             />
-                            <InputError :message="form.errors.name" />
+                            <InputError :message="details.errors.name" />
                         </div>
 
                         <div>
                             <Label for="email">
-                                Email address
-                                <span class="text-primary">*</span>
+                                Email <span class="text-primary">*</span>
                             </Label>
                             <Input
                                 id="email"
-                                v-model="form.email"
+                                v-model="details.email"
                                 type="email"
                                 class="mt-2.25"
-                                placeholder="e.g. achieng@example.com"
-                                autocomplete="off"
+                                placeholder="e.g. achieng@sheffieldafrica.com"
+                                autocomplete="email"
                                 data-test="field-email"
                             />
-                            <InputError :message="form.errors.email" />
-                        </div>
-                    </div>
-                </div>
-            </Card>
-
-            <Card as="section" class="gap-0 p-0">
-                <div class="border-b border-divider px-5 py-3.5">
-                    <h2
-                        class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
-                    >
-                        Password
-                    </h2>
-                </div>
-
-                <div class="p-5">
-                    <p
-                        v-if="isEditing"
-                        class="mb-4 text-sm text-muted-foreground"
-                    >
-                        Leave both boxes empty to keep the password they already
-                        have.
-                    </p>
-
-                    <div
-                        class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
-                    >
-                        <div>
-                            <Label for="password">
-                                {{ isEditing ? 'New password' : 'Password' }}
-                                <span v-if="!isEditing" class="text-primary">
-                                    *
-                                </span>
-                            </Label>
-                            <!-- The reveal is an addon rather than a button
-                                 floated over the field: it belongs to the box,
-                                 and the group is what says so. -->
-                            <InputGroup class="mt-2.25">
-                                <InputGroupInput
-                                    id="password"
-                                    v-model="form.password"
-                                    :type="showPassword ? 'text' : 'password'"
-                                    autocomplete="new-password"
-                                    placeholder="At least eight characters"
-                                    data-test="field-password"
-                                />
-                                <InputGroupAddon align="inline-end">
-                                    <InputGroupButton
-                                        type="button"
-                                        size="icon-xs"
-                                        :aria-label="
-                                            showPassword
-                                                ? 'Hide password'
-                                                : 'Show password'
-                                        "
-                                        :tabindex="-1"
-                                        data-test="toggle-password"
-                                        @click="showPassword = !showPassword"
-                                    >
-                                        <EyeOff v-if="showPassword" />
-                                        <Eye v-else />
-                                    </InputGroupButton>
-                                </InputGroupAddon>
-                            </InputGroup>
-                            <InputError :message="form.errors.password" />
-                        </div>
-
-                        <div>
-                            <Label for="password_confirmation">
-                                Confirm password
-                                <span v-if="!isEditing" class="text-primary">
-                                    *
-                                </span>
-                            </Label>
-                            <InputGroup class="mt-2.25">
-                                <InputGroupInput
-                                    id="password_confirmation"
-                                    v-model="form.password_confirmation"
-                                    :type="
-                                        showConfirmation ? 'text' : 'password'
-                                    "
-                                    autocomplete="new-password"
-                                    placeholder="Type it again"
-                                    data-test="field-password-confirmation"
-                                />
-                                <InputGroupAddon align="inline-end">
-                                    <InputGroupButton
-                                        type="button"
-                                        size="icon-xs"
-                                        :aria-label="
-                                            showConfirmation
-                                                ? 'Hide password'
-                                                : 'Show password'
-                                        "
-                                        :tabindex="-1"
-                                        data-test="toggle-password-confirmation"
-                                        @click="
-                                            showConfirmation = !showConfirmation
-                                        "
-                                    >
-                                        <EyeOff v-if="showConfirmation" />
-                                        <Eye v-else />
-                                    </InputGroupButton>
-                                </InputGroupAddon>
-                            </InputGroup>
-                            <InputError
-                                :message="form.errors.password_confirmation"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </Card>
-
-            <!-- Only for somebody who may hand these out, and never on their
-                 own account: an account that can widen its own reach is a
-                 ceiling that does not hold. -->
-            <template v-if="props.can_grant">
-                <Card as="section" class="gap-0 p-0" data-test="roles-section">
-                    <div class="border-b border-divider px-5 py-3.5">
-                        <h2
-                            class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
-                        >
-                            Roles
-                        </h2>
-                    </div>
-
-                    <div class="p-5">
-                        <Label for="roles">Roles held</Label>
-                        <div class="mt-2.25">
-                            <OptionMultiCombobox
-                                id="roles"
-                                v-model="chosenRoleIds"
-                                :options="roleOptions"
-                                placeholder="Choose any number"
-                                search-placeholder="Type to search roles"
-                                empty-text="No role by that name."
-                                data-test="field-roles"
-                            />
-                        </div>
-                        <p class="mt-2.5 text-xs text-faint">
-                            An account with no role keeps its login and can do
-                            nothing with it.
-                        </p>
-                        <InputError :message="form.errors.roles" />
-                    </div>
-                </Card>
-
-                <Card
-                    as="section"
-                    class="gap-0 p-0"
-                    data-test="permissions-section"
-                >
-                    <div
-                        class="flex items-center justify-between border-b border-divider px-5 py-3.5"
-                    >
-                        <h2
-                            class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
-                        >
-                            Direct permissions
-                        </h2>
-                        <span
-                            class="text-xs text-faint tabular-nums"
-                            data-test="permission-count"
-                        >
-                            {{ form.permissions.length }} selected
-                        </span>
-                    </div>
-
-                    <p
-                        class="border-b border-divider px-5 py-3.5 text-xs text-muted-foreground"
-                    >
-                        Held by this account alone, on top of whatever its roles
-                        already carry. Reach for a role first: a permission
-                        given here is one nobody will think to look for later.
-                    </p>
-
-                    <div class="divide-y divide-border">
-                        <div
-                            v-for="group in props.matrix"
-                            :key="group.group"
-                            class="grid gap-2.5 px-5 py-3.5 sm:grid-cols-[170px_minmax(0,1fr)] sm:gap-4"
-                        >
-                            <label
-                                class="flex items-center gap-2.5 text-xs font-bold"
+                            <InputError :message="details.errors.email" />
+                            <!-- The same rule the profile screen holds: a new
+                                 address has not been shown to reach anybody
+                                 yet, so the account goes back to unverified
+                                 until it is. -->
+                            <p
+                                v-if="
+                                    props.user &&
+                                    details.email !== props.user.email
+                                "
+                                class="mt-1.5 text-xs text-muted-foreground"
+                                data-test="email-reverify"
                             >
-                                <Checkbox
-                                    :model-value="groupState(group)"
-                                    :aria-label="`Select every ${group.group} permission`"
-                                    @update:model-value="
-                                        toggleGroup(group, $event === true)
-                                    "
-                                >
-                                    <Minus
-                                        v-if="
-                                            groupState(group) ===
-                                            'indeterminate'
-                                        "
-                                        class="size-3.5"
-                                    />
-                                    <Check v-else class="size-3.5" />
-                                </Checkbox>
-                                {{ group.group_label }}
-                            </label>
-
-                            <div class="flex flex-wrap gap-x-6 gap-y-2">
-                                <label
-                                    v-for="permission in group.permissions"
-                                    :key="permission.value"
-                                    class="flex items-center gap-2 text-xs"
-                                    :class="
-                                        permission.grantable
-                                            ? ''
-                                            : 'text-muted-foreground'
-                                    "
-                                    :title="
-                                        permission.grantable
-                                            ? undefined
-                                            : 'You do not hold this permission yourself.'
-                                    "
-                                >
-                                    <Checkbox
-                                        :model-value="
-                                            form.permissions.includes(
-                                                permission.value,
-                                            )
-                                        "
-                                        :disabled="!permission.grantable"
-                                        :data-test="`permission-${permission.value}`"
-                                        @update:model-value="
-                                            togglePermission(
-                                                permission.value,
-                                                $event === true,
-                                            )
-                                        "
-                                    />
-                                    {{ permission.label }}
-                                </label>
-                            </div>
+                                Changing this sends the account back to
+                                unverified until the new address is confirmed.
+                            </p>
                         </div>
-                    </div>
 
-                    <div v-if="form.errors.permissions" class="px-5 pb-5">
-                        <InputError :message="form.errors.permissions" />
-                    </div>
-                </Card>
-            </template>
+                        <!-- Only while the account is being made. Afterwards
+                             the password is its own action, below. -->
+                        <template v-if="props.user === null">
+                            <div>
+                                <Label for="password">
+                                    Password <span class="text-primary">*</span>
+                                </Label>
+                                <div class="mt-2.25">
+                                    <PasswordInput
+                                        id="password"
+                                        v-model="details.password"
+                                        autocomplete="new-password"
+                                        data-test="field-password"
+                                    />
+                                </div>
+                                <InputError
+                                    :message="details.errors.password"
+                                />
+                            </div>
 
-            <div class="flex items-center justify-end gap-3">
+                            <div>
+                                <Label for="password_confirmation">
+                                    Confirm password
+                                    <span class="text-primary">*</span>
+                                </Label>
+                                <div class="mt-2.25">
+                                    <PasswordInput
+                                        id="password_confirmation"
+                                        v-model="details.password_confirmation"
+                                        autocomplete="new-password"
+                                        data-test="field-password-confirmation"
+                                    />
+                                </div>
+                                <InputError
+                                    :message="
+                                        details.errors.password_confirmation
+                                    "
+                                />
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </Card>
+
+            <!-- Editing saves the account on its own, so its button belongs
+                 with it. Creating has one button for the whole page, at the
+                 bottom, because there is nothing to save separately yet. -->
+            <div
+                v-if="props.user"
+                class="mt-5 flex items-center justify-end gap-3"
+            >
                 <Button as-child variant="quiet">
                     <Link :href="rolesIndex().url">Cancel</Link>
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!canSubmit"
+                    :disabled="!canSaveDetails"
                     data-test="save-user"
                 >
-                    {{ isEditing ? 'Save changes' : 'Add user' }}
+                    Save changes
                 </Button>
             </div>
         </form>
+
+        <!--
+          The job the account does. Its own write once the account exists, and
+          the same one the Roles screen posts - so the two screens cannot
+          disagree about what assigning a role does, including trimming the
+          direct grants the new roles now cover.
+        -->
+        <form @submit.prevent="saveRoles">
+            <Card as="section" class="gap-0 p-0">
+                <div class="border-b border-divider px-5 py-3.5">
+                    <h2
+                        class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                    >
+                        Roles
+                    </h2>
+                </div>
+
+                <div class="p-5">
+                    <p
+                        v-if="!props.can.assign_roles"
+                        class="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground"
+                        data-test="cannot-assign"
+                    >
+                        {{
+                            props.user === null
+                                ? 'You can create the account but not staff it. Ask somebody who assigns roles to put them in one, or they will sign in to nothing.'
+                                : props.user.is_self
+                                  ? 'Your own roles are shown for reference. Nobody widens their own reach here — an account that can put itself in a role is not held by one.'
+                                  : 'Shown for reference. Moving somebody between roles needs the roles.assign right.'
+                        }}
+                    </p>
+
+                    <!-- A picker rather than a card each: the list grows
+                         with every role the showroom invents, and an account
+                         holds one or two of them. Read-only it is not a picker
+                         at all - a disabled box you cannot open says less than
+                         the names themselves. -->
+                    <template v-if="props.can.assign_roles">
+                        <Label for="roles" class="sr-only">Roles</Label>
+                        <OptionMultiCombobox
+                            id="roles"
+                            v-model="pickedRoleIds"
+                            :options="roleOptions"
+                            placeholder="Choose the roles this account holds"
+                            search-placeholder="Role name or what it is for"
+                            empty-text="No role matches that."
+                            data-test="field-roles"
+                        />
+                        <InputError
+                            v-if="props.user === null"
+                            :message="rolesError"
+                        />
+                    </template>
+
+                    <div
+                        v-else
+                        class="mt-3 flex flex-wrap items-center gap-1.5"
+                    >
+                        <Badge
+                            v-for="role in assignment.roles"
+                            :key="role"
+                            variant="secondary"
+                            class="capitalize"
+                            :data-test="`role-${role}`"
+                        >
+                            {{ headline(role) }}
+                        </Badge>
+                        <span
+                            v-if="assignment.roles.length === 0"
+                            class="text-xs text-muted-foreground"
+                            data-test="holds-no-role"
+                        >
+                            No role at all.
+                        </span>
+                    </div>
+                </div>
+
+                <!-- What a newly ticked role brings only shows in the
+                     permissions card once it is actually saved, because until
+                     then it grants nothing and a locked tick would be a lie. -->
+                <div
+                    v-if="props.user && props.can.assign_roles"
+                    class="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-4"
+                >
+                    <p
+                        v-if="assignment.isDirty"
+                        class="mr-auto text-xs text-muted-foreground"
+                        data-test="roles-unsaved"
+                    >
+                        Save these before the permissions below can show what
+                        they bring.
+                    </p>
+                    <InputError class="mr-auto" :message="rolesError" />
+                    <Button
+                        type="submit"
+                        :disabled="assignment.processing"
+                        data-test="save-roles"
+                    >
+                        Save roles
+                    </Button>
+                </div>
+            </Card>
+        </form>
+
+        <!--
+          What this account holds, split into the two halves an administrator
+          has to be able to tell apart. A role grant is shown locked and
+          labelled with the role behind it; a direct grant is the only thing
+          editable here, and it is the one that survives the role being taken
+          away.
+        -->
+        <form @submit.prevent="saveGrants">
+            <Card as="section" class="gap-0 p-0">
+                <div
+                    class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3.5"
+                >
+                    <h2
+                        class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                    >
+                        Permissions
+                    </h2>
+                    <span class="text-xs text-faint tabular-nums">
+                        <span data-test="direct-count">
+                            {{ grants.permissions.length }} direct
+                        </span>
+                        <span aria-hidden="true"> &bull; </span>
+                        <span data-test="inherited-count">
+                            {{ inheritedCount }} from roles
+                        </span>
+                    </span>
+                </div>
+
+                <div class="border-b border-divider px-5 py-3.5">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-xs text-muted-foreground">
+                            {{ props.user ? 'Roles held:' : 'Roles selected:' }}
+                        </span>
+                        <Badge
+                            v-for="role in effectiveRoles"
+                            :key="role"
+                            variant="secondary"
+                            class="capitalize"
+                        >
+                            {{ headline(role) }}
+                        </Badge>
+                        <span
+                            v-if="effectiveRoles.length === 0"
+                            class="text-xs text-muted-foreground"
+                            data-test="no-roles"
+                        >
+                            None. Everything below is pinned to the person.
+                        </span>
+                    </div>
+
+                    <p class="mt-2.5 text-xs text-muted-foreground">
+                        A ticked box with a role beside it comes from that role
+                        and goes when the role does. A ticked box without one is
+                        pinned to this account and stays whatever happens to
+                        their roles &mdash; which is why the Permissions screen
+                        names the people holding one.
+                    </p>
+                </div>
+
+                <p
+                    v-if="!props.can.permissions"
+                    class="m-5 rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground"
+                    data-test="permissions-read-only"
+                >
+                    {{
+                        props.user === null
+                            ? 'Shown for reference. Pinning a capability straight to an account needs the users.permissions right — create the account and ask somebody who holds it.'
+                            : props.user.is_self
+                              ? 'Your own grants are shown for reference. Nobody edits their own permissions here — an account that can rewrite its own ceiling is not a ceiling.'
+                              : 'Shown for reference. Granting a capability straight to somebody needs the users.permissions right, and only over an account your own reach already covers.'
+                    }}
+                </p>
+
+                <div class="divide-y divide-border">
+                    <div
+                        v-for="group in props.matrix"
+                        :key="group.group"
+                        class="grid gap-2.5 px-5 py-3.5 sm:grid-cols-[170px_minmax(0,1fr)] sm:gap-4"
+                    >
+                        <label
+                            class="flex items-center gap-2.5 text-xs font-bold"
+                        >
+                            <Checkbox
+                                :model-value="groupState(group)"
+                                :disabled="!props.can.permissions"
+                                :aria-label="`Pin every ${group.group} permission to this account`"
+                                @update:model-value="
+                                    toggleGroup(group, $event === true)
+                                "
+                            >
+                                <Minus
+                                    v-if="groupState(group) === 'indeterminate'"
+                                    class="size-3.5"
+                                />
+                                <Check v-else class="size-3.5" />
+                            </Checkbox>
+                            {{ group.group_label }}
+                        </label>
+
+                        <div class="flex flex-wrap gap-x-6 gap-y-2">
+                            <label
+                                v-for="permission in group.permissions"
+                                :key="permission.value"
+                                class="flex items-center gap-2 text-xs"
+                                :class="
+                                    permission.grantable
+                                        ? ''
+                                        : 'text-muted-foreground'
+                                "
+                                :title="
+                                    isInherited(permission.value)
+                                        ? `Granted by ${via(permission.value).map(headline).join(', ')}.`
+                                        : permission.grantable
+                                          ? undefined
+                                          : 'You do not hold this permission yourself.'
+                                "
+                            >
+                                <Checkbox
+                                    :model-value="isTicked(permission.value)"
+                                    :disabled="!isEditable(permission)"
+                                    :data-test="`permission-${permission.value}`"
+                                    @update:model-value="
+                                        togglePermission(
+                                            permission.value,
+                                            $event === true,
+                                        )
+                                    "
+                                />
+                                {{ permission.label }}
+
+                                <!-- The whole point of the section: a grant
+                                     that came with a job says which job, so
+                                     nobody mistakes it for one pinned to the
+                                     person. -->
+                                <Badge
+                                    v-if="isInherited(permission.value)"
+                                    variant="outline"
+                                    class="capitalize"
+                                    :data-test="`via-${permission.value}`"
+                                >
+                                    <Shield class="size-3" />
+                                    {{
+                                        via(permission.value)
+                                            .map(headline)
+                                            .join(', ')
+                                    }}
+                                </Badge>
+
+                                <Badge
+                                    v-if="isDoubleHeld(permission.value)"
+                                    variant="destructive"
+                                    :data-test="`double-${permission.value}`"
+                                    title="Held by a role and pinned to the account. Clear the box and save to leave only the role behind it."
+                                >
+                                    <Pin class="size-3" />
+                                    Also pinned
+                                </Badge>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    v-if="props.can.permissions"
+                    class="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-4"
+                >
+                    <!-- Said here rather than after a round trip: a role
+                         ticked above already carries this, and pinning it as
+                         well would leave a grant behind when the role goes. -->
+                    <p
+                        v-if="redundant.length > 0"
+                        class="mr-auto text-xs text-destructive"
+                        data-test="redundant-warning"
+                    >
+                        A role selected above already grants
+                        {{ redundant.join(', ') }}. Clear
+                        {{ redundant.length === 1 ? 'it' : 'them' }} here, or
+                        the account cannot be created.
+                    </p>
+                    <InputError class="mr-auto" :message="permissionsError" />
+
+                    <Button
+                        v-if="props.user"
+                        type="submit"
+                        :disabled="grants.processing"
+                        data-test="save-permissions"
+                    >
+                        Save direct permissions
+                    </Button>
+                    <p
+                        v-else
+                        class="text-xs text-muted-foreground"
+                        data-test="grants-saved-with-account"
+                    >
+                        Saved with the account.
+                    </p>
+                </div>
+            </Card>
+        </form>
+
+        <Card v-if="props.user" as="section" class="gap-0 p-0">
+            <div class="border-b border-divider px-5 py-3.5">
+                <h2
+                    class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
+                >
+                    Password
+                </h2>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-4 p-5">
+                <p class="max-w-prose text-sm text-muted-foreground">
+                    {{
+                        props.can.password
+                            ? 'Sets a new password on their behalf and signs the account out everywhere. Nothing is emailed — you hand it over yourself.'
+                            : props.user.is_self
+                              ? 'Your own password is changed from Settings, where the current one has to be typed first. That check is the point of it, so it is not skipped here.'
+                              : 'Setting a password for this account needs the users.update right over an account your own reach covers.'
+                    }}
+                </p>
+
+                <Button
+                    v-if="props.can.password"
+                    variant="outline"
+                    data-test="open-set-password"
+                    @click="
+                        settingPassword = {
+                            id: props.user.id,
+                            name: props.user.name,
+                        }
+                    "
+                >
+                    <KeyRound />
+                    Set password
+                </Button>
+            </div>
+        </Card>
+
+        <!-- One button for the whole page while the account is being made: the
+             details, the roles and the direct grants are one thing to fill in,
+             so they are one thing to submit. -->
+        <div
+            v-if="props.user === null"
+            class="flex items-center justify-end gap-3"
+        >
+            <Button as-child variant="quiet">
+                <Link :href="rolesIndex().url">Cancel</Link>
+            </Button>
+            <Button
+                type="submit"
+                form="user-details"
+                :disabled="!canSaveDetails || redundant.length > 0"
+                data-test="save-user"
+            >
+                Add user
+            </Button>
+        </div>
     </div>
+
+    <SetPasswordDialog
+        :subject="settingPassword"
+        @close="settingPassword = null"
+    />
 </template>

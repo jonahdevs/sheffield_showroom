@@ -1,5 +1,6 @@
 <?php
 
+use App\Data\DashboardRangeData;
 use App\Enums\CustomerSource;
 use App\Enums\Permission;
 use App\Enums\VisitPurpose;
@@ -102,6 +103,18 @@ it('takes the window from the range the page was asked for', function () {
             ->has('trend', 30));
 });
 
+it('offers the same named windows the other lists offer', function () {
+    $this->actingAs(dashboardManager())
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('presets', count(DashboardRangeData::PRESETS))
+            /* Shortest first, so the rail reads as a dial from "just now"
+               outwards rather than something to be searched. */
+            ->where('presets.0.value', 'today')
+            ->where('presets.0.label', 'Today'));
+});
+
 it('counts only the visits that landed inside the window', function () {
     visitOn(2);
     visitOn(4);
@@ -147,7 +160,7 @@ it('leaves the change unstated when the window before it held nothing', function
         ->assertInertia(fn ($page) => $page->where('stats.0.change', null));
 });
 
-it('separates the customers new to the window from the returning ones', function () {
+it('counts the people behind the visits and how many were new to the window', function () {
     $returning = Customer::factory()->create();
     $fresh = Customer::factory()->create();
 
@@ -159,9 +172,17 @@ it('separates the customers new to the window from the returning ones', function
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
+            /* Keyed as well as indexed: the row is positional everywhere else
+               in this file, and a tile added or dropped should fail here
+               rather than quietly move what the numbers below are about. */
+            ->has('stats', 4)
+            ->where('stats.1.key', 'customers')
             ->where('stats.1.value', 2)
+            ->where('stats.2.key', 'new_customers')
             ->where('stats.2.value', 1)
-            ->where('stats.3.value', 1));
+            /* No returning tile between them. It would be 2 - 1, read off the
+               two tiles either side of where it used to sit. */
+            ->where('stats.3.key', 'product_interests'));
 });
 
 it('divides the window by purpose and says what share each wedge is', function () {
@@ -212,7 +233,7 @@ it('ranks the products by how many visits named them', function () {
             ->where('products.1.visits', 1)
             /* Three attachments inside the window, and the one on the visit
                outside it left where it belongs. */
-            ->where('stats.4.value', 3));
+            ->where('stats.3.value', 3));
 });
 
 it('totals each respondent\'s visits, customers and follow-ups', function () {

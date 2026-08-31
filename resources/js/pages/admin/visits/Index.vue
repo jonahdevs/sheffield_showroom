@@ -2,20 +2,19 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
     Building2,
-    CalendarDays,
-    CalendarRange,
-    ClipboardList,
+    CalendarClock,
     NotebookPen,
     Package,
     Pencil,
     Plus,
     Search,
-    Sun,
     Trash2,
     UserRound,
+    Users,
 } from '@lucide/vue';
+import { computed } from 'vue';
 import type { Component } from 'vue';
-import { ref } from 'vue';
+import DateRangePicker from '@/components/DateRangePicker.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
 import StatTile from '@/components/StatTile.vue';
@@ -24,14 +23,6 @@ import type { Paginator } from '@/components/TablePagination.vue';
 import TableSkeleton from '@/components/TableSkeleton.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
 import {
     InputGroup,
     InputGroupAddon,
@@ -46,6 +37,7 @@ import {
 } from '@/components/ui/select';
 import { CHART_PALETTE } from '@/composables/useChartTheme';
 import { useFilters } from '@/composables/useFilters';
+import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
 import {
     create,
@@ -61,12 +53,34 @@ interface Paginated<T> extends Paginator {
 
 const props = defineProps<{
     visits: Paginated<App.Data.VisitRowData>;
-    filters: { search: string; purpose: string };
+    filters: {
+        search: string;
+        purpose: string;
+        /** The name of the window, where one was named rather than drawn. */
+        range: string;
+        from: string;
+        to: string;
+    };
+    /**
+     * The date window written out - "2026-02-01 to 2026-02-28", "From
+     * 2026-02-01", or "All dates" where none was picked. Resolved by the
+     * server, because the server is what settles a window it was handed back to
+     * front, and the calendar redraws from what it settled on.
+     */
+    date_label: string;
+    /** The named windows the picker offers, shortest first. */
+    presets: { value: string; label: string }[];
+    /**
+     * How many days the chosen window covers, or null where it has no length -
+     * no window at all, or one open at the near end. Null is what turns the
+     * tiles' comparison caption off, and the server sends nothing to compare
+     * against in the same breath, so the two cannot disagree.
+     */
+    window_days: number | null;
     purposes: { value: string; label: string }[];
     page_sizes: number[];
     formats: string[];
-    total: number;
-    /* How busy the floor has been, unaffected by the search and the purpose
+    /* The chosen window's figures, unaffected by the search and the purpose
        filter - see the controller's `stats()` for why. */
     stats: App.Data.DashboardStatData[];
     /** True for a salesperson, who sees only what they logged. */
@@ -79,76 +93,117 @@ const props = defineProps<{
     };
 }>();
 
-const { filters, query, hasFilters, processing, clear } = useFilters({
+/*
+  The window rides in the same bag as the search and the purpose, so it lands
+  in the query string, survives a reload, counts towards `hasFilters`, is swept
+  up by Clear, and is carried into the download by `query` - none of which it
+  would get from a pair of refs kept beside the composable.
+
+  It sits in the same bag while no longer sitting in the same bar: the control
+  moved up to the page header because the window now drives the figures and the
+  list together, the way the dashboard's does, where the search and the purpose
+  narrow only the table. Where the state lives and where the control lives are
+  separate questions, and only the second one moved.
+
+  `range` rides alongside `from` and `to` exactly as it does on the dashboard,
+  and the pair stays blank unless the window was drawn on the calendar - a named
+  window never carries two ways of saying the same thing in the URL, so a
+  bookmarked "this month" still opens this month next month rather than the days
+  it happened to mean when it was saved.
+
+  `stats`, `window_days` and `date_label` are reloaded with the rows: all three
+  are the server's reading of the window, and a row of figures or a button still
+  describing the old one would say the page is something it is not.
+*/
+const { filters, query, hasFilters, processing, apply, clear } = useFilters({
     url: index.url(),
     initial: {
         search: props.filters.search ?? '',
         purpose: props.filters.purpose === '' ? 'all' : props.filters.purpose,
+        range: props.filters.range ?? '',
+        from: props.filters.range === '' ? (props.filters.from ?? '') : '',
+        to: props.filters.range === '' ? (props.filters.to ?? '') : '',
     },
-    blank: { search: '', purpose: 'all' },
-    only: ['visits', 'filters'],
+    blank: { search: '', purpose: 'all', range: '', from: '', to: '' },
+    only: ['visits', 'filters', 'date_label', 'window_days', 'stats'],
 });
 
 /**
- * What the page hangs on each figure: a glyph, a colour, and what its delta is
- * measured against.
+ * Sent at once rather than after the usual pause: a window is one decisive
+ * answer rather than a phrase still being typed, and a beat of nothing after
+ * the popover closes reads as a click that missed.
+ *
+ * Both of these clear the other spelling of the window rather than leaving it
+ * behind. The server would ignore a stale pair of dates under a named window
+ * anyway, but a URL carrying `range=this_month&from=2026-02-01` is one somebody
+ * will eventually read as a contradiction and try to honour.
+ */
+function chooseWindow(from: string, to: string): void {
+    apply({ range: '', from, to });
+}
+
+function choosePreset(range: string): void {
+    apply({ range, from: '', to: '' });
+}
+
+/**
+ * What the closed picker reads.
+ *
+ * A named window reads by its name - "This month" rather than the four-and-
+ * twenty characters of dates it resolved to - because the name is what was
+ * clicked, and a button that answers a click with something the reader has to
+ * decode reads as though it did something else. The calendar inside still
+ * highlights the days, so the dates are one click away for anybody who wants
+ * them.
+ */
+const windowLabel = computed(
+    () =>
+        props.presets.find((preset) => preset.value === props.filters.range)
+            ?.label ?? props.date_label,
+);
+
+/**
+ * What every delta in the row is measured against, written out.
+ *
+ * One sentence for the whole row rather than one per tile, because every figure
+ * is now compared against the same thing: the equally long stretch of log
+ * immediately before the window. Blank where the window has no length - the
+ * tiles then have nothing to compare against either, and print so themselves.
+ */
+const comparison = computed(() => {
+    if (props.window_days === null) {
+        return '';
+    }
+
+    return props.window_days === 1
+        ? 'vs the day before'
+        : `vs previous ${props.window_days} days`;
+});
+
+/**
+ * What the page hangs on each figure: a glyph and a colour.
  *
  * Kept here rather than sent from the server because none of it is data - it
- * is how this screen chooses to present four integers, and a controller has no
+ * is how this screen chooses to present three integers, and a controller has no
  * business holding an icon. The palette is the dashboard's, so a reader moving
  * between the two rows reads them as the same instrument.
  */
-const TILES: Record<
-    string,
-    { icon: Component; colour: string; comparison: string }
-> = {
-    total: {
-        icon: ClipboardList,
-        colour: CHART_PALETTE[0],
-        comparison: '',
-    },
-    today: {
-        icon: Sun,
-        colour: CHART_PALETTE[1],
-        comparison: 'vs yesterday',
-    },
-    week: {
-        icon: CalendarDays,
-        colour: CHART_PALETTE[2],
-        comparison: 'vs last week',
-    },
-    month: {
-        icon: CalendarRange,
-        colour: CHART_PALETTE[3],
-        comparison: 'vs last month',
-    },
+const TILES: Record<string, { icon: Component; colour: string }> = {
+    visits: { icon: Users, colour: CHART_PALETTE[0] },
+    customers: { icon: UserRound, colour: CHART_PALETTE[1] },
+    follow_ups: { icon: CalendarClock, colour: CHART_PALETTE[2] },
 };
 
 function tile(key: string) {
-    return (
-        TILES[key] ?? {
-            icon: ClipboardList,
-            colour: CHART_PALETTE[8],
-            comparison: '',
-        }
-    );
+    return TILES[key] ?? { icon: Users, colour: CHART_PALETTE[8] };
 }
 
-const deleting = ref<App.Data.VisitRowData | null>(null);
-
-function confirmDelete() {
-    const visit = deleting.value;
-
-    if (visit === null) {
+async function removeVisit(visit: App.Data.VisitRowData) {
+    if (!(await confirmDelete())) {
         return;
     }
 
-    router.delete(destroy(visit.id).url, {
-        preserveScroll: true,
-        onSuccess: () => {
-            deleting.value = null;
-        },
-    });
+    router.delete(destroy(visit.id).url, { preserveScroll: true });
 }
 
 defineOptions({
@@ -183,6 +238,27 @@ defineOptions({
             </div>
 
             <div class="flex flex-wrap items-center gap-2.5">
+                <!-- One control at the top of the page, beside the title, the
+                     way the dashboard's sits. It drives the whole screen - the
+                     figures below, the rows under them, the pager's count and
+                     the download - rather than only the table, which is what
+                     earns it a place up here instead of in the filter bar with
+                     the search and the purpose. Those two narrow the table; the
+                     window says which stretch of the log the page is.
+
+                     It narrows whatever this reader could already see and never
+                     widens a salesperson's list to the floor's. -->
+                <DateRangePicker
+                    :from="props.filters.from"
+                    :to="props.filters.to"
+                    :label="windowLabel"
+                    :presets="props.presets"
+                    :active="props.filters.range"
+                    data-test="visit-date-range"
+                    @update="chooseWindow"
+                    @preset="choosePreset"
+                />
+
                 <!-- The export follows the filters and the same visibility
                      split the list sits behind: a salesperson downloads their
                      own visits, not the floor's. -->
@@ -203,18 +279,31 @@ defineOptions({
             </div>
         </div>
 
-        <!-- Read before the list rather than after it: somebody opening
-             this screen wants to know whether the floor has been busy before
-             they start reading rows, and the four windows narrow in the order
-             a person asks them. -->
-        <div class="grid gap-4 @lg/page:grid-cols-2 @3xl/page:grid-cols-4">
+        <!-- Read before the list rather than after it: somebody opening this
+             screen wants to know the shape of the window before they start
+             reading rows.
+
+             One column straight to three, with no two-column width in between:
+             three tiles do not halve, so a two-across step would strand the
+             last one on a row of its own at exactly the widths a laptop behind
+             the rail actually gives this page.
+
+             Dimmed rather than skeletoned while a new window lands, as the
+             dashboard's panels are: the tiles are already the right shape, and
+             swapping three of them for placeholders makes a 200ms reload look
+             like a page load. -->
+        <div
+            class="grid gap-4 transition-opacity @2xl/page:grid-cols-3"
+            :class="processing ? 'opacity-60' : ''"
+            :aria-busy="processing"
+        >
             <StatTile
                 v-for="stat in props.stats"
                 :key="stat.key"
                 :stat="stat"
                 :icon="tile(stat.key).icon"
                 :colour="tile(stat.key).colour"
-                :comparison="tile(stat.key).comparison"
+                :comparison="comparison"
             />
         </div>
 
@@ -247,9 +336,9 @@ defineOptions({
                     Clear
                 </Button>
 
-                <!-- `ml-auto` rather than a spacer, so the purpose sits at the
-                     far right on a wide bar and simply wraps under the search
-                     on a narrow one. -->
+                <!-- `ml-auto` only from `sm`: on a narrow bar the select wraps
+                     under the search box and a left margin of whatever is left
+                     over would push it off the card. -->
                 <Select v-model="filters.purpose">
                     <SelectTrigger
                         class="w-52 sm:ml-auto"
@@ -289,7 +378,7 @@ defineOptions({
                 <p class="text-sm text-muted-foreground">
                     {{
                         hasFilters
-                            ? 'No visit matches that search.'
+                            ? 'No visit matches those filters.'
                             : 'No visits have been logged yet.'
                     }}
                 </p>
@@ -317,7 +406,7 @@ defineOptions({
                     >
                         <span>Customer</span>
                         <span>Company</span>
-                        <span>Purpose</span>
+                        <span>Nature of visit</span>
                         <span>Interested products</span>
                         <span>Respondent</span>
                         <span>Visit date &amp; time</span>
@@ -420,12 +509,7 @@ defineOptions({
                                     {{ visit.visited_on }}
                                 </p>
                                 <p class="mt-0.5 text-faint tabular-nums">
-                                    {{ visit.visited_time
-                                    }}{{
-                                        visit.duration
-                                            ? ` - ${visit.duration}`
-                                            : ''
-                                    }}
+                                    {{ visit.visited_time }}
                                 </p>
                             </div>
 
@@ -450,7 +534,7 @@ defineOptions({
                                     class="text-destructive hover:text-destructive"
                                     :aria-label="`Remove the visit by ${visit.customer_name}`"
                                     :data-test="`delete-${visit.id}`"
-                                    @click="deleting = visit"
+                                    @click="removeVisit(visit)"
                                 >
                                     <Trash2 />
                                 </Button>
@@ -472,41 +556,4 @@ defineOptions({
             </template>
         </Card>
     </div>
-
-    <Dialog
-        :open="deleting !== null"
-        @update:open="!$event && (deleting = null)"
-    >
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Remove this visit?</DialogTitle>
-                <DialogDescription>
-                    It comes off the log and out of the counts behind it. The
-                    customer and the products it names are untouched, and the
-                    record can be brought back.
-                </DialogDescription>
-            </DialogHeader>
-
-            <div
-                class="flex flex-col gap-1.5 rounded-lg bg-muted/60 p-3.5 text-xs"
-            >
-                <span class="font-bold">{{ deleting?.customer_name }}</span>
-                <span class="text-faint">
-                    {{ deleting?.purpose_label }} -
-                    {{ deleting?.visited_on }} at {{ deleting?.visited_time }}
-                </span>
-            </div>
-
-            <DialogFooter>
-                <Button variant="quiet" @click="deleting = null">Cancel</Button>
-                <Button
-                    variant="destructive"
-                    data-test="confirm-delete-visit"
-                    @click="confirmDelete"
-                >
-                    Remove visit
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
 </template>

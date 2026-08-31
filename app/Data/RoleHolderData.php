@@ -27,16 +27,31 @@ class RoleHolderData extends Data
         public array $roles,
         /** Whether this row is the signed-in user, who may not re-role themselves. */
         public bool $is_self,
+        /**
+         * How many capabilities are pinned to this account rather than to a
+         * role it holds. Counted in the list because a direct grant appears
+         * nowhere on the Roles screen otherwise: take the role away and the
+         * ability stays, with nothing on this page to say so.
+         */
+        public int $direct_permissions,
+        /**
+         * Whether the viewer's own reach covers this account. False for
+         * somebody who can do more than the viewer can, so the row offers no
+         * action the server would refuse.
+         */
+        public bool $is_manageable,
     ) {}
 
-    public static function fromModel(User $user, ?int $viewerId): self
+    public static function fromModel(User $user, ?User $viewer): self
     {
         return new self(
             id: $user->id,
             name: $user->name,
             email: $user->email,
             roles: $user->roles->pluck('name')->all(),
-            is_self: $user->id === $viewerId,
+            is_self: $user->id === $viewer?->id,
+            direct_permissions: $user->permissions->count(),
+            is_manageable: $viewer !== null && $viewer->can('update', $user),
         );
     }
 }

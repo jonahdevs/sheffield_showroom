@@ -4,15 +4,18 @@ import {
     Ellipsis,
     KeyRound,
     Lock,
+    Pencil,
+    Pin,
     Plus,
     Search,
     Shield,
-    SquarePen,
     Trash2,
     Users,
 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
+import SetPasswordDialog from '@/components/SetPasswordDialog.vue';
+import type { PasswordSubject } from '@/components/SetPasswordDialog.vue';
 import TablePagination from '@/components/TablePagination.vue';
 import type { Paginator } from '@/components/TablePagination.vue';
 import TableSkeleton from '@/components/TableSkeleton.vue';
@@ -33,6 +36,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -40,7 +44,6 @@ import {
     InputGroupAddon,
     InputGroupInput,
 } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
 import {
     Select,
     SelectContent,
@@ -55,6 +58,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useFilters } from '@/composables/useFilters';
 import { useInitials } from '@/composables/useInitials';
+import { confirmDelete, confirmDeleteChoosing } from '@/lib/confirm';
 import { dashboard } from '@/routes';
 import { create, destroy, edit, index } from '@/routes/admin/roles';
 import { create as createUser, edit as editUser } from '@/routes/admin/users';
@@ -66,7 +70,8 @@ interface Paginated<T> extends Paginator {
 
 const props = defineProps<{
     roles: App.Data.RoleData[];
-    holders: Paginated<App.Data.RoleHolderData>;
+    /** Null for a viewer who may shape roles but not read the accounts in them. */
+    holders: Paginated<App.Data.RoleHolderData> | null;
     filters: { search: string; role: string };
     page_sizes: number[];
     can: {
@@ -74,8 +79,9 @@ const props = defineProps<{
         update: boolean;
         delete: boolean;
         assign: boolean;
-        create_user: boolean;
-        update_user: boolean;
+        view_users: boolean;
+        create_users: boolean;
+        update_users: boolean;
     };
 }>();
 
@@ -97,11 +103,6 @@ const activeFilterCount = computed(
 
 function headline(name: string): string {
     return name.replace(/-/g, ' ');
-}
-
-/** Whether the row's menu has anything in it worth opening. */
-function canActOn(holder: App.Data.RoleHolderData): boolean {
-    return props.can.update_user || (props.can.assign && !holder.is_self);
 }
 
 // -----------------------------------------------------------------------------
@@ -141,45 +142,72 @@ function submitAssign() {
 }
 
 // -----------------------------------------------------------------------------
+// Row actions
+// -----------------------------------------------------------------------------
+
+const settingPassword = ref<PasswordSubject | null>(null);
+
+/*
+ * Each item is asked about separately rather than the whole menu being hidden
+ * on your own row. Correcting your own name is an ordinary thing to do, where
+ * handing yourself a role and setting your own password without typing the old
+ * one are both ways round a check - so the row keeps the first and drops the
+ * other two.
+ *
+ * `is_manageable` is the server's answer for this row: it is false for an
+ * account that can do more than the viewer can, so the menu never offers a
+ * door the controller would shut.
+ */
+function canReRole(holder: App.Data.RoleHolderData): boolean {
+    return props.can.assign && !holder.is_self;
+}
+
+function canSetPassword(holder: App.Data.RoleHolderData): boolean {
+    return holder.is_manageable && !holder.is_self;
+}
+
+function hasActions(holder: App.Data.RoleHolderData): boolean {
+    return holder.is_manageable || canReRole(holder);
+}
+
+// -----------------------------------------------------------------------------
 // Deleting a role
 // -----------------------------------------------------------------------------
 
-const deleting = ref<App.Data.RoleData | null>(null);
+/**
+ * A role nobody holds is a plain confirmation. One with members has to say
+ * where they go first: `RoleController::destroy` refuses to strand them.
+ */
+async function removeRole(role: App.Data.RoleData) {
+    if (role.holders === 0) {
+        if (!(await confirmDelete())) {
+            return;
+        }
 
-const fallback = ref('');
+        router.delete(destroy(role.id).url, { preserveScroll: true });
 
-const fallbackError = ref('');
-
-/** Where this role's holders would land. Never the role being removed. */
-const fallbackOptions = computed(() =>
-    props.roles.filter((role) => role.id !== deleting.value?.id),
-);
-
-watch(deleting, (role) => {
-    fallback.value = '';
-    fallbackError.value = '';
-
-    if (role && role.holders > 0) {
-        fallback.value = fallbackOptions.value[0]?.name ?? '';
+        return;
     }
-});
 
-function confirmDelete() {
-    const role = deleting.value;
+    /* Never the role being removed: it is about to stop existing. */
+    const elsewhere = props.roles.filter((option) => option.id !== role.id);
 
-    if (role === null) {
+    const fallback = await confirmDeleteChoosing({
+        text: 'Its members have to move to another role.',
+        choices: Object.fromEntries(
+            elsewhere.map((option) => [option.name, headline(option.name)]),
+        ),
+        selected: elsewhere[0]?.name,
+        required: 'Choose the role its members should move to.',
+    });
+
+    if (fallback === null) {
         return;
     }
 
     router.delete(destroy(role.id).url, {
-        data: { fallback: fallback.value },
+        data: { fallback },
         preserveScroll: true,
-        onSuccess: () => {
-            deleting.value = null;
-        },
-        onError: (errors) => {
-            fallbackError.value = errors.fallback ?? '';
-        },
     });
 }
 
@@ -303,7 +331,7 @@ defineOptions({
                         class="size-8.5 rounded-[9px]"
                         :aria-label="`Delete the ${headline(role.name)} role`"
                         :data-test="`delete-${role.name}`"
-                        @click="deleting = role"
+                        @click="removeRole(role)"
                     >
                         <Trash2 class="size-4" />
                     </Button>
@@ -315,19 +343,19 @@ defineOptions({
           Who holds what. Roles mean nothing until somebody is in one, so the
           list of people sits under the list of roles rather than a page away.
         -->
-        <Card class="min-w-0 gap-0 overflow-hidden p-0">
+        <Card
+            v-if="props.can.view_users && props.holders"
+            class="min-w-0 gap-0 overflow-hidden p-0"
+        >
             <div
                 class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3.5"
             >
                 <h2 class="text-sm font-bold">Users</h2>
 
-                <!-- The account itself, not the role on it: somebody who is
-                     not on this list yet has nothing to be assigned. -->
                 <Button
-                    v-if="props.can.create_user"
-                    as-child
+                    v-if="props.can.create_users"
                     size="sm"
-                    variant="quiet"
+                    as-child
                     data-test="new-user"
                 >
                     <Link :href="createUser().url">
@@ -478,14 +506,40 @@ defineOptions({
                                 >
                                     No role
                                 </span>
+
+                                <!-- A capability pinned to the person rather
+                                     than to a role appears nowhere else on
+                                     this screen: take every role away and it
+                                     stays. So the row says it, or the page
+                                     would quietly lie about what somebody
+                                     can do. -->
+                                <Tooltip v-if="holder.direct_permissions > 0">
+                                    <TooltipTrigger as-child>
+                                        <Badge
+                                            variant="outline"
+                                            tabindex="0"
+                                            :data-test="`direct-${holder.id}`"
+                                        >
+                                            <Pin class="size-3" />
+                                            {{ holder.direct_permissions }}
+                                            direct
+                                        </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        {{ holder.direct_permissions }}
+                                        {{
+                                            holder.direct_permissions === 1
+                                                ? 'permission is'
+                                                : 'permissions are'
+                                        }}
+                                        granted to this account itself, not
+                                        through a role
+                                    </TooltipContent>
+                                </Tooltip>
                             </div>
 
-                            <!-- Nobody re-roles themselves, so on your own row
-                                 the menu is whatever is left - which is the
-                                 account itself, and nothing at all without the
-                                 permission to edit one. -->
                             <div class="flex justify-end">
-                                <DropdownMenu v-if="canActOn(holder)">
+                                <DropdownMenu v-if="hasActions(holder)">
                                     <DropdownMenuTrigger as-child>
                                         <Button
                                             variant="ghost"
@@ -498,30 +552,45 @@ defineOptions({
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                         <DropdownMenuItem
-                                            v-if="props.can.update_user"
+                                            v-if="holder.is_manageable"
                                             as-child
                                             :data-test="`edit-user-${holder.id}`"
                                         >
                                             <Link
-                                                class="w-full cursor-pointer"
                                                 :href="editUser(holder.id).url"
                                             >
-                                                <SquarePen />
+                                                <Pencil />
                                                 Edit user
                                             </Link>
                                         </DropdownMenuItem>
 
                                         <DropdownMenuItem
-                                            v-if="
-                                                props.can.assign &&
-                                                !holder.is_self
-                                            "
+                                            v-if="canReRole(holder)"
                                             :data-test="`assign-${holder.id}`"
                                             @select="openAssign(holder)"
                                         >
                                             <Shield />
                                             Change roles
                                         </DropdownMenuItem>
+
+                                        <!-- Last, and separated: it is the one
+                                             item here that cannot be undone by
+                                             putting the old value back. -->
+                                        <template v-if="canSetPassword(holder)">
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                :data-test="`set-password-${holder.id}`"
+                                                @select="
+                                                    settingPassword = {
+                                                        id: holder.id,
+                                                        name: holder.name,
+                                                    }
+                                                "
+                                            >
+                                                <KeyRound />
+                                                Set password
+                                            </DropdownMenuItem>
+                                        </template>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </div>
@@ -606,70 +675,8 @@ defineOptions({
         </DialogContent>
     </Dialog>
 
-    <Dialog
-        :open="deleting !== null"
-        @update:open="!$event && (deleting = null)"
-    >
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle class="capitalize">
-                    Delete {{ headline(deleting?.name ?? '') }}?
-                </DialogTitle>
-                <DialogDescription>
-                    <template v-if="(deleting?.holders ?? 0) > 0">
-                        {{ deleting?.holders }}
-                        {{
-                            deleting?.holders === 1
-                                ? 'person holds'
-                                : 'people hold'
-                        }}
-                        this role. Choose where they move to - an account left
-                        with no role keeps its login and loses every ability on
-                        it.
-                    </template>
-                    <template v-else>
-                        Nobody holds this role, so nothing moves. This cannot be
-                        undone.
-                    </template>
-                </DialogDescription>
-            </DialogHeader>
-
-            <div v-if="(deleting?.holders ?? 0) > 0" class="grid gap-1.5">
-                <Label for="role-fallback">Move members to</Label>
-                <Select v-model="fallback">
-                    <SelectTrigger
-                        id="role-fallback"
-                        class="w-full"
-                        data-test="role-fallback"
-                    >
-                        <SelectValue placeholder="Choose a role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem
-                            v-for="option in fallbackOptions"
-                            :key="option.id"
-                            :value="option.name"
-                            class="capitalize"
-                        >
-                            {{ headline(option.name) }}
-                        </SelectItem>
-                    </SelectContent>
-                </Select>
-                <p v-if="fallbackError" class="text-xs text-destructive">
-                    {{ fallbackError }}
-                </p>
-            </div>
-
-            <DialogFooter>
-                <Button variant="ghost" @click="deleting = null">Cancel</Button>
-                <Button
-                    variant="destructive"
-                    data-test="confirm-delete-role"
-                    @click="confirmDelete"
-                >
-                    Delete role
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
+    <SetPasswordDialog
+        :subject="settingPassword"
+        @close="settingPassword = null"
+    />
 </template>

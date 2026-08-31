@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFilters } from '@/composables/useFilters';
+import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
 import { create, destroy, edit, index, sync } from '@/routes/admin/products';
 
@@ -124,21 +125,12 @@ function pullFromWebsite() {
     );
 }
 
-const deleting = ref<App.Data.ProductData | null>(null);
-
-function confirmDelete() {
-    const product = deleting.value;
-
-    if (product === null) {
+async function removeProduct(product: App.Data.ProductData) {
+    if (!(await confirmDelete())) {
         return;
     }
 
-    router.delete(destroy(product.id).url, {
-        preserveScroll: true,
-        onSuccess: () => {
-            deleting.value = null;
-        },
-    });
+    router.delete(destroy(product.id).url, { preserveScroll: true });
 }
 
 defineOptions({
@@ -378,7 +370,7 @@ defineOptions({
                                     class="text-destructive hover:text-destructive"
                                     :aria-label="`Remove ${product.name}`"
                                     :data-test="`delete-${product.id}`"
-                                    @click="deleting = product"
+                                    @click="removeProduct(product)"
                                 >
                                     <Trash2 />
                                 </Button>
@@ -441,32 +433,6 @@ defineOptions({
                 >
                     <RefreshCw :class="syncing ? 'animate-spin' : ''" />
                     {{ syncing ? 'Fetching...' : 'Fetch products' }}
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
-
-    <Dialog
-        :open="deleting !== null"
-        @update:open="!$event && (deleting = null)"
-    >
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Remove {{ deleting?.name }}?</DialogTitle>
-                <DialogDescription>
-                    It comes off the catalogue. Nothing it is already attached
-                    to is lost, and the record can be brought back.
-                </DialogDescription>
-            </DialogHeader>
-
-            <DialogFooter>
-                <Button variant="quiet" @click="deleting = null">Cancel</Button>
-                <Button
-                    variant="destructive"
-                    data-test="confirm-delete-product"
-                    @click="confirmDelete"
-                >
-                    Remove product
                 </Button>
             </DialogFooter>
         </DialogContent>

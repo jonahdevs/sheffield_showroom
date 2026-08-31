@@ -184,11 +184,8 @@ class LegacyVisitLog
                the only copy of it. */
             'notes' => $note,
 
-            /* The extract has nothing to say about either. An invented
-               duration is indistinguishable from a measured one in the average
-               the dashboard reports, and a follow-up date nobody set would put
-               448 chases in somebody's diary. */
-            'duration_minutes' => null,
+            /* The extract has nothing to say about it, and a follow-up date
+               nobody set would put 448 chases in somebody's diary. */
             'expected_follow_up_on' => null,
 
             /* Nobody in this application logged these. Stamping them with the

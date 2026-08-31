@@ -54,11 +54,7 @@ class CustomerController extends Controller
             /* Only the formats this host can actually produce - see
                `ExportResponse::available()`. */
             'formats' => ExportResponse::available(),
-            'counts' => [
-                'all' => Customer::query()->count(),
-                'individual' => Customer::query()->ofType(CustomerType::Individual)->count(),
-                'company' => Customer::query()->ofType(CustomerType::Company)->count(),
-            ],
+            'counts' => $this->counts(),
             'can' => [
                 'create' => $viewer->can('create', Customer::class),
                 'update' => $viewer->can('update', new Customer),
@@ -106,7 +102,7 @@ class CustomerController extends Controller
      * warrant: the counts come back as a toast, and a row the rules refused is
      * reported in it rather than stopping the rest of the file landing.
      */
-    public function import(Request $request): RedirectResponse
+    public function import(Request $request, LegacyExtract $extract): RedirectResponse
     {
         $this->authorize('import', Customer::class);
 
@@ -117,7 +113,7 @@ class CustomerController extends Controller
         /** @var UploadedFile $file */
         $file = $validated['file'];
 
-        $import = new CustomerImport(app(LegacyExtract::class), $request->user()->id);
+        $import = new CustomerImport($extract, $request->user()->id);
 
         /* All or nothing on anything the import did not expect. A row it did
            expect to refuse is skipped without throwing, so the transaction is
@@ -251,6 +247,36 @@ class CustomerController extends Controller
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * How many customers sit under each tab.
+     *
+     * Grouped in one query rather than counted type by type, the same way
+     * `ProductController::counts()` does it: the answer is one row of a
+     * two-value column, and asking for it three times is three round trips
+     * for one fact.
+     *
+     * Unfiltered on purpose. The tabs say how many there are of each kind,
+     * not how many the search left behind - a count that moved with the
+     * filter would leave the tab you are on reading its own result back.
+     *
+     * @return array<string, int>
+     */
+    private function counts(): array
+    {
+        $counted = Customer::query()
+            ->selectRaw('type, count(*) as aggregate')
+            ->groupBy('type')
+            ->pluck('aggregate', 'type');
+
+        $counts = ['all' => (int) $counted->sum()];
+
+        foreach (CustomerType::cases() as $type) {
+            $counts[$type->value] = (int) $counted->get($type->value, 0);
+        }
+
+        return $counts;
     }
 
     /**
