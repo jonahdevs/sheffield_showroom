@@ -92,6 +92,20 @@ class Customer extends Model
     }
 
     /**
+     * What they have bought.
+     *
+     * The inverse of `Purchase::customer`, and the thing a reward campaign is
+     * measured against - `RewardEligibilityService` asks how much a sale was
+     * worth and whether it has already earned a turn.
+     *
+     * @return HasMany<Purchase, $this>
+     */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(Purchase::class);
+    }
+
+    /**
      * What to call them. A company is named by the company, not by whoever
      * from it walked in - that person is `name`, and they are who you ask for.
      */

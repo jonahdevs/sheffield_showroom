@@ -23,6 +23,11 @@ class DatabaseSeeder extends Seeder
      * Visits after customers, and not the other way round: every imported
      * visit names its customer by the id that customer had in the old system,
      * and there is nothing to match against until the book has landed.
+     *
+     * The campaign last of all. It needs a user to be attributed to, and it is
+     * the only seeder here that is scaffolding rather than a record: the
+     * clearance sale is a promotion to look at, not something carried over
+     * from the old system.
      */
     public function run(): void
     {
@@ -31,6 +36,7 @@ class DatabaseSeeder extends Seeder
             UsersSeeder::class,
             CustomersSeeder::class,
             VisitsSeeder::class,
+            RewardCampaignSeeder::class,
         ]);
 
         /* An account holding nothing, for seeing what the application looks

@@ -2,10 +2,13 @@
 import { Link } from '@inertiajs/vue3';
 import {
     ClipboardList,
+    Gift,
     KeyRound,
     LayoutGrid,
     Package,
+    Receipt,
     Shield,
+    TicketCheck,
     Users,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -24,6 +27,9 @@ import { dashboard } from '@/routes';
 import { index as customersIndex } from '@/routes/admin/customers';
 import { index as permissionsIndex } from '@/routes/admin/permissions';
 import { index as productsIndex } from '@/routes/admin/products';
+import { index as purchasesIndex } from '@/routes/admin/purchases';
+import { index as rewardsIndex } from '@/routes/admin/rewards';
+import { index as redeemIndex } from '@/routes/admin/rewards/redeem';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { index as visitsIndex } from '@/routes/admin/visits';
 import type { NavItem } from '@/types';
@@ -70,6 +76,17 @@ const mainNavItems = computed<NavItem[]>(() => [
               },
           ]
         : []),
+    /* What was bought, which is also what earns a reward shuffle - the list
+       carries that question in a column rather than hiding it a screen away. */
+    ...(can('purchases.view.any')
+        ? [
+              {
+                  title: 'Purchases',
+                  href: purchasesIndex(),
+                  icon: Receipt,
+              },
+          ]
+        : []),
 ]);
 
 /*
@@ -99,6 +116,36 @@ const adminNavItems = computed<NavItem[]>(() =>
           ]
         : [],
 );
+
+/*
+  The promotions rail. Its own group rather than a row under Administration,
+  because a campaign is operational work - somebody runs it from the floor -
+  and it owns two screens that are used at different desks: the campaigns
+  themselves, and the counter where a reward is handed over.
+
+  `rewards.view` opens both. Redeeming needs more, and the screen says so
+  rather than the rail hiding a door somebody is allowed to look through.
+*/
+const rewardNavItems = computed<NavItem[]>(() =>
+    can('rewards.view')
+        ? [
+              {
+                  title: 'Campaigns',
+                  href: rewardsIndex(),
+                  icon: Gift,
+                  /* The QR screen is filed under `/admin/shuffles`, but it is
+                     reached from here, so this row stays lit while one is
+                     open. */
+                  activeFor: ['/admin/shuffles'],
+              },
+              {
+                  title: 'Redeem',
+                  href: redeemIndex(),
+                  icon: TicketCheck,
+              },
+          ]
+        : [],
+);
 </script>
 
 <template>
@@ -117,6 +164,11 @@ const adminNavItems = computed<NavItem[]>(() =>
 
         <SidebarContent>
             <NavMain :items="mainNavItems" />
+            <NavMain
+                v-if="rewardNavItems.length > 0"
+                :items="rewardNavItems"
+                label="Rewards"
+            />
             <NavMain
                 v-if="adminNavItems.length > 0"
                 :items="adminNavItems"

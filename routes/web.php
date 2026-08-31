@@ -2,10 +2,15 @@
 
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\PurchaseController;
+use App\Http\Controllers\Admin\RewardCampaignController;
+use App\Http\Controllers\Admin\RewardRedemptionController;
 use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\ShuffleSessionController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\VisitController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ShuffleController;
 use Illuminate\Support\Facades\Route;
 
 /* There is nothing here for a visitor to read: every screen in the showroom
@@ -31,6 +36,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('dashboard/export', 'export')->name('dashboard.export');
         });
 });
+
+/*
+|--------------------------------------------------------------------------
+| The customer shuffle
+|--------------------------------------------------------------------------
+|
+| The only pages in the showroom with no sign-in behind them, and the only
+| reason the rule at the top of this file has an exception: a customer has no
+| account, and asking them to make one at a counter would be the shortest way
+| to stop anybody ever using this.
+|
+| The token in the URL is the whole of the authorisation. It is 64 random
+| characters, it names nothing - no customer, no purchase, nothing sequential -
+| and it is good for one reward and one day. The throttle is what turns
+| "guessing is not a strategy" into "guessing is not worth attempting"; it is
+| keyed by IP because there is nobody signed in to key it by.
+|
+*/
+
+Route::middleware('throttle:shuffle')
+    ->prefix('rewards/shuffle')
+    ->name('rewards.shuffle.')
+    ->controller(ShuffleController::class)
+    ->group(function () {
+        Route::get('{token}', 'show')->name('show');
+        Route::post('{token}', 'store')->name('store');
+    });
 
 /*
 |--------------------------------------------------------------------------
@@ -201,6 +233,97 @@ Route::middleware(['auth', 'verified'])
                 Route::patch('{user}/permissions', 'permissions')
                     ->middleware('permission:users.permissions')
                     ->name('permissions.update');
+            });
+
+        // ---------------------------------------------------------------
+        // Purchases
+        // ---------------------------------------------------------------
+
+        Route::controller(PurchaseController::class)
+            ->prefix('purchases')
+            ->name('purchases.')
+            ->group(function () {
+                Route::get('/', 'index')->middleware('permission:purchases.view.any')->name('index');
+
+                /* `create` before `{purchase}`, or the wildcard swallows it. */
+                Route::get('create', 'create')->middleware('permission:purchases.create')->name('create');
+                Route::get('{purchase}/edit', 'edit')->middleware('permission:purchases.update')->name('edit');
+
+                Route::post('/', 'store')->middleware('permission:purchases.create')->name('store');
+                Route::patch('{purchase}', 'update')->middleware('permission:purchases.update')->name('update');
+                Route::delete('{purchase}', 'destroy')->middleware('permission:purchases.delete')->name('destroy');
+            });
+
+        // ---------------------------------------------------------------
+        // Reward campaigns
+        // ---------------------------------------------------------------
+
+        /* Redemption first: its path would otherwise fall under the
+           `{campaign}` wildcard registered below. */
+        Route::controller(RewardRedemptionController::class)
+            ->prefix('rewards/redeem')
+            ->name('rewards.redeem.')
+            ->group(function () {
+                Route::get('/', 'index')->middleware('permission:rewards.view')->name('index');
+                Route::post('/', 'store')->middleware('permission:rewards.redeem')->name('store');
+            });
+
+        Route::controller(RewardCampaignController::class)
+            ->prefix('rewards')
+            ->name('rewards.')
+            ->group(function () {
+                Route::get('/', 'index')->middleware('permission:rewards.view')->name('index');
+
+                /* `create` before `{campaign}`, or the wildcard swallows it. */
+                Route::get('create', 'create')->middleware('permission:rewards.campaigns.create')->name('create');
+                Route::post('/', 'store')->middleware('permission:rewards.campaigns.create')->name('store');
+
+                /* Reading a campaign needs only `rewards.view`; the form opens
+                   read-only without the rest, the same way a system role
+                   does. */
+                Route::get('{campaign}/edit', 'edit')->middleware('permission:rewards.view')->name('edit');
+
+                Route::patch('{campaign}', 'update')->middleware('permission:rewards.campaigns.update')->name('update');
+
+                /* One-way, and the only action here that cannot be undone. */
+                Route::post('{campaign}/publish', 'publish')
+                    ->middleware('permission:rewards.campaigns.update')
+                    ->name('publish');
+
+                Route::post('{campaign}/transition', 'transition')
+                    ->middleware('permission:rewards.campaigns.update')
+                    ->name('transition');
+
+                Route::delete('{campaign}', 'destroy')->middleware('permission:rewards.campaigns.delete')->name('destroy');
+            });
+
+        // ---------------------------------------------------------------
+        // Shuffle turns
+        // ---------------------------------------------------------------
+
+        Route::controller(ShuffleSessionController::class)
+            ->name('shuffles.')
+            ->group(function () {
+                /* Minting hangs off the purchase, because that is what earns
+                   it - one turn per sale, held by a unique index. */
+                Route::post('purchases/{purchase}/shuffle', 'store')
+                    ->middleware('permission:rewards.shuffle')
+                    ->name('store');
+
+                /* The QR screen. Behind `rewards.view` rather than
+                   `rewards.shuffle`, so a manager can look at a turn without
+                   being able to run it. */
+                Route::get('shuffles/{session}', 'show')
+                    ->middleware('permission:rewards.view')
+                    ->name('show');
+
+                Route::post('shuffles/{session}/run', 'run')
+                    ->middleware('permission:rewards.shuffle')
+                    ->name('run');
+
+                Route::delete('shuffles/{session}', 'destroy')
+                    ->middleware('permission:rewards.shuffle')
+                    ->name('destroy');
             });
     });
 

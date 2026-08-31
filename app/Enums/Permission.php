@@ -65,6 +65,46 @@ enum Permission: string
     case ProductsDelete = 'products.delete';
 
     // =========================================================================
+    // Purchases
+    // =========================================================================
+
+    /* What somebody bought, and for how much. The first money in this
+       application, and the thing a reward shuffle is earned by - which is why
+       recording one is its own trust rather than part of logging a visit. */
+    case PurchasesViewAny = 'purchases.view.any';
+    case PurchasesCreate = 'purchases.create';
+    case PurchasesUpdate = 'purchases.update';
+    case PurchasesDelete = 'purchases.delete';
+
+    // =========================================================================
+    // Reward shuffle
+    // =========================================================================
+
+    /* Reading the campaigns, the pool and what has been won. Separate from
+       running one: a manager watching the numbers is not necessarily the
+       person standing at the screen handing rewards out. */
+    case RewardsView = 'rewards.view';
+
+    /* Shaping the promotion itself - the dates, the reward definitions and
+       the quantities behind them. Publishing a campaign turns those numbers
+       into controlled inventory, so this is the most consequential of the
+       four. */
+    case RewardsCampaignsCreate = 'rewards.campaigns.create';
+    case RewardsCampaignsUpdate = 'rewards.campaigns.update';
+    case RewardsCampaignsDelete = 'rewards.campaigns.delete';
+
+    /* Giving a customer their turn: minting a session for a qualifying
+       purchase, and running the shuffle from the showroom screen when the
+       customer cannot scan. The customer's own shuffle needs no permission -
+       it answers to the token in the QR code instead. */
+    case RewardsShuffle = 'rewards.shuffle';
+
+    /* Handing the reward over and writing that down. Kept apart from
+       `rewards.shuffle` because they happen weeks apart and often at
+       different desks. */
+    case RewardsRedeem = 'rewards.redeem';
+
+    // =========================================================================
     // Administration
     // =========================================================================
 
