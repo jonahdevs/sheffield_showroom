@@ -3,9 +3,8 @@
 use App\Services\Customers\LegacyExtract;
 
 /**
- * One row of the old system's export, with only the columns a test cares
- * about spelled out. Everything else is present and blank, the way most of
- * the real extract is.
+ * Only the columns a test cares about are spelled out; the rest are present
+ * and blank, the way most of the real extract is.
  *
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -44,8 +43,7 @@ function extractRow(array $overrides = []): array
 }
 
 /**
- * The extract as phpMyAdmin writes it: a header, the database, and the table
- * that actually holds the rows.
+ * The extract as phpMyAdmin writes it - the rows live in the third block.
  *
  * @param  array<int, array<string, mixed>>  $rows
  */
@@ -94,10 +92,6 @@ it('keeps the company name and industry for a company', function () {
         ->and($row['industry'])->toBe('Construction');
 });
 
-/**
- * The form in this application never shows either column for a person, so a
- * value left there by the old system could never be seen or corrected.
- */
 it('nulls the company name and industry for an individual', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow([
         'customer_type' => 'individual',
@@ -122,32 +116,22 @@ it('strips the leading apostrophe a spreadsheet left on a phone number', functio
     expect($row['phone'])->toBe('+254705745046');
 });
 
-/**
- * One shape for every number, the one `PhoneInput` writes: a plus, a country
- * code, and the subscriber number. A row that keeps its trunk zero opens that
- * box on the wrong country.
- */
 it('writes a phone number the way the form stores one', function (string $phone, string $expected) {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['phone_primary' => $phone]));
 
     expect($row['phone'])->toBe($expected);
 })->with([
     'Kenyan mobile' => ['0722000111', '+254722000111'],
-    /* The newer Kenyan mobile range, seven rows of the extract. */
     'Kenyan mobile on the 01 range' => ['0110000111', '+254110000111'],
     'Kenyan landline' => ['0202000111', '+254202000111'],
     'spaced' => ['0722 000 111', '+254722000111'],
     'hyphenated' => ['0722-000-111', '+254722000111'],
-    /* Typed without the trunk zero, which one row in the extract is. */
     'bare national' => ['704320865', '+254704320865'],
-    /* Already says where it is from, so it is left saying it. */
     'Uganda' => ['+256775879264', '+256775879264'],
     'Uganda without the plus' => ['256772501996', '+256772501996'],
     'United Kingdom' => ['+447771894871', '+447771894871'],
     'Netherlands' => ['+31624570166', '+31624570166'],
     'already Kenyan' => ['+254722000111', '+254722000111'],
-    /* `00` is the older way of writing the plus, so the country code that
-       follows it is not given a second one. */
     'international prefix' => ['00254722000111', '+254722000111'],
 ]);
 
@@ -165,12 +149,8 @@ it('skips a row whose phone column is not a number', function (string $phone) {
     'eight digits' => '07220001',
 ]);
 
-/**
- * Nine digits is the floor, and one row of the extract sits on it - a `07`
- * number a digit short. It is kept rather than judged: the transform is
- * mechanical, and a short number somebody can see and correct is better than
- * a customer silently dropped.
- */
+# Deliberate: one extract row is a `07` number a digit short. A short number
+# somebody can see and correct beats a customer silently dropped.
 it('keeps a nine digit number', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['phone_primary' => '071308438']));
 
@@ -233,12 +213,8 @@ it('keeps the timestamps the old system recorded', function () {
         ->and($row['updated_at'])->toBe('2026-03-01 09:00:00');
 });
 
-/**
- * The notes column is the front desk's visit log and is imported by
- * `LegacyVisitLog` into a visit of its own, so it must not also arrive here as
- * prose on the customer. The rest are columns this application dropped on
- * purpose, and an import must not put any of them back.
- */
+# `notes` is the visit log, imported separately by `LegacyVisitLog`; it must
+# not also land on the customer.
 it('carries over nothing but the columns the customers table has', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['notes' => 'Called twice, no answer.']));
 
@@ -261,12 +237,6 @@ it('reads the rows out of the table block and reports what it left out', functio
         ->and($result['skipped'])->toBe([['id' => 2, 'phone' => 'N/A']]);
 });
 
-/**
- * Reported, not resolved. Some of these are one person filed twice and some
- * are a switchboard several customers gave, and this cannot tell them apart -
- * counted the way `Customer::matchingPhone` counts them, on the subscriber
- * tail, so `0722 000 111` and `+254722000111` are one number.
- */
 it('counts the numbers held by more than one customer', function () {
     $result = (new LegacyExtract)->transform(extractJson([
         extractRow(['id' => 1, 'phone_primary' => '0722000111']),
@@ -282,13 +252,6 @@ it('rejects an export with no table block in it', function () {
     (new LegacyExtract)->transform((string) json_encode([['type' => 'header']]));
 })->throws(RuntimeException::class, 'no table block');
 
-/**
- * The extract carries two records in one row - the customer and the note the
- * front desk wrote when they came in - and they are imported separately. The
- * old system's id is what puts them back together: telephone numbers are
- * shared between records, and the keys the customers table hands out depend on
- * what was in it beforehand.
- */
 it('carries over the id the row had in the old system', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow(['id' => '87']));
 

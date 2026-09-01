@@ -36,10 +36,6 @@ it('runs twice without duplicating anything', function () {
         ->and(Role::query()->where('name', Role::SUPER_ADMIN)->count())->toBe(1);
 });
 
-/**
- * A seeded role is a starting point, not a definition. Re-running the sync
- * must not undo what somebody has since changed on the Roles screen.
- */
 it('leaves an edited non-system role alone on a re-run', function () {
     $this->artisan('permissions:sync')->assertSuccessful();
 
@@ -52,10 +48,6 @@ it('leaves an edited non-system role alone on a re-run', function () {
         ->toBe([PermissionEnum::DashboardView->value]);
 });
 
-/**
- * A system role is the opposite: what it grants is written in code, so the
- * sync forces it back into line.
- */
 it('restores a system role that was tampered with', function () {
     $this->artisan('permissions:sync')->assertSuccessful();
 
@@ -84,10 +76,6 @@ it('deletes an orphaned permission with prune', function () {
     expect(Permission::query()->where('name', 'ghosts.haunt')->exists())->toBeFalse();
 });
 
-/**
- * The definitions live in the seeder, so `db:seed` alone has to produce the
- * same result as the command that wraps it.
- */
 it('seeds roles and permissions when RolesSeeder runs on its own', function () {
     $this->seed(RolesSeeder::class);
 

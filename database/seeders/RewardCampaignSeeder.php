@@ -12,34 +12,15 @@ use App\Models\User;
 use App\Services\Rewards\CampaignService;
 use Illuminate\Database\Seeder;
 
-/**
- * The reward catalogue, and one campaign built out of it.
- *
- * Two things in one seeder because one is useless without the other on a fresh
- * database: the catalogue is what the showroom can give away, and the
- * clearance sale is a promotion assembled from it.
- *
- * A hundred and ten rewards in six piles - twenty discounts, twenty-five
- * drawings, twenty audits, twenty complimentary services, fifteen
- * installations and ten baking trays. The proportions are the promotion: there
- * is no probability anywhere in this system, so what somebody can win is
- * exactly what is left in these piles.
- *
- * The trays are the one paired pile, and they are here to make that feature
- * visible rather than to balance the drawer: only a purchase of the oven wins
- * one, so a demo database carries a reward most sales cannot reach alongside
- * five they can - see `campaign_reward_product`.
- *
- * Published through `CampaignService` rather than by writing rows here,
- * because publishing is where the pool is generated and where the
- * one-campaign-at-a-time rule is enforced. A seeder that inserted its own pool
- * entries would be a second way of loading a drawer, and the one nobody
- * tested.
- *
- * Repeatable. It leaves an existing clearance sale exactly as it is - claimed
- * rewards and all - because re-running a seeder must never quietly hand out a
- * second hundred rewards against a campaign customers are already playing.
- */
+# =========================================================================
+# The reward catalogue, and one campaign built out of it
+# =========================================================================
+#
+# Published through `CampaignService`, never by writing pool rows here: that
+# is where the pool is generated and the one-campaign-at-a-time rule enforced.
+# Repeatable, and it leaves an existing sale alone - re-running must never
+# hand out a second hundred rewards against a campaign already in play.
+
 class RewardCampaignSeeder extends Seeder
 {
     private const NAME = 'Clearance Sale';
@@ -51,11 +32,8 @@ class RewardCampaignSeeder extends Seeder
     private const TRAY_SKU = 'SHF-TRAY-SET';
 
     /**
-     * The catalogue, and how many of each the clearance sale loads.
-     *
      * `quantity` is the campaign's decision and is peeled off below;
-     * everything else describes the reward itself and is written once into
-     * `rewards`.
+     * everything else is written once into `rewards`.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -111,8 +89,6 @@ class RewardCampaignSeeder extends Seeder
                 'quantity' => 10,
                 'validity_days' => 90,
                 'terms' => 'Collected from the showroom with the appliance.',
-                /* The two product links, and they are different things: the
-                   tray is what is won, the oven is what wins it. */
                 'product_sku' => self::TRAY_SKU,
                 'qualifying_skus' => [self::QUALIFYING_SKU],
             ],
@@ -135,9 +111,6 @@ class RewardCampaignSeeder extends Seeder
             return;
         }
 
-        /* Whoever the first super admin is. The campaign has to be attributed
-           to somebody, and on a fresh database that is the account
-           `UsersSeeder` just made. */
         $owner = User::query()->orderBy('id')->first();
 
         $products = $this->products();
@@ -147,8 +120,6 @@ class RewardCampaignSeeder extends Seeder
             'description' => 'Clearing the floor. Every completed purchase over the threshold earns one shuffle.',
             'status' => CampaignStatus::Draft,
             'starts_at' => null,
-            /* Open at both ends. A showroom stops this by pausing it, not by
-               waiting for a date nobody remembers setting. */
             'ends_at' => null,
             'max_shuffles_per_customer' => 1,
             'minimum_purchase_amount' => 100000,
@@ -162,9 +133,6 @@ class RewardCampaignSeeder extends Seeder
             $this->attach($campaign, $definition, $products, $owner);
         }
 
-        /* Only one campaign runs at a time, so a database that already has one
-           gets this as a draft rather than an exception - somebody can start
-           it from the Rewards screen when they are ready. */
         $running = RewardCampaign::query()
             ->where('status', CampaignStatus::Active)
             ->whereKeyNot($campaign->id)
@@ -191,11 +159,8 @@ class RewardCampaignSeeder extends Seeder
     }
 
     /**
-     * The two products the paired reward needs, made only if the floor does
-     * not already carry them.
-     *
-     * Keyed on SKU rather than name: a showroom that has renamed its oven
-     * should not be given a second one the next time this runs.
+     * Keyed on SKU: a showroom that has renamed its oven must not be given a
+     * second one on the next run.
      *
      * @return array<string, Product>
      */
@@ -219,11 +184,8 @@ class RewardCampaignSeeder extends Seeder
     }
 
     /**
-     * Writes one catalogue reward and hangs it on the campaign.
-     *
-     * The reward is matched on its name, so a second campaign seeded later
-     * reuses the row rather than describing the same audit over again - which
-     * is the whole point of there being a catalogue.
+     * Matched on name, so a later campaign reuses the catalogue row rather
+     * than describing the same audit over again.
      *
      * @param  array<string, mixed>  $definition
      * @param  array<string, Product>  $products

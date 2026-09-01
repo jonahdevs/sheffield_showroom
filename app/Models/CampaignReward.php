@@ -15,16 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 
 /**
- * One catalogue reward put into one campaign, and how many of it exist.
- *
- * An attachment rather than a reward. What the thing is belongs to `Reward`
- * and is not repeated here; this row carries only what the campaign decides -
- * `quantity`, `validity_days`, whether it is switched on, and which products
- * a customer must have bought to be in the running for it.
- *
  * `quantity` is what was loaded and never falls; what is left is counted off
- * the pool, because that is the only place that can answer it correctly while
- * somebody is claiming a row.
+ * the pool, the only place that can answer it while somebody is claiming a row.
  *
  * @property int $id
  * @property int $campaign_id
@@ -69,9 +61,6 @@ class CampaignReward extends Model
     }
 
     /**
-     * What is being handed out. Everything readable about this attachment -
-     * its name, type, worth and terms - is read through here.
-     *
      * @return BelongsTo<Reward, $this>
      */
     public function reward(): BelongsTo
@@ -80,10 +69,7 @@ class CampaignReward extends Model
     }
 
     /**
-     * What somebody has to have bought to be in the running for this.
-     *
-     * Empty is the common case and means any purchase qualifies - see
-     * `campaign_reward_product`. A pairing is the exception, not the rule.
+     * Empty is the common case and means any purchase qualifies.
      *
      * @return BelongsToMany<Product, $this>
      */
@@ -101,17 +87,12 @@ class CampaignReward extends Model
     }
 
     /**
-     * Whether a purchase of this product would be in the running for this
-     * reward.
+     * A reward naming no products qualifies against anything, and any one
+     * match is enough: "buy the oven", not "buy only the oven".
      *
-     * A reward that names no products qualifies against anything, which is
-     * what makes pairing an opt-in rather than something every campaign has to
-     * remember to switch off.
-     *
-     * Reads the loaded relation where there is one, so checking a campaign's
-     * whole set costs one query rather than one per reward.
+     * @param  array<int, int>  $productIds
      */
-    public function qualifiesFor(?int $productId): bool
+    public function qualifiesFor(array $productIds): bool
     {
         /** @var Collection<int, Product> $named */
         $named = $this->relationLoaded('qualifyingProducts')
@@ -122,11 +103,11 @@ class CampaignReward extends Model
             return true;
         }
 
-        return $productId !== null
-            && $named->contains(fn (Product $product): bool => $product->id === $productId);
+        return $named->contains(
+            fn (Product $product): bool => in_array($product->id, $productIds, true),
+        );
     }
 
-    /** How many units of this reward are still there to be won. */
     public function availableCount(): int
     {
         return $this->poolEntries()
@@ -134,13 +115,8 @@ class CampaignReward extends Model
             ->count();
     }
 
-    /**
-     * When a reward won right now would lapse.
-     *
-     * Read at the moment of winning and stamped onto the result, never
-     * recomputed - see `shuffle_results.expires_at`. Null means it does not
-     * lapse at all.
-     */
+    # Stamped onto the result at win time and never recomputed, so retuning
+    # `validity_days` cannot move a deadline somebody already has.
     public function expiryFrom(CarbonImmutable $wonAt): ?CarbonImmutable
     {
         return $this->validity_days === null

@@ -9,15 +9,8 @@ use App\Models\Customer;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Every field the form reads and writes, in the order the form asks for them:
- * who they are, the business they came for if any, where they are, and
- * anything worth knowing next time.
- *
- * The business half stays mounted for an individual so switching the toggle
- * does not lose what was already typed; `CustomerRequest` is what stops it
- * being saved against somebody buying in their own name.
- */
+# The business half stays mounted for an individual so the toggle does not lose
+# what was typed; `CustomerRequest` is what stops it being saved.
 #[TypeScript(location: ['App', 'Data'])]
 class CustomerFormData extends Data
 {

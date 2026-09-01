@@ -9,35 +9,14 @@ use App\Enums\VisitPurpose;
 use App\Services\Customers\LegacyExtract;
 
 /**
- * Reads the front-desk visit log out of the customer extract.
- *
- * The old system had no visits table. What it had was a `notes` column on the
- * customer, and the front desk used it as a day book: 448 of the 453 records
- * carry a line about why that person was in the building, who they came to
- * see, and which member of staff took them. That is a visit, written down
- * somewhere it could not be counted, and this reads it back out.
- *
- * A sibling of `LegacyExtract` rather than another method on it. The two read
- * the same export but answer different questions - that one turns the columns
- * of a row into a customer, this one reads the prose in one of them - and the
- * vocabulary below changes whenever the front desk's shorthand turns out to
- * mean something other than it looks, which has nothing to do with how a name
- * or a telephone number is mapped. What is genuinely shared is which rows the
- * export holds and which of them became customers, and both are asked of
- * `LegacyExtract` here rather than reimplemented: a row this cannot hang a
- * visit on is exactly a row that one refused to import.
+ * The old system had no visits table - the front desk used the customer's `notes`
+ * column as a day book, and this reads those notes back out as visits.
  */
 class LegacyVisitLog
 {
     /**
-     * Words that name a department or an errand rather than a person.
-     *
-     * A short line on its own is almost always the member of staff who took
-     * the visit, which is how `respondent` gets filled in at all - but not
-     * always: some notes end on "Admin", "Delivery" or "Cheque collection".
-     * The log's own vocabulary is listed here so those lines are read as what
-     * they are. A wrong name against a visit is worse than no name, because
-     * nobody ever goes looking for the mistake.
+     * The log's own vocabulary, so a note ending on "Admin" is not read as a person. A
+     * wrong name against a visit is worse than none - nobody goes looking for it.
      *
      * @var list<string>
      */
@@ -52,23 +31,13 @@ class LegacyVisitLog
         'training', 'attachment', 'internship', 'inspection', 'payment',
     ];
 
-    /**
-     * One or two capitalised words and nothing else.
-     *
-     * Deliberately strict. "Som nath" is a member of staff and is missed by
-     * it, which is the price of "Meter reading" and "Printer repair" not being
-     * read as people.
-     */
+    # Strict on purpose: "Som nath" is real staff and is missed, which is the price of
+    # "Meter reading" not being read as a person.
     private const NAME = '[A-Z][a-z\']+(?:[ \t][A-Z][a-z\']+)?';
 
     /**
-     * A member of staff named in the middle of a sentence.
-     *
-     * The bare-name reading below catches most of the log; these lines put the
-     * name inside the prose instead. Written without an `i` flag over the
-     * whole pattern deliberately - the capture has to stay case-sensitive, or
-     * `[A-Z][a-z]+` matches any word at all and "meeting the supplier" leaves
-     * "the supplier" recorded as a member of staff.
+     * No `i` flag over the whole pattern: the capture must stay case-sensitive, or
+     * `[A-Z][a-z]+` matches any word and "meeting the supplier" records a staff member.
      *
      * @var list<string>
      */
@@ -85,8 +54,6 @@ class LegacyVisitLog
     public function __construct(private readonly LegacyExtract $customers) {}
 
     /**
-     * The visit log, and what could not be read out of it.
-     *
      * @return array{
      *     rows: list<array<string, mixed>>,
      *     unlogged: int,
@@ -108,13 +75,8 @@ class LegacyVisitLog
                 continue;
             }
 
-            /* A visit belongs to a customer or it belongs to nobody. The rows
-               the customer import turned down for having no dialable number
-               never became customers, and `visits.customer_id` is not
-               nullable, so the note written against them cannot be imported
-               however much it says. Listed rather than counted, so that a
-               decision to rescue one of those customers by hand can be
-               followed by a decision about its visit. */
+            # `visits.customer_id` is not nullable, so a note against a row the customer
+            # import turned down has nowhere to go.
             if ($this->customers->toSeedRow($source) === null) {
                 $withoutCustomer[] = $this->legacyId($source);
 
@@ -138,8 +100,6 @@ class LegacyVisitLog
     }
 
     /**
-     * One extract row as one `visits` row, or null when it holds no visit.
-     *
      * @param  array<string, mixed>  $source
      * @return array<string, mixed>|null
      */
@@ -149,11 +109,7 @@ class LegacyVisitLog
         $legacyId = $this->legacyId($source);
         $visitedAt = $this->text($source['created_at'] ?? null);
 
-        /* Three things have to hold for this to be a visit: somebody wrote a
-           note, the row can be tied back to the customer it became, and it
-           happened at a knowable time. A visit with no `visited_at` cannot
-           appear on any list in this application, which orders and groups by
-           nothing else. */
+        # A visit with no `visited_at` appears on no list - everything orders by it.
         if ($note === null || $legacyId === null || $visitedAt === null) {
             return null;
         }
@@ -161,72 +117,37 @@ class LegacyVisitLog
         return [
             'legacy_id' => $legacyId,
 
-            /* When they came, which for these rows is when the front desk
-               wrote them down: the note and the customer record were typed at
-               the counter in the same breath. */
             'visited_at' => $visitedAt,
 
             'purpose' => $this->purposeFor($note)->value,
 
-            /* A front-desk log is by definition somebody who walked in and was
-               written down at the counter. Nothing in the extract says
-               otherwise for any of them, and reading a referral or a website
-               enquiry out of the prose would be inventing the one figure this
-               column exists to report. */
             'source' => CustomerSource::WalkIn->value,
 
             'respondent' => $this->respondentIn($note),
 
-            /* The whole note, not the part this understood. Where the
-               department maps onto a purpose only approximately - a cheque
-               collection recorded as `Collection`, a job interview as `Other`
-               - the sentence is what says what actually happened, and this is
-               the only copy of it. */
             'notes' => $note,
 
-            /* The extract has nothing to say about it, and a follow-up date
-               nobody set would put 448 chases in somebody's diary. */
             'expected_follow_up_on' => null,
 
-            /* Nobody in this application logged these. Stamping them with the
-               admin account that happens to run the seeder would credit 448
-               visits to somebody who took none of them, and because
-               `visits.view.own` scopes the list by this column it would drop
-               the whole imported log into that one person's visits. */
+            # Must stay null: `visits.view.own` scopes the list by this column, so
+            # stamping the seeder's account drops the whole imported log into it.
             'created_by' => null,
 
-            /* Written when they came, like the customer beside them. Stamping
-               today would put a spike of 448 visits on the day of the import
-               in front of anybody counting by when a visit was logged. */
             'created_at' => $visitedAt,
             'updated_at' => $this->text($source['updated_at'] ?? null) ?? $visitedAt,
         ];
     }
 
-    /**
-     * What the visit was about.
-     *
-     * The department is whatever stands in front of the first dash, colon or
-     * line break; everything after it is the errand. Where the department is
-     * one this does not know, the note is read for an enquiry before falling
-     * back to Other - "Inquiry on coffee machine & ice cube makers" is a
-     * showroom visit that whoever typed it forgot to write "Showroom" in front
-     * of.
-     */
     public function purposeFor(string $note): VisitPurpose
     {
         $purpose = $this->departmentPurpose(mb_strtolower($this->department($note)));
 
-        /* Somebody came about a job. Two of these were written against the
-           laundry desk rather than HR, and a candidate sitting an interview
-           counted as a product viewing is a sale the showroom never made. */
+        # Before the department: two of these were filed against the laundry desk, and
+        # a candidate counted as a product viewing is a sale the showroom never made.
         if ($this->readsAsRecruitment($note)) {
             return VisitPurpose::Other;
         }
 
-        /* An enquiry and a viewing are both somebody standing on the floor,
-           but only one of them is a customer with a question nobody has
-           answered yet. The note tells them apart and the department cannot. */
         if (($purpose === null || $purpose === VisitPurpose::ProductViewing) && $this->readsAsEnquiry($note)) {
             return VisitPurpose::NewEnquiry;
         }
@@ -234,18 +155,8 @@ class LegacyVisitLog
         return $purpose ?? VisitPurpose::Other;
     }
 
-    /**
-     * The member of staff who took the visit, where the note names one.
-     *
-     * Most notes end on a bare first name - "Rachael", "Som Nath", "Colins" -
-     * and a handful say it in a sentence instead. Both readings are tried, the
-     * sentence first because it is unambiguous, and every candidate is held to
-     * the same strict test: one or two capitalised words that are not part of
-     * the log's own vocabulary. Anything else is left null.
-     *
-     * The bare names are read from the end of the note backwards, because
-     * where a note holds both an errand and a name the name is written last.
-     */
+    # Bare names are read from the end backwards - where a note holds both an errand
+    # and a name, the name is written last.
     public function respondentIn(string $note): ?string
     {
         foreach (self::RESPONDENT_CUES as $cue) {
@@ -264,55 +175,24 @@ class LegacyVisitLog
     }
 
     /**
-     * Every note opens with the department the visitor came to see, and it is
-     * the department - not the sentence after it - that says what kind of call
-     * this was. The nearest `VisitPurpose` is recorded and the note kept
-     * verbatim beside it, because several of these mappings are close rather
-     * than exact and the sentence is the only thing that can settle an
-     * argument about one later.
+     * The arms are read top to bottom and the first hit wins, which is what settles the
+     * overlaps - a collection of a cheque is money at the accounts window, not goods off
+     * the yard. Do not reorder them.
      *
-     * Matched on a contained word rather than an exact token, because the log
-     * was typed by hand: "Cheque collection", "Collection of cheque" and
-     * "Accounts- Cheque collection" are one errand written three ways, and
-     * "Delivery of documents for imports department" is the imports desk with
-     * the errand in front of it. Order settles the overlaps - a collection of
-     * a cheque is money at the accounts window, not goods off the yard - so
-     * the groups are read top to bottom and the first hit wins.
-     *
-     * Two of these say something other than the department name alone would
-     * suggest, and both were settled against the notes themselves. Logistics
-     * is fifteen lines of "Collection of equipment" and a delivery, so it is a
-     * collection rather than a piece of back-office traffic. Laundry is the
-     * laundry-equipment half of the showroom floor, asked about in the same
-     * words and by the same staff as the kitchen half, so it is shown the same
-     * way.
-     *
-     * @return VisitPurpose|null Null when the leading text names no department
-     *                           this knows, which is left for the caller to
-     *                           read further.
+     * @return VisitPurpose|null Null when the leading text names no department this knows.
      */
     private function departmentPurpose(string $department): ?VisitPurpose
     {
         return match (true) {
-            /* The floor. Somebody came in to look at equipment. */
             $this->mentions($department, ['showroom', 'cold room', 'coldroom', 'laundry', 'rational']) => VisitPurpose::ProductViewing,
 
-            /* The window where money and goods change hands. */
             $this->mentions($department, ['cheque', 'account']) => VisitPurpose::Collection,
             $this->mentions($department, ['logistic', 'collection']) => VisitPurpose::Collection,
 
-            /* The workshop: something already sold has come back. */
             $this->mentions($department, ['service', 'repair', 'installation']) => VisitPurpose::AfterSales,
 
-            /* Business being placed in one direction or the other - a supplier
-               at the purchasing desk, a hotel buyer at sales or HORECA. Order
-               is the nearest thing on a list drawn up for the showroom. */
             $this->mentions($department, ['purchas', 'sales', 'horeca']) => VisitPurpose::Order,
 
-            /* The rest of the building. These are real visitors and they are
-               imported, but none of them came about a sale, and filing them as
-               anything but Other would put staff interviews and cheque runs
-               into the figures the showroom is judged by. */
             $this->mentions($department, [
                 'hr', 'admin', 'import', 'production', 'marketing',
                 'secur', 'design', 'meeting', 'deliver', 'interview',
@@ -323,12 +203,6 @@ class LegacyVisitLog
     }
 
     /**
-     * Every piece of a note that could be somebody's name on its own.
-     *
-     * A note is lines, and a line is often "Department- Name" or even
-     * "Coldroom- Alphonse-Inquiry on coldroom solution", so each line is cut
-     * at its dashes as well and the pieces judged one at a time.
-     *
      * @return list<string>
      */
     private function nameCandidates(string $note): array
@@ -363,19 +237,11 @@ class LegacyVisitLog
         return true;
     }
 
-    /**
-     * "Mr Hezekiah" and "Hezekiah" are one man, and a count of who took the
-     * most visits should not show them as two.
-     */
     private function honorificRemoved(string $name): string
     {
         return trim((string) preg_replace('/^(?i:mr|mrs|ms|dr)\.?[ \t]+/', '', $name));
     }
 
-    /**
-     * The text in front of the errand: whatever precedes the first dash, colon
-     * or line break.
-     */
     private function department(string $note): string
     {
         $parts = preg_split('/[-:\n]/', $note);
@@ -383,24 +249,13 @@ class LegacyVisitLog
         return trim($parts === false ? $note : ($parts[0] ?? ''));
     }
 
-    /**
-     * Whether the note reads as somebody asking about something.
-     *
-     * Both spellings, because the log says "Inquiry" throughout and nothing
-     * makes the next person to type into it do the same.
-     */
     private function readsAsEnquiry(string $note): bool
     {
         return preg_match('/\b(?i:inquir|enquir)/', $note) === 1;
     }
 
-    /**
-     * Whether the note is about somebody wanting work rather than equipment.
-     *
-     * A tight list on purpose. "Attachment" is the word HR uses for a student
-     * placement and also the word the floor uses for the thing that bolts onto
-     * a mixer, so it is not here.
-     */
+    # A tight list on purpose: "Attachment" is HR's word for a student placement and
+    # also the floor's word for the thing that bolts onto a mixer, so it is not here.
     private function readsAsRecruitment(string $note): bool
     {
         return preg_match('/\b(?i:interview|internship|vacancy)/', $note) === 1;
@@ -421,12 +276,7 @@ class LegacyVisitLog
     }
 
     /**
-     * The note as written, with only its line endings put right.
-     *
-     * The export carries Windows line endings, and a note stored with them
-     * shows a stray character in every textarea it is opened in. Nothing else
-     * about the text is touched: the double spaces and the spelling are how
-     * the front desk wrote it, and this is the only record of what was meant.
+     * Line endings only - the spelling and spacing are the only record of what was meant.
      *
      * @param  array<string, mixed>  $source
      */
@@ -459,12 +309,6 @@ class LegacyVisitLog
     }
 
     /**
-     * How many visits landed on each purpose, largest first.
-     *
-     * Reported because it is the one number that says whether the department
-     * reading is still working: a change that quietly sends everything to
-     * Other shows up here and nowhere else.
-     *
      * @param  list<array<string, mixed>>  $rows
      * @return array<string, int>
      */

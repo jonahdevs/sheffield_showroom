@@ -15,8 +15,6 @@ use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Gives a user a role holding exactly the permissions named.
- *
  * @param  array<int, Permission>  $permissions
  */
 function dashboardStaff(array $permissions): User
@@ -38,7 +36,6 @@ function dashboardStaff(array $permissions): User
     return User::factory()->create()->assignRole($role);
 }
 
-/** Somebody who runs the floor: the dashboard, measured over every visit. */
 function dashboardManager(): User
 {
     return dashboardStaff([
@@ -48,7 +45,6 @@ function dashboardManager(): User
     ]);
 }
 
-/** A salesperson: the dashboard, measured over the visits they logged. */
 function dashboardSalesperson(): User
 {
     return dashboardStaff([
@@ -58,8 +54,6 @@ function dashboardSalesperson(): User
 }
 
 /**
- * A visit that landed on a given day, which is what every panel is sliced by.
- *
  * @param  array<string, mixed>  $attributes
  */
 function visitOn(int $daysAgo, array $attributes = []): Visit
@@ -109,8 +103,6 @@ it('offers the same named windows the other lists offer', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->has('presets', count(DashboardRangeData::PRESETS))
-            /* Shortest first, so the rail reads as a dial from "just now"
-               outwards rather than something to be searched. */
             ->where('presets.0.value', 'today')
             ->where('presets.0.label', 'Today'));
 });
@@ -126,10 +118,6 @@ it('counts only the visits that landed inside the window', function () {
         ->assertInertia(fn ($page) => $page->where('stats.0.value', 2));
 });
 
-/**
- * The whole reason the range is one object: the delta is measured against the
- * seven days before these seven, not against the log as a whole.
- */
 it('measures the window against the equally long one before it', function () {
     visitOn(1);
     visitOn(2);
@@ -145,12 +133,9 @@ it('measures the window against the equally long one before it', function () {
         ->assertInertia(fn ($page) => $page
             ->where('stats.0.value', 4)
             ->where('stats.0.previous', 2)
-            /* A whole percentage comes back over the wire as a whole number,
-               which is what the assertion has to compare against. */
             ->where('stats.0.change', 100));
 });
 
-/** Everything is a rise on nothing, and saying so would be noise. */
 it('leaves the change unstated when the window before it held nothing', function () {
     visitOn(1);
 
@@ -172,16 +157,13 @@ it('counts the people behind the visits and how many were new to the window', fu
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            /* Keyed as well as indexed: the row is positional everywhere else
-               in this file, and a tile added or dropped should fail here
-               rather than quietly move what the numbers below are about. */
+            # Keyed as well as indexed: every other assertion here is
+            # positional, so a tile added or dropped must fail loudly.
             ->has('stats', 4)
             ->where('stats.1.key', 'customers')
             ->where('stats.1.value', 2)
             ->where('stats.2.key', 'new_customers')
             ->where('stats.2.value', 1)
-            /* No returning tile between them. It would be 2 - 1, read off the
-               two tiles either side of where it used to sit. */
             ->where('stats.3.key', 'product_interests'));
 });
 
@@ -231,8 +213,6 @@ it('ranks the products by how many visits named them', function () {
             ->where('products.0.id', $asked->id)
             ->where('products.0.visits', 2)
             ->where('products.1.visits', 1)
-            /* Three attachments inside the window, and the one on the visit
-               outside it left where it belongs. */
             ->where('stats.3.value', 3));
 });
 
@@ -263,10 +243,6 @@ it('totals each respondent\'s visits, customers and follow-ups', function () {
             ->where('respondents.1.visits', 1));
 });
 
-/**
- * The same boundary the visits list draws. A salesperson's dashboard is a
- * report on their own week, not a window onto the floor's.
- */
 it('measures a salesperson against the visits they logged', function () {
     $salesperson = dashboardSalesperson();
 
@@ -297,10 +273,6 @@ it('names a customer another salesperson already met as new to this one', functi
         ->assertInertia(fn ($page) => $page->where('stats.2.value', 1));
 });
 
-/**
- * The showroom opened this week and nobody came. Every panel still has to hand
- * the page something it can draw an empty state from.
- */
 it('hands every panel back empty when nothing landed in the window', function () {
     visitOn(30);
 
@@ -319,9 +291,9 @@ it('hands every panel back empty when nothing landed in the window', function ()
             ->where('recent', []));
 });
 
-// -----------------------------------------------------------------------------
-// The window
-// -----------------------------------------------------------------------------
+# =========================================================================
+# The window
+# =========================================================================
 
 it('takes a window picked on the calendar', function () {
     $from = now()->subDays(20)->format('Y-m-d');
@@ -341,7 +313,6 @@ it('takes a window picked on the calendar', function () {
             ->where('stats.0.value', 1));
 });
 
-/** A query string is hand-typed as often as it is clicked. */
 it('turns a window picked back to front the right way round', function () {
     $from = now()->subDays(3)->format('Y-m-d');
     $to = now()->subDays(9)->format('Y-m-d');
@@ -363,10 +334,6 @@ it('falls back to the default window when the dates will not parse', function ()
             ->where('range.days', 7));
 });
 
-/**
- * The trend line carries a point per day, so an unbounded window is a chart
- * nobody can read paid for with a query nobody wanted.
- */
 it('caps a window longer than a year', function () {
     $this->actingAs(dashboardManager())
         ->get(route('dashboard', [
@@ -391,9 +358,9 @@ it('pulls a window ending in the future back to today', function () {
             ->where('range.days', 4));
 });
 
-// -----------------------------------------------------------------------------
-// The download
-// -----------------------------------------------------------------------------
+# =========================================================================
+# The download
+# =========================================================================
 
 it('hands the dashboard back as a spreadsheet of the same figures', function () {
     Excel::fake();
@@ -437,7 +404,6 @@ it('narrows the download to the window the page was showing', function () {
     );
 });
 
-/** A salesperson downloads their own week, the same as they read it. */
 it('narrows the download to the visits the salesperson may see', function () {
     Excel::fake();
 
@@ -474,10 +440,6 @@ it('offers only the download formats this host can produce', function () {
         ->assertInertia(fn ($page) => $page->where('formats', $expected));
 });
 
-/**
- * A host without headless Chrome is a deployment fact rather than a bug in the
- * request, so the reader is told rather than shown a stack trace.
- */
 it('says so rather than downloading when the PDF renderer is missing', function () {
     visitOn(1);
 

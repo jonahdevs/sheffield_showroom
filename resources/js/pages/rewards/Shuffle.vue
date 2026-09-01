@@ -13,12 +13,9 @@ import { rewardIcon } from '@/lib/rewardIcons';
 import { store } from '@/routes/rewards/shuffle';
 
 /**
- * Every state `ShuffleController::show()` can hand this page.
- *
- * `campaign_closed` is easy to miss reading the controller: `assertShuffleable()`
- * raises it when the campaign is paused or out of its dates, and the controller
- * passes `$exception->reason` straight through. Leaving it off would draw a
- * customer a blank page on the one day a promotion is switched off mid-queue.
+ * `campaign_closed` comes from `assertShuffleable()` via `$exception->reason`,
+ * not from anything named in the controller body - dropping it from this union
+ * draws a blank page the day a promotion is paused mid-queue.
  */
 type ShuffleState =
     | 'ready'
@@ -30,13 +27,10 @@ type ShuffleState =
     | 'pool_empty';
 
 /**
- * The part of `ShuffleRewardData` this page may read.
- *
- * Narrowed on the way in. `customer_name` is always null on this route by
- * design, and `redeemed_on`/`redeemed_by` describe the redemption desk's side
- * of it; none of the three belongs on a screen anybody holding a photographed
- * QR code can open. Taking them off the type makes reaching for one a compile
- * error rather than something a reviewer has to catch.
+ * The three keys are omitted deliberately, not by oversight: anybody holding a
+ * photographed QR code can open this page, so the customer's name and the
+ * redemption desk's fields must not be reachable here. Omitting them makes
+ * reaching for one a compile error.
  */
 type WonReward = Omit<
     App.Data.ShuffleRewardData,
@@ -53,34 +47,20 @@ const props = defineProps<{
 const page = usePage();
 
 /**
- * The token is read off the address bar rather than sent as a prop.
- *
- * It is already in the URL - that is how the customer got here - and a prop
- * would be a second copy of the one secret this page has, sitting in the page
- * data where anything that serialises props would carry it.
+ * Read off the address bar rather than passed as a prop: a prop would put the
+ * page's one secret into the serialised page data.
  */
 const token = computed(() => page.url.split('/').pop() ?? '');
 
-// -----------------------------------------------------------------------------
-// The reveal
-// -----------------------------------------------------------------------------
-
-/**
- * The tap, sent on to the server.
- *
- * The table itself is `ShuffleCards`, which knows how to deal, turn and pick
- * but nothing about routes. Sending the request from here is what lets the
- * showroom screen use the same table and post somewhere else.
- */
 function claim(): void {
     router.post(
         store(token.value).url,
         {},
         {
             preserveScroll: true,
-            /* Without this Inertia rebuilds the component when the redirect
-               lands, and the cards, the phase and the tween go with it - the
-               reveal would appear with no shuffle in front of it. */
+            /* Without this the redirect rebuilds the component and takes the
+               cards, the phase and the tween with it: the reveal would appear
+               with no shuffle in front of it. */
             preserveState: true,
         },
     );
@@ -105,9 +85,9 @@ async function copyCode(): Promise<void> {
 
         copyTimer = window.setTimeout(() => (hasCopied.value = false), 2000);
     } catch {
-        /* The clipboard is unavailable over plain HTTP and inside a few in-app
-           browsers. The code carries `select-all`, which is what a long press
-           lands on, so this is a convenience failing rather than the screen. */
+        /* The clipboard is unavailable over plain HTTP and in some in-app
+           browsers. The code carries `select-all` for a long press, so this
+           is a convenience failing rather than the screen. */
     }
 }
 
@@ -117,10 +97,6 @@ onBeforeUnmount(() => {
     }
 });
 
-/*
- * The states that are not a game: somebody else already used this link, it ran
- * out, it was withdrawn, or the drawer is empty. One shape, four messages.
- */
 const NOTICES: Record<
     string,
     { icon: Component; title: string; body: string; keepsTurn?: boolean }
@@ -155,7 +131,6 @@ const NOTICES: Record<
 
 const notice = computed(() => NOTICES[props.state] ?? NOTICES.expired);
 
-/** Whether the table is on screen at all. */
 const isPlayable = computed(
     () => props.state === 'ready' || props.state === 'won',
 );
@@ -164,24 +139,13 @@ const heading = computed(() =>
     props.state === 'won' ? 'Your reward' : 'Try your luck',
 );
 
-/**
- * What the browser tab says.
- *
- * The heading when there is a game, and the notice's own title when there is
- * not - a tab reading "Try your luck" over a page that says the link expired
- * is the sort of thing somebody screenshots.
- */
 const documentTitle = computed(() =>
     isPlayable.value ? heading.value : notice.value.title,
 );
 
 /**
- * When the promotion runs, as a sentence rather than two fields.
- *
- * A campaign is usually open at one end or both - a showroom stops one by
- * pausing it, not by waiting for a date - so "Until Sunday" and "Running now"
- * are the common answers, and a pair of empty date labels is the wrong way to
- * say either.
+ * Either end of a campaign may be open - a showroom stops one by pausing it,
+ * not by waiting for a date - so all four cases are real.
  */
 const runsFor = computed(() => {
     const { runs_from: from, runs_to: to } = props.campaign;
@@ -201,13 +165,6 @@ const runsFor = computed(() => {
     return 'Running now';
 });
 
-/**
- * How the promotion works, in the order it happens to somebody.
- *
- * The fourth step is the one worth having: the link on this page expires
- * within a day, and the code is what the reward is actually claimed with,
- * weeks later, at a different desk.
- */
 const STEPS = [
     'Spend the qualifying amount in the showroom.',
     'Staff hand you a code to scan on your phone.',
@@ -218,44 +175,13 @@ const STEPS = [
 defineOptions({ layout: PublicLayout });
 </script>
 
-<!--
-  The customer's screen, on their own phone, at the counter.
-
-  The cards are dealt face up before anything happens, so nobody is asked to
-  pick blind from a table they never saw. Then they turn, they move, and one
-  gets tapped.
-
-  What is deliberately absent: the customer's name, the sale that earned this,
-  and how many of anything are left. The last of those is the one worth
-  spelling out - printing live inventory would let somebody work out the odds
-  from their phone, and this is a promotion rather than a betting product.
--->
 <template>
     <Head :title="documentTitle" />
 
-    <!--
-      Three columns on a monitor, one on a phone.
-
-      The panels are a fixed width and the table takes the rest, so the grid
-      fills the layout's `container` rather than centring a narrower track
-      inside it - which is what puts its outer edges under the logo in the bar
-      above instead of floating somewhere short of them.
-
-      The panels either side are what a customer reads while deciding, and what
-      they read again afterwards to find out what their reward actually
-      entitles them to. The cards inside the middle column centre themselves,
-      so the extra width it absorbs on a wide screen becomes air around the
-      table rather than enormous cards.
-
-      The order classes matter more than the grid does. Stacked on a phone the
-      game has to come first - somebody who has just scanned a code at a
-      counter wants the cards, not the small print - so the middle column is
-      `order-1` until there is room to put it back in the middle.
-    -->
     <div
         class="grid w-full items-start gap-5 xl:grid-cols-[19rem_minmax(0,1fr)_19rem]"
     >
-        <!-- The promotion itself. -->
+        <!-- ===================== The promotion ===================== -->
         <div class="order-2 flex flex-col gap-4 xl:order-1">
             <Card as="section" class="gap-0 p-0" data-test="panel-campaign">
                 <div class="border-b border-divider px-5 py-3.5">
@@ -311,8 +237,6 @@ defineOptions({ layout: PublicLayout });
                 </div>
             </Card>
 
-            <!-- Four steps, because the fourth is the one people forget: the
-                 code is what the reward is claimed with, weeks later. -->
             <Card as="section" class="gap-0 p-0" data-test="panel-how">
                 <div class="border-b border-divider px-5 py-3.5">
                     <h2
@@ -322,24 +246,6 @@ defineOptions({ layout: PublicLayout });
                     </h2>
                 </div>
 
-                <!--
-                  A stepper rather than a numbered list: the rule joining the
-                  markers is what says these happen in order and that there is
-                  more after the one you are reading.
-
-                  Drawn here rather than with reka's `Stepper`, which exists in
-                  the bundle. That primitive is built for a wizard - it carries
-                  a model value, triggers and per-step validity, and every one
-                  of those is state. This is four sentences that never change
-                  and that nobody navigates, so it is a list with a line down
-                  it, which is all a reader needs it to be.
-
-                  The connector is absolutely positioned from just under one
-                  marker to the bottom of its own row, so it meets the next
-                  marker whatever the text above it wraps to. The last step
-                  does not draw one - a line trailing off under the final item
-                  promises a fifth step that is not coming.
-                -->
                 <ol
                     class="flex list-none flex-col p-5 text-left text-xs text-muted-foreground"
                 >
@@ -365,24 +271,10 @@ defineOptions({ layout: PublicLayout });
             </Card>
         </div>
 
-        <!-- The game. -->
+        <!-- ===================== The game ===================== -->
         <div
             class="order-1 flex flex-col items-center gap-6 text-center xl:order-2"
         >
-            <!--
-              No campaign name over the table. The panel beside it already
-              names the promotion and says when it runs, and repeating it here
-              spent the largest words on the screen saying something the
-              customer had just read.
-
-              Only shown while there is a game: an expired or already-claimed
-              link draws its own notice below, and "Try your luck" over the top
-              of "This link has expired" would be the page arguing with itself.
-
-              Reads off the server's state rather than the table's phase - the
-              table owns how far through the game it is, and a heading that had
-              to know would be a second reason for this page to reach into it.
-            -->
             <h1
                 v-if="isPlayable"
                 class="text-2xl leading-tight font-extrabold"
@@ -391,7 +283,6 @@ defineOptions({ layout: PublicLayout });
                 {{ heading }}
             </h1>
 
-            <!-- The table itself, shared with the showroom screen. -->
             <ShuffleCards
                 v-if="isPlayable && props.cards.length > 0"
                 :cards="props.cards"
@@ -400,10 +291,6 @@ defineOptions({ layout: PublicLayout });
                 @pick="claim"
             />
 
-            <!--
-          What they won. Under the table rather than instead of it, so the card
-          they turned over stays on screen next to its own answer.
-        -->
             <div
                 v-if="props.state === 'won' && props.reward"
                 class="flex w-full flex-col items-center gap-4"
@@ -425,8 +312,6 @@ defineOptions({ layout: PublicLayout });
                     {{ props.reward.description }}
                 </p>
 
-                <!-- The code is the thing they leave with. Everything else on this
-                 screen is smaller than it on purpose. -->
                 <div
                     class="w-full rounded-xl border-2 border-dashed border-primary/40 bg-card p-4"
                 >
@@ -473,7 +358,6 @@ defineOptions({ layout: PublicLayout });
                 </p>
             </div>
 
-            <!-- Everything that is not a game. -->
             <div
                 v-if="!isPlayable"
                 class="flex w-full flex-col items-center gap-3"
@@ -497,14 +381,12 @@ defineOptions({ layout: PublicLayout });
             </div>
         </div>
 
+        <!-- ===================== What you could win ===================== -->
         <!--
-          What is on offer, and the small print behind it.
-
-          The list names the rewards and says nothing about how many of each
-          are left - see `ShuffleCampaignData`, which is a separate class from
-          `RewardCampaignData` for exactly this reason. Anybody holding a link
-          can open this page, and remaining counts are what would let them work
-          out the odds before tapping.
+          Names the rewards but never how many of each are left: anybody
+          holding a link can open this page, and remaining counts would let
+          them work out the odds. `ShuffleCampaignData` is a separate class
+          from `RewardCampaignData` for exactly this reason.
         -->
         <div class="order-3 flex flex-col gap-4">
             <Card as="section" class="gap-0 p-0" data-test="panel-rewards">
@@ -551,17 +433,9 @@ defineOptions({ layout: PublicLayout });
                 </div>
 
                 <!--
-                  The promotion's own conditions, composed on the server rather
-                  than written into this template - see
-                  `ShuffleCampaignData::termsFor()`. One of them names the
-                  shuffle limit, and a page that said "only once" over a
-                  campaign set to three would be contradicting the rule the
-                  software actually enforces.
-
-                  What a particular reward entitles somebody to is its own
-                  small print, and that is shown on the reveal beside the
-                  reward carrying it, where it is about something they have
-                  actually won.
+                  Composed by `ShuffleCampaignData::termsFor()`, not written
+                  here: one term names the campaign's shuffle limit, so a
+                  hardcoded "only once" would contradict the enforced rule.
                 -->
                 <ul
                     class="flex list-none flex-col gap-2.5 p-5 text-left text-xs text-muted-foreground"

@@ -4,10 +4,8 @@ use App\Services\Customers\LegacyExtract;
 use App\Services\Visits\LegacyVisitLog;
 
 /**
- * One row of the old system's export, with only the columns the visit log
- * cares about spelled out. The rest is a customer this application will
- * happily import, so that a test about a note is never really a test about a
- * missing telephone number.
+ * The rest of the row is a customer the import will accept, so a test about a
+ * note is never really a test about a missing telephone number.
  *
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -28,8 +26,7 @@ function loggedRow(array $overrides = []): array
 }
 
 /**
- * The extract as phpMyAdmin writes it: a header, the database, and the table
- * that actually holds the rows.
+ * The extract as phpMyAdmin writes it - the rows live in the third block.
  *
  * @param  array<int, array<string, mixed>>  $rows
  */
@@ -47,10 +44,8 @@ function visitLog(): LegacyVisitLog
     return new LegacyVisitLog(new LegacyExtract);
 }
 
-/**
- * The whole department reading, written out. This is the table the import
- * turns on, so a change to it has to be a change to this list as well.
- */
+# The whole department table, written out: a change to the mapping in
+# `LegacyVisitLog` has to be a change to this dataset too.
 it('reads the department a visitor came to see as the nearest purpose', function (string $note, string $purpose) {
     expect(visitLog()->purposeFor($note)->value)->toBe($purpose);
 })->with([
@@ -89,12 +84,6 @@ it('reads the department a visitor came to see as the nearest purpose', function
     'a department nobody recognises' => ['Wickerwork', 'other'],
 ]);
 
-/**
- * A viewing and an enquiry are both somebody standing on the floor, and only
- * the note says which. Nearly every showroom line in the log is the second
- * one, which is what makes it worth reading rather than filing all 141 of them
- * as a browse.
- */
 it('reads a showroom note that asks about something as a new enquiry', function () {
     expect(visitLog()->purposeFor("Showroom\nInquiry on coffee machines\nColins")->value)
         ->toBe('new_enquiry');
@@ -105,11 +94,6 @@ it('reads an enquiry with no department in front of it as a new enquiry', functi
         ->toBe('new_enquiry');
 });
 
-/**
- * The promotion belongs to the floor and must not leak. Somebody asking the
- * workshop about a spare part is after-sales however the note is worded, and
- * an interview is a job however friendly the desk that took it.
- */
 it('leaves a purpose the department already settled alone', function (string $note, string $purpose) {
     expect(visitLog()->purposeFor($note)->value)->toBe($purpose);
 })->with([
@@ -142,10 +126,6 @@ it('names the member of staff a note says took the visit', function (string $not
     'behind a full stop' => ["Marketing- Meeting.\nQueenter.", 'Queenter'],
 ]);
 
-/**
- * A name against a visit is read as the person who took it, so a wrong one is
- * worse than none: nobody ever goes looking for the mistake.
- */
 it('leaves the respondent blank rather than reading an errand as a person', function (string $note) {
     expect(visitLog()->respondentIn($note))->toBeNull();
 })->with([
@@ -162,12 +142,6 @@ it('reads one man written two ways as one man', function () {
     expect(visitLog()->respondentIn("Meeting\npurchase\nMr Hezekiah"))->toBe('Hezekiah');
 });
 
-/**
- * The note is the only record of what actually happened, and several of the
- * departments map onto a purpose approximately at best. It is kept as it was
- * typed, with the line endings put right so it does not render with a stray
- * character in every textarea it is opened in.
- */
 it('keeps the note as it was written, apart from its line endings', function () {
     $row = visitLog()->toSeedRow(loggedRow([
         'notes' => "Service- bonesaw cutter repair\r\nAttended to by Sharon",
@@ -184,19 +158,10 @@ it('records when they came rather than when the import ran', function () {
         ->created_at->toBe('2026-02-25 11:26:47');
 });
 
-/**
- * A front-desk log is somebody who walked in. Nothing in the extract says
- * otherwise about any of them.
- */
 it('records every visit in the log as a walk-in', function () {
     expect(visitLog()->toSeedRow(loggedRow())['source'])->toBe('walk_in');
 });
 
-/**
- * The extract carries none of this. A follow-up nobody asked for is a chase in
- * somebody's diary, and crediting the log to whoever ran the seeder would put
- * all 419 visits into that one person's list.
- */
 it('invents nothing the extract does not hold', function () {
     expect(visitLog()->toSeedRow(loggedRow()))
         ->expected_follow_up_on->toBeNull()
@@ -219,13 +184,6 @@ it('reads no visit out of a row with no time against it', function () {
     expect(visitLog()->toSeedRow(loggedRow(['created_at' => ''])))->toBeNull();
 });
 
-/**
- * `visits.customer_id` is not nullable and the customer import turns down any
- * record with nothing dialable in the phone column, so the note written
- * against one of those has nowhere to go. It is reported by the id the old
- * system gave it, because rescuing the customer by hand is the only thing that
- * can bring the visit back.
- */
 it('leaves out a note whose customer the book never imported', function () {
     $result = visitLog()->transform(loggedExtractJson([
         loggedRow(['id' => 6]),

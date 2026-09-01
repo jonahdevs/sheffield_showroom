@@ -18,14 +18,6 @@ type Props = {
 defineProps<Props>();
 </script>
 
-<!--
-  A house glyph on the first crumb, muted links, a bold leaf, and chevrons a
-  shade lighter than the text so the trail reads as one line rather than as
-  punctuation.
-
-  It never wraps: on a narrow page the bar clips and the leaf truncates, which
-  keeps a long trail from pushing the page heading down a row.
--->
 <template>
     <Breadcrumb class="min-w-0">
         <BreadcrumbList

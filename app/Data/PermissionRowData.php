@@ -11,10 +11,6 @@ use Illuminate\Support\Collection;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * One row of the permissions list: what the capability is, which resource it
- * belongs to, and who hands it out.
- */
 #[TypeScript(location: ['App', 'Data'])]
 class PermissionRowData extends Data
 {
@@ -28,14 +24,8 @@ class PermissionRowData extends Data
         public string $group,
         public string $group_label,
         public array $roles,
-        /**
-         * Accounts holding this capability without a role behind it.
-         *
-         * The reason the column exists at all: a direct grant is invisible on
-         * the Roles screen, so an ability can outlive the role it was meant to
-         * come with and nobody auditing roles would ever see it. Naming the
-         * people here makes this page the one place the whole picture is true.
-         */
+        # Direct holders. A pinned grant is invisible on the Roles screen and
+        # outlives the role it came with, so this page is the only full audit.
         public array $users,
     ) {}
 

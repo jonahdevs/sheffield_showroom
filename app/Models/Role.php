@@ -31,22 +31,14 @@ class Role extends SpatieRole
         'description',
     ];
 
-    /**
-     * Roles that ship with the application and cannot be edited or removed.
-     */
     public const SYSTEM_ROLES = [
         self::SUPER_ADMIN,
     ];
 
     public const SUPER_ADMIN = 'super-admin';
 
-    /**
-     * The front desk.
-     *
-     * Named here because `VisitReport::forViewer()` reads it: the export a
-     * receptionist gets is narrower than their permissions are, so nothing
-     * about what they may do can be used to work it out.
-     */
+    # Named rather than derived: `VisitReport::forViewer()` reads it because
+    # a receptionist's export is narrower than their permissions are.
     public const RECEPTION = 'reception';
 
     protected function casts(): array
@@ -74,11 +66,6 @@ class Role extends SpatieRole
         $query->where('is_system', false);
     }
 
-    /**
-     * The role's name as a reader should see it. Roles are stored as slugs
-     * because that is what a permission check compares; nothing shown to a
-     * person should carry the hyphen.
-     */
     public function label(): string
     {
         return Str::headline($this->name);

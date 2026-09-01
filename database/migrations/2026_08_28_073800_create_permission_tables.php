@@ -44,13 +44,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('guard_name');
 
-            /* Ours, not spatie's. `is_system` marks a role the application
-               ships with: the checks it gates are written into the code, so it
-               is shown for reference and refused an edit. `description` is what
-               the Roles screen prints under the name. Folded in here rather
-               than added by a second migration - re-publishing spatie's file
-               would drop them, and a comment saying so is cheaper to notice
-               than a separate file three rows down the folder. */
+            # Ours, not spatie's: re-publishing spatie's file would drop
+            # them. `is_system` marks a role whose grants are written into the
+            # code, so it is refused an edit.
             $table->boolean('is_system')->default(false);
             $table->string('description')->nullable();
 

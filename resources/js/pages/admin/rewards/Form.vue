@@ -3,6 +3,7 @@ import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     Ban,
     CircleCheck,
+    PackageOpen,
     Pause,
     Play,
     Plus,
@@ -14,9 +15,18 @@ import type { Component } from 'vue';
 import AlertError from '@/components/AlertError.vue';
 import DatePicker from '@/components/DatePicker.vue';
 import InputError from '@/components/InputError.vue';
+import OptionMultiCombobox from '@/components/OptionMultiCombobox.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+    Empty,
+    EmptyContent,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle,
+} from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -37,37 +47,26 @@ import {
 
 const props = defineProps<{
     campaign: App.Data.RewardCampaignData | null;
-    /* Everything on offer, plus anything this campaign already holds - a
-       reward retired after a draft picked it up stays pickable here, or
-       reopening the draft would blank the row. */
+    /* Includes rewards retired since a draft picked them up: dropping them
+       would blank the row when the draft is reopened. */
     catalogue: CatalogueReward[];
+    /* The live floor only. A product withdrawn since it was paired keeps its
+       name through `pairedProducts` below, not by being put back on offer. */
+    products: App.Data.OptionData[];
     can: { update: boolean; publish: boolean; delete: boolean };
 }>();
 
 const heading = computed(() => props.campaign?.name ?? 'New campaign');
 
-/**
- * Reading a campaign needs only `rewards.view`, so this screen is also the
- * one a manager opens to look. A box you can type into whose typing is thrown
- * away is worse than one you cannot, so when the edits have nowhere to go the
- * fields say so by not accepting any.
- */
+/** Reading needs only `rewards.view`, so this screen is also the one to look. */
 const readOnly = computed(() => !props.can.update);
 
 /**
- * Whether the drawer has been turned into inventory.
- *
- * This is the rule the whole screen is built around. A draft's quantities are
- * an administrator's to reshape; the moment `publish` writes the pool they
- * become a promise made to customers - twenty discounts means twenty - so the
- * reward rows stop being inputs and become a read of what is left. The server
- * holds the same line from the other side: `RewardCampaignRequest::editsRewards`
- * drops anything arriving under `rewards` at a published campaign rather than
- * refusing it, so a tab left open on the draft cannot quietly rewrite the odds
- * by being saved an hour later.
- *
- * Everything else stays editable, because a name, a description and an end
- * date are administration rather than odds.
+ * Once `publish` writes the pool the quantities are live inventory, so the
+ * reward rows stop being inputs. The server holds the same line:
+ * `RewardCampaignRequest::editsRewards` drops anything arriving under
+ * `rewards` at a published campaign, so a tab left open on the draft cannot
+ * rewrite the odds by being saved an hour later. Everything else stays editable.
  */
 const rewardsLocked = computed(() => props.campaign?.is_published ?? false);
 
@@ -77,18 +76,11 @@ const isClosed = computed(
         props.campaign?.status === 'cancelled',
 );
 
-// -----------------------------------------------------------------------------
+// =========================================================================
 // The form
-// -----------------------------------------------------------------------------
+// =========================================================================
 
-/**
- * One attachment, as the form holds it.
- *
- * Only four fields, and none of them describes the reward: what the thing is
- * lives in the catalogue and is chosen by `reward_id`. Everything the row
- * shows beside the picker is read out of `props.catalogue` rather than typed,
- * so a campaign can never hold its own drifted copy of a reward's terms.
- */
+/** Nothing here describes the reward - the catalogue does, so nothing drifts. */
 type RewardRow = {
     reward_id: string;
     quantity: string;
@@ -124,35 +116,15 @@ type CampaignForm = {
 const MAX_REWARDS = 20;
 
 /**
- * A moment as `datetime-local` wants it.
- *
- * The column arrives as `Y-m-d H:i:s` and the control speaks `Y-m-dTH:i`, so
- * the seconds are cut and the space becomes a `T`. Deliberately string
- * surgery rather than a `Date` round trip: parsing to a `Date` and formatting
- * back would drag the value through the browser's timezone, and a campaign
- * that opens at nine in Nairobi would come back reading eleven.
- */
-/**
- * A stored `Y-m-d H:i:s` as the date picker wants it: the day alone.
- *
- * A campaign runs over days rather than to a minute, and the clock half of
- * these columns was never something anybody set deliberately - it arrived
- * because the field used to be a `datetime-local`. Dropping it here is what
- * lets the calendar be a calendar; `RewardCampaignRequest` is where the end
- * date is put back to the close of its day, so "ends on the 28th" still means
- * the 28th is in.
+ * A stored `Y-m-d H:i:s` as the date picker wants it: the day alone. String
+ * surgery rather than a `Date` round trip, which would drag the value through
+ * the browser's timezone. `RewardCampaignRequest` puts the end date back to
+ * the close of its day, so "ends on the 28th" still means the 28th is in.
  */
 function toDateInput(value: string | null): string {
     return value === null ? '' : value.slice(0, 10);
 }
 
-/**
- * A blank row, with the first reward type already chosen.
- *
- * Pre-set rather than empty because a type is required either way, and a
- * select nobody has touched sending nothing back is a validation error about
- * a decision the form never asked anybody to make.
- */
 function blankReward(): RewardRow {
     return {
         reward_id: '',
@@ -162,7 +134,6 @@ function blankReward(): RewardRow {
     };
 }
 
-/** The catalogue entry a row has chosen, for the summary beside the picker. */
 function chosen(row: RewardRow): CatalogueReward | null {
     const id = Number(row.reward_id);
 
@@ -170,12 +141,42 @@ function chosen(row: RewardRow): CatalogueReward | null {
 }
 
 /**
- * The saved definitions as editable rows.
- *
+ * `OptionMultiCombobox`'s `selected`: names it can draw without adding them to
+ * the list a row may pick from. Without it a product withdrawn from the floor
+ * since it was paired would render as a bare id.
+ */
+const pairedProducts = computed<App.Data.OptionData[]>(() =>
+    (props.campaign?.rewards ?? []).flatMap((reward) =>
+        reward.qualifying_products.map((product) => ({
+            value: product.id,
+            label: product.name,
+            hint: null,
+            image_url: null,
+        })),
+    ),
+);
+
+const productNames = computed(() => {
+    const names = new Map<number, string>();
+
+    for (const option of [...props.products, ...pairedProducts.value]) {
+        names.set(option.value, option.label);
+    }
+
+    return names;
+});
+
+function pairedNames(ids: number[]): string {
+    return ids.map((id) => productNames.value.get(id) ?? `#${id}`).join(', ');
+}
+
+function namesOf(products: { id: number; name: string }[]): string {
+    return products.map((product) => product.name).join(', ');
+}
+
+/**
  * `loaded` is the quantity: on a draft there is no pool yet, so
- * `CampaignRewardData` reports the definition's own number there and the
- * other three counts are zero. On a published campaign these rows are never
- * shown as inputs, so the same reading does no harm.
+ * `CampaignRewardData` reports the definition's own number there.
  */
 function savedRewards(campaign: App.Data.RewardCampaignData): RewardRow[] {
     return campaign.rewards.map((reward) => {
@@ -186,9 +187,9 @@ function savedRewards(campaign: App.Data.RewardCampaignData): RewardRow[] {
                 reward.validity_days === null
                     ? ''
                     : String(reward.validity_days),
-            /* Carried straight back out and posted unchanged. There is no
-               picker for these yet, so a save that dropped them would quietly
-               unpair a reward somebody had paired. */
+            /* The controller reads the pairing with trashed rows included, so
+               a product withdrawn since it was paired still arrives here and
+               reopening a draft and saving it cannot silently unpair it. */
             qualifying_product_ids: reward.qualifying_products.map(
                 (product) => product.id,
             ),
@@ -201,15 +202,10 @@ const form = useForm<CampaignForm>({
     description: props.campaign?.description ?? '',
     starts_at: toDateInput(props.campaign?.starts_at ?? null),
     ends_at: toDateInput(props.campaign?.ends_at ?? null),
-    /* One turn each is the honest default: a campaign that hands the same
-       customer five goes is a decision somebody has to make on purpose. */
     max_shuffles_per_customer: String(
         props.campaign?.max_shuffles_per_customer ?? 1,
     ),
     minimum_purchase_amount: props.campaign?.minimum_purchase_amount ?? '',
-    /* A campaign with an empty drawer cannot be published, so a new one opens
-       with a row already there rather than an Add button and no clue that one
-       is required. */
     rewards:
         props.campaign === null
             ? [blankReward()]
@@ -230,11 +226,7 @@ function dropReward(index: number) {
     form.rewards.splice(index, 1);
 }
 
-/**
- * Errors keyed against a row - `rewards.2.quantity` - which the typed error
- * bag has no name for. The bag itself is the same object either way; this is
- * only a way of asking it a question its type does not spell out.
- */
+/** Row-keyed errors - `rewards.2.quantity` - which the typed bag cannot name. */
 const errors = computed(
     () => form.errors as Record<string, string | undefined>,
 );
@@ -243,19 +235,13 @@ function rewardError(index: number, field: string): string | undefined {
     return errors.value[`rewards.${index}.${field}`];
 }
 
-/** Empty means "not given", never the empty string the column would reject. */
 function blankToNull(value: string): string | null {
     const trimmed = value.trim();
 
     return trimmed === '' ? null : trimmed;
 }
 
-/**
- * A cleared number box is nothing rather than zero. It matters for the
- * quantity in particular: zero would read as a reward that exists on the form
- * and not in the drawer, where nothing is the answer that gets the required
- * message the person actually needs.
- */
+/** A cleared number box is null rather than zero, so validation says "required". */
 function numberOrNull(value: string): number | null {
     const trimmed = value.trim();
 
@@ -263,13 +249,9 @@ function numberOrNull(value: string): number | null {
 }
 
 /**
- * The boxes hold strings and the request wants numbers, nulls and - past
- * publication - no rewards at all.
- *
- * The rewards are left out rather than sent and dropped. The server drops
- * them either way, so this changes nothing it decides; it keeps the payload
- * honest about what the screen is actually asking for, which is what somebody
- * reading a request log has to be able to trust.
+ * Past publication `rewards` is left out of the payload rather than sent and
+ * dropped. The server drops it either way, so this decides nothing - it keeps
+ * the request honest about what the screen is asking for.
  */
 function submit() {
     form.transform((data) => {
@@ -308,17 +290,13 @@ function submit() {
     form.patch(update(props.campaign.id).url);
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------
 // Publishing, and the states after it
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------
 
 /**
- * Whatever `CampaignService` refused, keyed as `campaign` by the controller.
- *
- * Held here rather than read off the page's shared errors because these are
- * `router` posts rather than form submissions: the two buttons below have no
- * error bag of their own, and the message - "Chinese New Year is already
- * running", say - is the whole reason the press did nothing.
+ * The buttons below are `router` posts rather than form submissions, so they
+ * have no error bag; `CampaignService`'s refusal arrives keyed `campaign`.
  */
 const stateError = ref<string | null>(null);
 
@@ -332,13 +310,8 @@ type StateMove = {
 };
 
 /**
- * The states this campaign can be put into from where it stands.
- *
- * Kept in step with `CampaignService` by hand, which is the honest cost of
- * the transitions living in a service rather than on the enum: a draft has no
- * pool so it cannot be started, a closed campaign refuses every move, and
- * starting one that is already running is a press that does nothing. Offering
- * a button the service would refuse teaches people to ignore the row.
+ * Kept in step with `CampaignService` by hand - the transitions live in the
+ * service rather than on the enum, and a move it would refuse must not appear.
  */
 const stateMoves = computed<StateMove[]>(() => {
     const campaign = props.campaign;
@@ -405,13 +378,8 @@ function postState(url: string, data: Record<string, string> = {}) {
     });
 }
 
-/*
- * The application asks "are you sure?" in exactly one voice, and only its text
- * is ours to set - which is why the confirm button below still says delete
- * where it is really asking about publishing. Worth the mismatch: a second,
- * bespoke dialog is a second thing to keep in step, and the sentence carries
- * the actual warning.
- */
+/* `confirmDelete` is the only confirm dialog and only its text is ours, so its
+   destructive styling stands while it asks about publishing. */
 async function publishCampaign() {
     const campaign = props.campaign;
 
@@ -438,8 +406,7 @@ async function moveTo(move: StateMove) {
         return;
     }
 
-    /* Only the two that close it. Starting and pausing are each undone by
-       pressing the other one, so asking twice would be noise. */
+    /* Only the two that close it: starting and pausing each undo the other. */
     if (move.final) {
         const agreed = await confirmDelete(
             `${move.hint} The campaign cannot be started again afterwards.`,
@@ -454,11 +421,8 @@ async function moveTo(move: StateMove) {
     postState(transition(campaign.id).url, { to: move.to });
 }
 
-/**
- * Only ever a draft nobody used: `RewardCampaignPolicy::delete` refuses a
- * published campaign, so `can.delete` is already false by the time there is
- * any history to lose.
- */
+/* Only ever a draft: `RewardCampaignPolicy::delete` refuses a published
+   campaign, so `can.delete` is false once there is history to lose. */
 async function removeCampaign() {
     const campaign = props.campaign;
 
@@ -473,11 +437,6 @@ async function removeCampaign() {
     router.delete(destroy(campaign.id).url);
 }
 
-/*
- * A layout callback rather than a static object: one component serves
- * creating a campaign, editing a draft and reading a published one, and only
- * the page's own props know which of the three this is.
- */
 defineOptions({
     layout: (page: { campaign: App.Data.RewardCampaignData | null }) => ({
         breadcrumbs: [
@@ -489,16 +448,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  A promotion is its dates and its drawer, so both are filled in on one screen
-  rather than saved and then gone back to - a campaign published with an empty
-  drawer is the failure that split would invite.
-
-  Publication is the line down the middle of this page. Before it everything
-  is a proposal; after it the reward rows stop being inputs and start being a
-  count of what is left, and the only actions are the ones that move the
-  campaign through its life.
--->
 <template>
     <Head :title="heading" />
 
@@ -583,11 +532,8 @@ defineOptions({
                             <InputError :message="form.errors.description" />
                         </div>
 
-                        <!-- Both optional, and they mean different things
-                             empty: no start is "the moment it is published",
-                             no end is "until somebody stops it". Publishing
-                             reads the start date to decide whether the
-                             campaign lands on active or scheduled. -->
+                        <!-- Empty means "on publication" and "until stopped";
+                             publishing reads the start to choose the status. -->
                         <div>
                             <Label for="starts_at">Starts</Label>
                             <div class="mt-2.25">
@@ -707,17 +653,7 @@ defineOptions({
                     </span>
                 </div>
 
-                <!--
-                  The heart of the screen, in two forms.
-
-                  A draft is a list of proposals, so it is a list of inputs. A
-                  published campaign's numbers have been written into the pool
-                  and told to customers, so the same rows become a read of what
-                  is left - and the four counts always reconcile, which is why
-                  all four are printed rather than only "6 left". Somebody
-                  reading that wants to know whether the other four were won or
-                  withdrawn.
-                -->
+                <!-- ===================== The drawer, published ===================== -->
                 <div
                     v-if="rewardsLocked"
                     class="divide-y divide-border"
@@ -784,6 +720,25 @@ defineOptions({
                             </div>
                         </dl>
 
+                        <!-- Said even when empty: paired to nothing is a real
+                             state, not a pairing nobody got round to. -->
+                        <p
+                            class="mt-3 text-xs text-muted-foreground"
+                            :data-test="`reward-${reward.id}-paired`"
+                        >
+                            <template
+                                v-if="reward.qualifying_products.length > 0"
+                            >
+                                Paired to
+                                {{ namesOf(reward.qualifying_products) }} - only
+                                a purchase of one of those can win it.
+                            </template>
+                            <template v-else>
+                                Paired to nothing, so any purchase that earns a
+                                turn can win it.
+                            </template>
+                        </p>
+
                         <p
                             v-if="reward.terms"
                             class="mt-3 text-xs text-muted-foreground"
@@ -793,6 +748,7 @@ defineOptions({
                     </div>
                 </div>
 
+                <!-- ===================== The drawer, as a draft ===================== -->
                 <div v-else class="flex flex-col gap-4 p-5">
                     <div
                         v-for="(reward, position) in form.rewards"
@@ -822,11 +778,6 @@ defineOptions({
                         <div
                             class="mt-3 flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-4 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5"
                         >
-                            <!-- The reward itself is chosen, never typed. It
-                                 is described once in the catalogue, so a
-                                 campaign holding its own copy of the terms is
-                                 how two promotions end up offering subtly
-                                 different versions of one thing. -->
                             <div class="@2xl/page:col-span-2">
                                 <Label :for="`reward-${position}-reward-id`">
                                     Reward <span class="text-primary">*</span>
@@ -860,8 +811,6 @@ defineOptions({
                                 />
                             </div>
 
-                            <!-- What that choice means, read out of the
-                                 catalogue rather than editable here. -->
                             <div class="@2xl/page:col-span-2">
                                 <span class="text-sm text-muted-foreground">
                                     Reward details
@@ -894,9 +843,6 @@ defineOptions({
                                 </p>
                             </div>
 
-                            <!-- How many units of this reward go into the
-                                 pool. The one number on the page that stops
-                                 being editable the moment it is published. -->
                             <div>
                                 <Label :for="`reward-${position}-quantity`">
                                     Quantity
@@ -939,62 +885,112 @@ defineOptions({
                                         rewardError(position, 'validity_days')
                                     "
                                 />
-                                <!-- Stamped onto the win rather than read
-                                     later, so changing this never moves a
-                                     deadline somebody already has. -->
+                                <!-- Stamped onto the win, so changing this
+                                     never moves a deadline already handed out. -->
                                 <p class="mt-1.5 text-xs text-muted-foreground">
                                     Counted from the moment it is won. Empty
                                     means it never expires.
                                 </p>
                             </div>
 
-                            <!-- What somebody must have bought to be in the
-                                 running. Carried through a save but not yet
-                                 editable here - pairing is set up alongside
-                                 the catalogue, which has no screen of its own
-                                 yet. -->
-                            <div
-                                v-if="
-                                    reward.qualifying_product_ids.length > 0
-                                "
-                                class="@2xl/page:col-span-2"
-                            >
-                                <span class="text-sm text-muted-foreground">
+                            <!-- The pairing belongs to the campaign, not the
+                                 catalogue - `campaign_reward_product` is keyed
+                                 on the attachment. Empty is a real default. -->
+                            <div class="@2xl/page:col-span-2">
+                                <Label :for="`reward-${position}-products`">
                                     Paired to
-                                </span>
-                                <p
-                                    class="mt-2.25 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground"
-                                    :data-test="`reward-${position}-paired`"
-                                >
-                                    Only a purchase of
-                                    {{ reward.qualifying_product_ids.length }}
-                                    named
+                                </Label>
+
+                                <div class="mt-2.25">
+                                    <OptionMultiCombobox
+                                        v-if="!readOnly"
+                                        :id="`reward-${position}-products`"
+                                        v-model="reward.qualifying_product_ids"
+                                        :options="props.products"
+                                        :selected="pairedProducts"
+                                        placeholder="Any purchase qualifies"
+                                        search-placeholder="Product name or SKU"
+                                        empty-text="No product matches that."
+                                        :data-test="`reward-${position}-products`"
+                                    />
+
+                                    <!-- `OptionMultiCombobox` has no disabled
+                                         state, so read-only gets names. -->
+                                    <p
+                                        v-else
+                                        class="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground"
+                                        :data-test="`reward-${position}-paired`"
+                                    >
+                                        {{
+                                            reward.qualifying_product_ids
+                                                .length > 0
+                                                ? pairedNames(
+                                                      reward.qualifying_product_ids,
+                                                  )
+                                                : 'Nothing - any purchase qualifies.'
+                                        }}
+                                    </p>
+                                </div>
+
+                                <InputError
+                                    :message="
+                                        rewardError(
+                                            position,
+                                            'qualifying_product_ids',
+                                        )
+                                    "
+                                />
+
+                                <p class="mt-1.5 text-xs text-muted-foreground">
                                     {{
-                                        reward.qualifying_product_ids
-                                            .length === 1
-                                            ? 'product'
-                                            : 'products'
+                                        reward.qualifying_product_ids.length ===
+                                        0
+                                            ? 'Leave empty and any purchase that earns a turn can win this, which is what most rewards are.'
+                                            : 'Only a purchase of one of these can win this. The campaign minimum above still decides who earns a turn at all.'
                                     }}
-                                    can win this.
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    <p
+                    <!-- `border` by hand: `Empty` carries `border-dashed` and
+                         no width, so its outline is invisible without one. -->
+                    <Empty
                         v-if="form.rewards.length === 0"
-                        class="rounded-lg bg-muted/60 p-4 text-sm text-muted-foreground"
+                        class="border"
                         data-test="rewards-empty"
                     >
-                        The drawer is empty. A campaign needs at least one
-                        reward before anybody can win anything.
-                    </p>
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <PackageOpen />
+                            </EmptyMedia>
+                            <EmptyTitle>The drawer is empty</EmptyTitle>
+                            <EmptyDescription>
+                                A campaign needs at least one reward before
+                                anybody can win anything, and an empty drawer is
+                                refused at publication.
+                            </EmptyDescription>
+                        </EmptyHeader>
+
+                        <EmptyContent v-if="!readOnly">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                data-test="add-first-reward"
+                                @click="addReward"
+                            >
+                                <Plus />
+                                Add reward
+                            </Button>
+                        </EmptyContent>
+                    </Empty>
 
                     <div class="flex flex-wrap items-center gap-3">
                         <Button
-                            v-if="!readOnly"
+                            v-if="!readOnly && form.rewards.length > 0"
                             type="button"
-                            variant="quiet"
+                            variant="outline"
                             size="sm"
                             :disabled="!canAddReward"
                             :title="
@@ -1034,7 +1030,7 @@ defineOptions({
                     Delete draft
                 </Button>
 
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="index().url">Cancel</Link>
                 </Button>
                 <Button
@@ -1047,18 +1043,14 @@ defineOptions({
             </div>
 
             <div v-else class="flex items-center justify-end">
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="index().url">Close</Link>
                 </Button>
             </div>
         </form>
 
-        <!--
-          Its own card and its own writes, outside the form: publishing and the
-          states after it answer to different rules from a name change, and a
-          Save button that quietly also opened the doors is exactly the mistake
-          the one-way rule exists to prevent.
-        -->
+        <!-- ===================== Publication ===================== -->
+        <!-- Its own writes, outside the form, so Save can never open the doors. -->
         <Card
             v-if="
                 props.campaign &&
@@ -1099,7 +1091,7 @@ defineOptions({
                         v-for="move in stateMoves"
                         :key="move.to"
                         type="button"
-                        variant="quiet"
+                        variant="outline"
                         :title="move.hint"
                         :data-test="`transition-${move.to}`"
                         @click="moveTo(move)"

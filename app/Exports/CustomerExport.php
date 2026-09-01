@@ -16,27 +16,12 @@ use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 /**
- * The customer list, in both formats it is offered in.
- *
- * One definition of a row, so the CSV and the workbook cannot disagree about
- * what a customer record holds. Everything the screen shows is read back
- * through `CustomerRowData` rather than off the model a second time: the table
- * and the download are then the same answer to the same question, and a change
- * to one is a change to both.
- *
- * The columns the table has no room for - the industry, the ID number, the
- * address - are taken off the model here instead of being added to the row
- * DTO. That DTO ships on every page of the list, and widening it to serve a
- * download nobody asked for yet would make every request carry the cost.
- *
  * @implements WithMapping<Customer>
  */
 class CustomerExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, WithHeadings, WithMapping, WithTitle
 {
     /**
-     * @param  Builder<Customer>  $query  Already filtered by the screen, and
-     *                                    already carrying the visit aggregates
-     *                                    `CustomerRowData` reads.
+     * @param  Builder<Customer>  $query  Already filtered and authorised.
      */
     public function __construct(private Builder $query) {}
 
@@ -102,20 +87,13 @@ class CustomerExport implements FromQuery, ShouldAutoSize, WithColumnFormatting,
             $row->postal_code ?? '',
             $row->country,
             $customer->visits_count,
-            /* Blank rather than a zero date: a customer who has not been in
-               yet has no last visit, and any date at all would read as one. */
             $customer->last_visit ?? '',
         ];
     }
 
     /**
-     * Numbers as numbers, and the two columns that only look like numbers as
-     * text.
-     *
-     * A phone, a national ID and a postal code all lose their leading zero the
-     * moment a spreadsheet decides they are quantities - `0722 000 111`
-     * becomes 722000111, `00100` becomes 100 - and this application
-     * deliberately keeps a number in the shape it was given.
+     * Phone, national ID and postal code are forced to text: a spreadsheet
+     * that reads them as quantities eats the leading zero.
      *
      * @return array<string, string>
      */

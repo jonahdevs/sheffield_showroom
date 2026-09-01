@@ -12,23 +12,15 @@ use Spatie\LaravelPdf\Facades\Pdf;
 use Throwable;
 
 /**
- * Any export, as paper.
- *
- * The rows are not gathered again here: the export class that already answers
- * for CSV and Excel is asked for its CSV, and that is what gets typeset. So a
- * PDF cannot list different rows, columns or totals than the spreadsheet
- * beside it, and no export class had to learn a third format - a column added
- * for the spreadsheet appears on the paper without anybody remembering to put
- * it there.
+ * Any export, as paper. The rows are never gathered again here - the export class is
+ * asked for its CSV and that is what gets typeset, so a PDF cannot disagree with the
+ * spreadsheet beside it and no export has to learn a third format.
  */
 class TableDocumentService
 {
     /**
-     * Whether this host can typeset at all.
-     *
-     * Rendering runs through a headless Chrome that a machine may simply not
-     * have, so the screens ask before offering the format. A button that
-     * always fails is worse than a format that is not on the menu.
+     * Rendering needs a headless Chrome the host may not have, so screens ask before
+     * offering the format at all.
      */
     public static function available(): bool
     {
@@ -60,9 +52,6 @@ class TableDocumentService
                 'rows' => $rows,
                 'issued_at' => CarbonImmutable::now()->toDayDateTimeString(),
             ])
-                /* A table wide enough for a ledger does not fit upright, and a
-                   column that wraps into three lines is worse than a page a
-                   reader turns sideways. */
                 ->landscape()
                 ->format('a4')
                 ->margins(12, 12, 14, 12)
@@ -73,8 +62,8 @@ class TableDocumentService
     }
 
     /**
-     * The export's own rows, read back out of the CSV it already knows how to
-     * produce. Headings, mapping and formatting all come along with it.
+     * Read back out of the CSV the export already produces, so headings, mapping and
+     * formatting all come along with it.
      *
      * @return array<int, array<int, string|null>>
      */

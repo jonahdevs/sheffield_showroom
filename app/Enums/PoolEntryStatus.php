@@ -6,18 +6,8 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * One unit of reward inventory, and whether it is still there to be won.
- *
- * `Claimed` is one-way. A reward that has been won is never returned to the
- * pool, even if the result is later cancelled or expires unredeemed - the
- * customer was told they had won it, and quietly putting it back would let
- * somebody else win the same unit.
- *
- * `Void` is the administrator's way of taking a unit off the table without
- * pretending it was never loaded. Reporting counts it, which is what makes
- * `loaded = available + claimed + void` reconcile.
- */
+# `Claimed` is one-way: a won unit never returns to the pool. `Void` takes an
+# unwon unit off the table and still counts as loaded: `loaded = available + claimed + void`.
 #[TypeScript]
 enum PoolEntryStatus: string
 {

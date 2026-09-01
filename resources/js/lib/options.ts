@@ -1,18 +1,7 @@
 /**
- * How a combobox narrows its list.
- *
- * Shared by the single and multiple boxes so the two behave identically: what
- * a search matches, and how many rows are drawn before the rest are counted
- * rather than rendered.
- */
-
-/**
- * Rows drawn at once.
- *
- * Reka's own combobox filter keeps every item mounted and hides the ones that
- * miss, and the catalogue behind these boxes runs to well over a thousand -
- * past that a list takes long enough to open to feel broken. The boxes pass
- * `ignore-filter` and narrow through here instead.
+ * Reka's own combobox filter keeps every item mounted and merely hides the
+ * misses, which is unusable against a catalogue of a thousand. The boxes pass
+ * `ignore-filter` and narrow through here instead, drawing this many rows.
  */
 export const MAX_VISIBLE_OPTIONS = 50;
 
@@ -20,13 +9,8 @@ export const MAX_VISIBLE_OPTIONS = 50;
 type Searchable = App.Data.OptionData & { keywords?: string | null };
 
 /**
- * Whether an option answers to a search term.
- *
- * The label and the hint are searched: a customer is looked up by their phone
- * number as often as by their name, and a product by its SKU as often as by
- * what it is called. `keywords` is for what identifies a record without
- * belonging on the row - the company a customer came in for, which is how they
- * are remembered even though the box asks for a person.
+ * Label, hint and `keywords` are all searched: a customer is looked up by
+ * phone or by the company they came in for as often as by name.
  */
 function matches(option: Searchable, term: string): boolean {
     return `${option.label} ${option.hint ?? ''} ${option.keywords ?? ''}`
@@ -38,9 +22,6 @@ function normalise(search: string): string {
     return search.trim().toLowerCase();
 }
 
-/**
- * The first `limit` options matching a search term, in the order given.
- */
 export function matchOptions<T extends Searchable>(
     options: T[],
     search: string,
@@ -67,12 +48,7 @@ export function matchOptions<T extends Searchable>(
     return found;
 }
 
-/**
- * How many options match in total, including the ones past the cap.
- *
- * Counted rather than collected, so telling somebody there are four hundred
- * more does not build four hundred more objects to say it.
- */
+/** How many options match in total, including the ones past the cap. */
 export function countMatches(options: Searchable[], search: string): number {
     const term = normalise(search);
 

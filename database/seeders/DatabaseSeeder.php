@@ -11,23 +11,9 @@ class DatabaseSeeder extends Seeder
     use WithoutModelEvents;
 
     /**
-     * Seed the application's database.
-     *
-     * Roles before users: UsersSeeder hands out the super admin role and
-     * cannot do that until the role exists.
-     *
-     * Customers and their visits last. They are the book carried over from the
-     * old system rather than scaffolding, and the seeder replaces whatever is
-     * in the table, so nothing else should be writing customers after it.
-     *
-     * Visits after customers, and not the other way round: every imported
-     * visit names its customer by the id that customer had in the old system,
-     * and there is nothing to match against until the book has landed.
-     *
-     * The campaign last of all. It needs a user to be attributed to, and it is
-     * the only seeder here that is scaffolding rather than a record: the
-     * clearance sale is a promotion to look at, not something carried over
-     * from the old system.
+     * The order is load-bearing: roles before users, and customers before
+     * visits. `CustomersSeeder` replaces whatever is in the table, so nothing
+     * may write customers after it.
      */
     public function run(): void
     {
@@ -39,10 +25,9 @@ class DatabaseSeeder extends Seeder
             RewardCampaignSeeder::class,
         ]);
 
-        /* An account holding nothing, for seeing what the application looks
-           like to somebody who has not been given a role yet. Guarded rather
-           than firstOrCreate so the factory still supplies the password and
-           the rest of its defaults on a first run. */
+        # An account holding nothing, for seeing the application as somebody
+        # with no role yet. Guarded rather than `firstOrCreate` so the factory
+        # still supplies the password and its other defaults on a first run.
         if (! User::query()->where('email', 'test@example.com')->exists()) {
             User::factory()->create([
                 'name' => 'Test User',

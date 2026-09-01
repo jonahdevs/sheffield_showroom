@@ -10,19 +10,6 @@ use RuntimeException;
 
 use function Laravel\Prompts\table;
 
-/**
- * Turns the front-desk log buried in the customer extract into the file
- * `VisitsSeeder` reads.
- *
- * The sibling of `customers:prepare-seed`, and for the same reason: the seed
- * file is committed, so a change to how a note is read shows up as a diff
- * against 448 visits rather than as a number that moved on somebody's
- * dashboard. Change a rule in `LegacyVisitLog`, run this, and the diff says
- * exactly which visits the change moved and where to.
- *
- * Reads and writes nothing else. `database/data/customers.json` is the record
- * of what was handed over and stays as it arrived.
- */
 class VisitsPrepareSeed extends Command
 {
     protected $signature = 'visits:prepare-seed
@@ -50,10 +37,6 @@ class VisitsPrepareSeed extends Command
             return self::FAILURE;
         }
 
-        /* Pretty printed with slashes and unicode left alone, like the
-           customer seed file beside it: this is read by people deciding
-           whether a mapping rule got it right, and an escaped blob cannot be
-           read that way. */
         file_put_contents($output, json_encode(
             $result['rows'],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
@@ -97,9 +80,6 @@ class VisitsPrepareSeed extends Command
         );
 
         if ($result['without_customer'] !== []) {
-            /* Listed by the id they had in the old system, because the only
-               way one of these comes back is somebody looking that record up
-               and finding a telephone number for it. */
             $this->warn(sprintf(
                 'Left out, no customer was imported for them (old system id): %s',
                 implode(', ', array_map(fn (?int $id): string => (string) ($id ?? '?'), $result['without_customer'])),

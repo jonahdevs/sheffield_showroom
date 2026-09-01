@@ -1,9 +1,7 @@
 import { usePage } from '@inertiajs/vue3';
 
-/**
- * Builds a URL from the one currently on screen, so a control that changes a
- * single parameter keeps every other filter the page is already wearing.
- */
+/* Builds on the URL currently on screen, so a control that changes one
+   parameter keeps every other filter the page is already wearing. */
 export function useQueryString() {
     const page = usePage();
 

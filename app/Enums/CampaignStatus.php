@@ -6,18 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Where a reward campaign is in its life.
- *
- * Only `Active` hands out rewards. The rest are the states around that: one
- * being written, one waiting for its start date, one stopped on purpose, and
- * two ways of being over.
- *
- * `Draft` is the only state whose reward quantities may still be reshaped.
- * Once a campaign is published its pool is controlled inventory - a hundred
- * rewards means a hundred, and changing that number afterwards changes what
- * people were told they were playing for.
- */
 #[TypeScript]
 enum CampaignStatus: string
 {
@@ -40,20 +28,13 @@ enum CampaignStatus: string
         };
     }
 
-    /**
-     * Whether the pool has been generated and is therefore no longer the
-     * administrator's to rewrite.
-     */
+    # Published means the pool has been generated: its quantities are no longer
+    # the administrator's to rewrite.
     public function isPublished(): bool
     {
         return $this !== self::Draft;
     }
 
-    /**
-     * Whether a campaign in this state has finished for good. A finished
-     * campaign keeps its history - the results, the redemptions and the
-     * reporting behind them all outlive it.
-     */
     public function isClosed(): bool
     {
         return $this === self::Completed || $this === self::Cancelled;

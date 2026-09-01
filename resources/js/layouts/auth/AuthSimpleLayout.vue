@@ -20,8 +20,7 @@ defineProps<{
                         :href="home()"
                         class="flex flex-col items-center gap-2 font-medium"
                     >
-                        <!-- Chipped for the same reason as the sidebar mark: in dark mode the
-                             page behind this is near-black and the flame's navy half would vanish. -->
+                        <!-- White chip: in dark mode the flame's navy half would vanish into the near-black page. -->
                         <div
                             class="mb-1 flex h-10 w-10 items-center justify-center rounded-md bg-white ring-1 ring-border"
                         >

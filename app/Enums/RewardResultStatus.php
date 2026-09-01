@@ -6,19 +6,7 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * What happened to a reward after it was won.
- *
- * A result is permanent. It is never deleted and its pool entry is never
- * returned, so these four states are the whole history of one reward: it is
- * waiting to be used, it was used, its validity ran out, or somebody
- * cancelled it.
- *
- * `Expired` is set by `rewards:expire`, which reads `expires_at` rather than
- * recomputing it from the reward definition - the date is stamped when the
- * reward is won, so an administrator lengthening `validity_days` afterwards
- * does not quietly move a deadline somebody was already given.
- */
+# A result is permanent: never deleted, and its pool entry never returned.
 #[TypeScript]
 enum RewardResultStatus: string
 {
@@ -37,10 +25,6 @@ enum RewardResultStatus: string
         };
     }
 
-    /**
-     * Whether the reward can still be handed over. Only an unredeemed one can,
-     * and `RewardRedemptionService` is where that is enforced.
-     */
     public function isRedeemable(): bool
     {
         return $this === self::Unredeemed;

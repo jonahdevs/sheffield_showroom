@@ -26,11 +26,7 @@ it('writes the rows the seeder reads', function () {
     unlink($output);
 });
 
-/**
- * The raw extract is the record of what was handed over. A run that cannot
- * find it must say so rather than write an empty seed file over the top of a
- * good one.
- */
+# Must not write an empty seed file over the top of a good one.
 it('fails without writing anything when the extract is missing', function () {
     $output = tempnam(sys_get_temp_dir(), 'seed').'.json';
 

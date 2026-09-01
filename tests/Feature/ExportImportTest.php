@@ -16,8 +16,6 @@ use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Gives a user a role holding exactly the permissions named.
- *
  * @param  array<int, Permission>  $permissions
  */
 function transferStaff(array $permissions): User
@@ -40,8 +38,6 @@ function transferStaff(array $permissions): User
 }
 
 /**
- * A file as it arrives off somebody's machine.
- *
  * @param  array<int, array<int, string>>  $rows  The heading row first.
  */
 function csvUpload(array $rows, string $name = 'customers.csv'): UploadedFile
@@ -57,9 +53,9 @@ function csvUpload(array $rows, string $name = 'customers.csv'): UploadedFile
     return UploadedFile::fake()->createWithContent($name, $body);
 }
 
-// =============================================================================
-// Exports
-// =============================================================================
+# =========================================================================
+# Exports
+# =========================================================================
 
 it('exports only the customers the screen was filtered to', function () {
     Excel::fake();
@@ -151,11 +147,9 @@ it('gives a manager every visit on the floor', function () {
 });
 
 /**
- * Somebody whose whole job is the front desk.
- *
- * The role's *name* is what decides the sheet, not its permissions - see
+ * The role name decides the sheet, not its permissions - see
  * `VisitReport::forViewer()` - so this cannot go through `transferStaff()`,
- * which invents one.
+ * which invents a name.
  *
  * @param  array<int, Permission>  $permissions
  */
@@ -199,11 +193,6 @@ it('hands reception the front desk sheet rather than the full log', function () 
     );
 });
 
-/**
- * The notes column is the write-up of what was actually said on the floor. It
- * is the reason the full export exists and the one column that must not follow
- * the sheet out to the front desk.
- */
 it('keeps the write-up off reception\'s sheet', function () {
     Excel::fake();
 
@@ -226,11 +215,6 @@ it('keeps the write-up off reception\'s sheet', function () {
     );
 });
 
-/**
- * A wider role must never be quietly narrowed by a second one. A manager who
- * also covers the desk keeps the log they had, or they lose the notes column
- * with nothing on the screen to say why.
- */
 it('leaves the full log with a manager who also covers the front desk', function () {
     Excel::fake();
 
@@ -258,10 +242,8 @@ it('leaves the full log with a manager who also covers the front desk', function
 });
 
 it('typesets the same rows the spreadsheet carries', function () {
-    /* The paper format goes through a headless Chrome the CI box may not have,
-       so the renderer is stood in for. What is asserted here is the wiring -
-       that the export reaches the typesetter with the screen's title and the
-       line that says which slice of the list it is - not that Chrome works. */
+    # The PDF path needs a headless Chrome the CI box may not have, so the
+    # renderer is mocked: this asserts the wiring, not that Chrome works.
     $document = Mockery::mock(TableDocumentService::class);
     $document->shouldReceive('render')
         ->once()
@@ -305,9 +287,9 @@ it('refuses a visit export without visits.export', function () {
         ->assertForbidden();
 });
 
-// =============================================================================
-// Import
-// =============================================================================
+# =========================================================================
+# Import
+# =========================================================================
 
 it('adds the customers a file names', function () {
     $staff = transferStaff([
@@ -333,9 +315,6 @@ it('adds the customers a file names', function () {
 
     expect($company->type)->toBe(CustomerType::Company)
         ->and($company->name)->toBe('Peter Mwangi')
-        /* A file is shaped by `LegacyExtract` on the way in, the same as the
-           legacy import, so a Kenyan number written the way it is dialled at
-           home lands in the shape the form stores one. */
         ->and($company->phone)->toBe('+254202711000')
         ->and($company->created_by)->toBe($staff->id);
 });
@@ -355,8 +334,7 @@ it('updates a customer already reachable on that number rather than filing them 
         'city' => 'Nairobi',
     ]);
 
-    /* The same telephone written the way somebody else would write it, which
-       is exactly the case `matchingPhone` exists for. */
+    # The same telephone written another way - the case `matchingPhone` exists for.
     $file = csvUpload([
         ['type', 'name', 'phone', 'email'],
         ['individual', 'Achieng Odhiambo', '+254722000111', 'achieng@example.com'],
@@ -372,8 +350,7 @@ it('updates a customer already reachable on that number rather than filing them 
 
     expect($existing->name)->toBe('Achieng Odhiambo')
         ->and($existing->email)->toBe('achieng@example.com')
-        /* A column the file never mentioned is not a column the file asked to
-           be emptied. */
+        # A column the file never mentioned is not one it asked to be emptied.
         ->and($existing->city)->toBe('Nairobi');
 });
 
@@ -388,9 +365,7 @@ it('skips a row the rules refuse and lets the rest of the file land', function (
     $file = csvUpload([
         ['type', 'name', 'company', 'phone'],
         ['individual', 'Achieng Odhiambo', '', '0722 000 111'],
-        /* No name and no telephone worth the word. */
         ['individual', '', '', 'N/A'],
-        /* A company with nothing to call it. */
         ['company', 'Peter Mwangi', '', '020 271 1000'],
         ['individual', 'Wanjiru Kamau', '', '0733 444 555'],
     ]);
@@ -404,10 +379,8 @@ it('skips a row the rules refuse and lets the rest of the file land', function (
 });
 
 it('reads its own export back without duplicating anybody', function () {
-    /* The claim the whole shape rests on: download the list, correct a column
-       of it, send it back. If the export's headings and the import's keys ever
-       drift apart, every row comes back as a new customer and the list doubles
-       - which is the sort of thing somebody discovers a week later. */
+    # Round trip: if the export headings and the import keys ever drift
+    # apart, every row comes back as a new customer and the list doubles.
     $staff = transferStaff([
         Permission::CustomersViewAny,
         Permission::CustomersCreate,
@@ -452,8 +425,8 @@ it('reads its own export back without duplicating anybody', function () {
     expect($company->type)->toBe(CustomerType::Company)
         ->and($company->company_name)->toBe('Mwangi Builders Ltd')
         ->and($company->phone)->toBe('+254202711000')
-        /* The export heads this "County" and the leading zero on the postcode
-           is only there because the column was written as text. */
+        # The export heads `state` as "County", and the postcode keeps its
+        # leading zero only because the column is written as text.
         ->and($company->state)->toBe('Nairobi')
         ->and($company->postal_code)->toBe('00100');
 });
@@ -475,8 +448,6 @@ it('refuses an import without customers.import', function () {
 });
 
 it('refuses an import from somebody who may not write customers by hand', function () {
-    /* Importing is create and update at four hundred rows a time, so the
-       permission to import is not on its own enough to do it. */
     $staff = transferStaff([Permission::CustomersViewAny, Permission::CustomersImport]);
 
     $this->actingAs($staff)

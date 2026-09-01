@@ -14,14 +14,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * What somebody bought, and for how much.
- *
- * Narrow on purpose - an eligibility record rather than a ledger. See the
- * migration for why there are no line items here.
+ * An eligibility record rather than a ledger - no line items, deliberately.
  *
  * @property int $id
  * @property int $customer_id
@@ -44,7 +42,6 @@ class Purchase extends Model
     protected $fillable = [
         'customer_id',
         'visit_id',
-        'product_id',
         'reference',
         'amount',
         'status',
@@ -57,10 +54,8 @@ class Purchase extends Model
     protected function casts(): array
     {
         return [
-            /* `decimal:2` rather than a float. This number is compared against
-               a campaign threshold, and a purchase falling the wrong side of
-               one by a rounding error is a customer told they did not qualify
-               when they did. */
+            # `decimal:2`, not a float: this is compared against a campaign
+            # threshold, and a rounding error refuses a customer who qualified.
             'amount' => 'decimal:2',
             'status' => PurchaseStatus::class,
             'purchased_at' => 'immutable_datetime',
@@ -84,17 +79,16 @@ class Purchase extends Model
     }
 
     /**
-     * The main item bought, where anybody recorded one.
+     * `withTrashed()` on purpose: withdrawing a product must not make a
+     * historical sale forget what it was for. The draw is the opposite -
+     * `CampaignReward::qualifyingProducts()` keeps the default scope, so a
+     * pairing to a withdrawn product stops qualifying anybody.
      *
-     * Read by rewards that name the products qualifying for them - buy the
-     * oven, win the tray. Null on most rows, and a campaign that pairs nothing
-     * never asks.
-     *
-     * @return BelongsTo<Product, $this>
+     * @return BelongsToMany<Product, $this>
      */
-    public function product(): BelongsTo
+    public function products(): BelongsToMany
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsToMany(Product::class, 'purchase_product')->withTrashed();
     }
 
     /**
@@ -106,11 +100,8 @@ class Purchase extends Model
     }
 
     /**
-     * The turn this purchase earned, if it has been given one yet.
-     *
-     * `hasOne` rather than `hasMany` because the unique index on
-     * `shuffle_sessions.purchase_id` makes a second one impossible - one sale,
-     * one turn.
+     * `hasOne` because the unique index on `shuffle_sessions.purchase_id`
+     * makes a second impossible - one sale, one turn.
      *
      * @return HasOne<ShuffleSession, $this>
      */
@@ -120,9 +111,8 @@ class Purchase extends Model
     }
 
     /**
-     * Only the purchases that can earn a shuffle. A sale still being settled
-     * is deliberately not one of them: a reward handed out against a payment
-     * that later falls through cannot be taken back.
+     * Completed only: a reward handed out against a payment that later falls
+     * through cannot be taken back.
      *
      * @param  Builder<Purchase>  $query
      */

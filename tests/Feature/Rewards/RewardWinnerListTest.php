@@ -21,9 +21,9 @@ use Spatie\Permission\PermissionRegistrar;
 /**
  * A user holding exactly the permissions named, through a role of their own.
  *
- * Self-contained rather than calling the equivalent in `RewardHttpTest`: those
- * are global functions, and Pest gives no guarantee about which file declares
- * one first.
+ * Self-contained rather than calling the equivalent in `RewardHttpTest`: these
+ * helpers are global functions, Pest gives no guarantee which file declares
+ * one first, and two files declaring the same name is a fatal error.
  *
  * @param  array<int, Permission>  $permissions
  */
@@ -47,12 +47,9 @@ function winnerListStaff(array $permissions): User
 }
 
 /**
- * One won reward, with everything above it wired up coherently.
- *
- * Built by hand rather than through the result factory's own defaults because
- * every assertion below is about something further up the chain - the
- * customer's name, the campaign's, the type of the reward - and a factory that
- * invents a fresh campaign per call cannot be asserted against.
+ * Built by hand rather than through the result factory's defaults, which
+ * invent a fresh campaign per call - every assertion below is about something
+ * further up the chain.
  */
 function wonReward(
     RewardCampaign $campaign,
@@ -81,9 +78,9 @@ function wonReward(
     ]);
 }
 
-// -----------------------------------------------------------------------------
-// Who may reach it
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Who may reach it
+# =========================================================================
 
 it('keeps the won rewards behind rewards.view', function () {
     $this->actingAs(winnerListStaff([Permission::PurchasesViewAny]))
@@ -97,9 +94,9 @@ it('opens for anybody with rewards.view, without the power to redeem', function 
         ->assertOk();
 });
 
-// -----------------------------------------------------------------------------
-// What a row says
-// -----------------------------------------------------------------------------
+# =========================================================================
+# What a row says
+# =========================================================================
 
 it('names the customer, the campaign and the reward on every row', function () {
     $campaign = RewardCampaign::factory()->active()->create(['name' => 'Clearance Sale']);
@@ -152,9 +149,9 @@ it('says who handed a reward over and when', function () {
             ->where('rewards.data.0.redeemed_on', '20 Aug 2026'));
 });
 
-// -----------------------------------------------------------------------------
-// Finding one
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Finding one
+# =========================================================================
 
 it('finds a reward by its code and by the customer who won it', function () {
     $campaign = RewardCampaign::factory()->active()->create();
@@ -218,9 +215,9 @@ it('narrows by status, by reward type and by campaign', function () {
             ->where('rewards.data.0.code', 'SHF-FES003'));
 });
 
-// -----------------------------------------------------------------------------
-// The window at the top of the page
-// -----------------------------------------------------------------------------
+# =========================================================================
+# The window at the top of the page
+# =========================================================================
 
 it('reads the list and the figures under the same date window', function () {
     $campaign = RewardCampaign::factory()->active()->create();
@@ -238,8 +235,6 @@ it('reads the list and the figures under the same date window', function () {
         ->assertInertia(fn ($page) => $page
             ->has('rewards.data', 1)
             ->where('rewards.data.0.code', 'SHF-NEW002')
-            /* The tiles read the same window as the rows: one reward won in
-               February, not the two in the table's whole history. */
             ->where('stats.0.key', 'won')
             ->where('stats.0.value', 1)
             ->where('date_label', '2026-02-01 to 2026-02-28'));
@@ -277,8 +272,8 @@ it('ignores a status filter when counting, so the figures stay a rate', function
     $this->actingAs(winnerListStaff([Permission::RewardsView]))
         ->get(route('admin.rewards.winners.index', ['status' => RewardResultStatus::Redeemed->value]))
         ->assertInertia(fn ($page) => $page
-            /* One row, because that is what was asked for - but two won, or
-               "collected: 1 of 1" would read as a perfect record. */
+            # One row, but two won: "collected: 1 of 1" would read as a
+            # perfect record.
             ->has('rewards.data', 1)
             ->where('stats.0.value', 2)
             ->where('stats.1.value', 1));
@@ -305,9 +300,9 @@ it('answers a mangled query string with the list rather than an error', function
             ->where('filters.range', ''));
 });
 
-// -----------------------------------------------------------------------------
-// What it must not carry
-// -----------------------------------------------------------------------------
+# =========================================================================
+# What it must not carry
+# =========================================================================
 
 it('never puts a session token on the page', function () {
     $campaign = RewardCampaign::factory()->active()->create();

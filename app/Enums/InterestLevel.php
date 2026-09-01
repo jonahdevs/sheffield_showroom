@@ -6,14 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * How keen somebody was on one product they were shown.
- *
- * Recorded per product rather than per visit: a customer shown four things is
- * rarely equally interested in all four, and which one they leaned towards is
- * the whole point of writing the visit up. `Medium` is the default so adding a
- * product to the list costs nobody a decision they do not want to make.
- */
 #[TypeScript]
 enum InterestLevel: string
 {

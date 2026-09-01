@@ -73,10 +73,6 @@ const { filters, query, hasFilters, processing, apply, clear } = useFilters({
     only: ['customers', 'filters'],
 });
 
-/**
- * The type filter is a tab strip rather than a select: there are only three
- * choices and each one is worth a count.
- */
 const tabs = computed(() => [
     { value: 'all', label: 'All', count: props.counts.all },
     ...props.types.map((type) => ({
@@ -101,10 +97,6 @@ function chooseFile(event: Event) {
     importForm.clearErrors('file');
 }
 
-/**
- * The counts come back as a toast rather than on this page, so a finished
- * import closes the dialog and the list behind it is already the new one.
- */
 function sendImport() {
     importForm.post(importMethod().url, {
         preserveScroll: true,
@@ -112,8 +104,8 @@ function sendImport() {
             importing.value = false;
             importForm.reset();
 
-            /* The input keeps the chosen file after a reset, so picking the
-               same file again would fire no change event and submit nothing. */
+            /* The input keeps its chosen file across a form reset, so picking
+               the same file again would fire no change event at all. */
             if (fileInput.value !== null) {
                 fileInput.value.value = '';
             }
@@ -139,11 +131,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  Everyone who has walked into the showroom, individuals and companies in one
-  list. They share a table because a salesperson looking somebody up knows the
-  name or the number, not which kind of record it was filed under.
--->
 <template>
     <Head title="Customers" />
 
@@ -159,7 +146,7 @@ defineOptions({
             <div class="flex flex-wrap items-center gap-2.5">
                 <Button
                     v-if="props.can.import"
-                    variant="quiet"
+                    variant="outline"
                     data-test="import-customers"
                     @click="importing = true"
                 >
@@ -167,8 +154,6 @@ defineOptions({
                     Import
                 </Button>
 
-                <!-- The export follows the filters, so the file is the list
-                     on the screen rather than the whole table. -->
                 <ExportMenu
                     v-if="props.can.export"
                     :url="exportMethod().url"
@@ -241,9 +226,8 @@ defineOptions({
                 </Button>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "no customers yet" over rows
-                 that are about to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: reordering these flashes
+                 "no customers yet" over rows that are about to land. -->
             <TableSkeleton
                 v-if="processing"
                 class="px-5 py-2"
@@ -266,7 +250,7 @@ defineOptions({
                 <Button
                     v-if="!hasFilters && props.can.create"
                     as-child
-                    variant="quiet"
+                    variant="outline"
                     size="sm"
                     class="mt-3.5"
                 >
@@ -279,9 +263,6 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
-                    <!-- Semibold rather than bold: the lead cell of every row below
-                         is itself text-xs font-bold, so a bold header would read as
-                         one more row instead of the label for all of them. -->
                     <div
                         class="grid min-w-[880px] grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,0.4fr)_minmax(0,0.7fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
@@ -301,9 +282,6 @@ defineOptions({
                             class="grid min-w-[880px] grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,0.4fr)_minmax(0,0.7fr)_84px] items-center gap-4 px-5 py-3"
                             :data-test="`customer-${customer.id}`"
                         >
-                            <!-- The person, in every row. A company customer
-                                 is somebody who came in for a business, not a
-                                 business that walked in on its own. -->
                             <div class="flex min-w-0 items-center gap-3">
                                 <span
                                     class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-faint"
@@ -326,10 +304,6 @@ defineOptions({
                                     >
                                         {{ customer.name ?? '--' }}
                                     </p>
-                                    <!-- Under the name rather than in a column
-                                         of its own: an address is long, mostly
-                                         absent, and only ever read once you
-                                         know whose it is. -->
                                     <p
                                         v-if="customer.email"
                                         class="mt-0.5 truncate text-xs text-faint"
@@ -360,9 +334,6 @@ defineOptions({
                                 {{ customer.phone }}
                             </span>
 
-                            <!-- Nobody yet reads as a dash rather than a zero:
-                                 a customer who has not been in is not one who
-                                 came in no times. -->
                             <span
                                 class="text-xs tabular-nums"
                                 :class="
@@ -428,11 +399,6 @@ defineOptions({
         </Card>
     </div>
 
-    <!--
-      One step rather than an upload-then-confirm screen: the counts come back
-      as a toast, and a row the rules refused is reported in it rather than
-      stopping the rest of the file landing.
-    -->
     <Dialog v-model:open="importing">
         <DialogContent>
             <DialogHeader>
@@ -457,8 +423,6 @@ defineOptions({
                         optional, and a blank cell leaves what is on record
                         alone.
                     </span>
-                    <!-- The export writes exactly these columns, so the
-                         quickest correct file is one this screen produced. -->
                     <span v-if="props.can.export" class="text-faint">
                         An export of this list is a working template.
                     </span>
@@ -477,7 +441,7 @@ defineOptions({
                 <div class="flex flex-wrap items-center gap-2.5">
                     <Button
                         type="button"
-                        variant="quiet"
+                        variant="outline"
                         size="sm"
                         data-test="choose-import-file"
                         @click="fileInput?.click()"
@@ -501,7 +465,7 @@ defineOptions({
             </div>
 
             <DialogFooter>
-                <Button variant="quiet" @click="importing = false">
+                <Button variant="outline" @click="importing = false">
                     Cancel
                 </Button>
                 <Button

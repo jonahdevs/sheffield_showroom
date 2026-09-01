@@ -40,15 +40,12 @@ function headline(name: string): string {
     return name.replace(/-/g, ' ');
 }
 
-// -----------------------------------------------------------------------------
+// =========================================================================
 // The account itself
-// -----------------------------------------------------------------------------
+// =========================================================================
 
-/*
- * A password is only on this form while the account is being made. Afterwards
- * it has its own action behind its own check, so it cannot be moved by
- * somebody who came here to correct a surname.
- */
+/* Password fields only exist while creating. Afterwards the password has its
+   own action behind its own permission. */
 const details = useForm({
     name: props.user?.name ?? '',
     email: props.user?.email ?? '',
@@ -64,27 +61,16 @@ const canSaveDetails = computed(() => {
     return props.user !== null || details.password !== '';
 });
 
-// -----------------------------------------------------------------------------
+// =========================================================================
 // The roles the account holds
-// -----------------------------------------------------------------------------
+// =========================================================================
 
-/*
- * On the way in these ride with the details, because an account with no role
- * keeps its login and loses every ability on it - that is a broken account,
- * not a new one. Afterwards they are their own write, answering to
- * `roles.assign` rather than to `users.update`, and it is the same write the
- * Roles screen's people panel posts.
- */
+/* On create these ride along in the details payload; on edit they are their own
+   write answering to `roles.assign` rather than `users.update`. */
 const assignment = useForm<{ roles: string[] }>({
     roles: [...(props.user?.roles ?? [])],
 });
 
-/**
- * The roles as the combobox wants them: an id, a label and a line to tell two
- * apart. The hint is searched as well as shown, so a role whose name means
- * nothing to the reader is still findable by what it is for - and where nobody
- * has written that down, by how much it hands over.
- */
 const roleOptions = computed<App.Data.OptionData[]>(() =>
     props.roles.map((role) => ({
         value: role.id,
@@ -94,11 +80,8 @@ const roleOptions = computed<App.Data.OptionData[]>(() =>
     })),
 );
 
-/*
- * The form posts role names, because that is what the two requests behind it
- * read; the combobox picks by id, because that is what a row in one is keyed
- * by. This is the join, and it is the only place the two spellings meet.
- */
+/* The form posts role names - what both requests read - while the combobox
+   picks by id. This is the only place the two spellings meet. */
 const pickedRoleIds = computed<number[]>({
     get: () =>
         props.roles
@@ -111,30 +94,23 @@ const pickedRoleIds = computed<number[]>({
     },
 });
 
-/** What a role hands its holders, said in words. */
 function grantCount(name: string): string {
     const count = props.role_grants[name]?.length ?? 0;
 
     return `${count} ${count === 1 ? 'permission' : 'permissions'}`;
 }
 
-// -----------------------------------------------------------------------------
+// =========================================================================
 // Permissions granted straight to the account
-// -----------------------------------------------------------------------------
+// =========================================================================
 
 const grants = useForm<{ permissions: string[] }>({
     permissions: [...(props.user?.permissions ?? [])],
 });
 
-/**
- * Which roles hand this account each permission.
- *
- * On an existing account this is the server's answer, about the roles that are
- * actually saved: the roles card above is a separate write, so a box ticked
- * there and not yet saved grants nothing yet and must not read as though it
- * did. While the account is being made there is nothing to ask the server
- * about, so it is worked out from the roles selected and what each one grants.
- */
+/* On an existing account this is the server's answer about the roles actually
+   saved - not the picker above, which is a separate write, so a role ticked and
+   unsaved grants nothing yet. Only while creating is it derived locally. */
 const inherited = computed<Record<string, string[]>>(() => {
     if (props.user !== null) {
         return props.inherited;
@@ -151,46 +127,28 @@ const inherited = computed<Record<string, string[]>>(() => {
     return held;
 });
 
-/** Which roles hand this account the permission, if any do. */
 function via(permission: string): string[] {
     return inherited.value[permission] ?? [];
 }
 
-/**
- * A permission a role already carries is not offered as a direct grant. It is
- * shown ticked and locked instead, because ticking it again would leave a
- * second grant behind that the Roles screen never mentions - take the role
- * away and the ability would stay.
- */
+/*
+  A permission a role carries is ticked and locked rather than offered as a
+  direct grant: pinning it as well would leave a second grant behind that
+  survives the role being taken away. The one exception is a permission held
+  both ways, which stays editable or it could never be undone - and
+  `pinnedOnLoad` is read once at load because that question is about the server,
+  not about the box somebody just unticked.
+*/
 function isInherited(permission: string): boolean {
     return via(permission).length > 0;
 }
 
-/**
- * What was pinned to the account when the page loaded, read once rather than
- * off the live form: the questions below are about the state on the server,
- * and a box being unticked right now is the answer, not the question.
- */
 const pinnedOnLoad = new Set(props.user?.permissions ?? []);
 
-/**
- * Held twice: once through a role and once pinned to the account.
- *
- * Assigning a role clears these, so the only way one survives is a role that
- * gained a permission its holder had already been given separately. It is
- * called out rather than quietly folded into the role badge, because it is the
- * exact shape of what this section exists to make visible - and clearing the
- * box and saving is what removes it.
- */
 function isDoubleHeld(permission: string): boolean {
     return isInherited(permission) && pinnedOnLoad.has(permission);
 }
 
-/**
- * A box is editable when it is about a direct grant. What a role brings is
- * shown and locked, with the one exception above: a duplicate has to be
- * clearable or there would be no way to undo it.
- */
 function isEditable(permission: App.Data.PermissionOptionData): boolean {
     return (
         props.can.permissions &&
@@ -199,7 +157,6 @@ function isEditable(permission: App.Data.PermissionOptionData): boolean {
     );
 }
 
-/** Ticked because a role brings it, or because it is pinned to the account. */
 function isTicked(permission: string): boolean {
     if (isInherited(permission) && !isDoubleHeld(permission)) {
         return true;
@@ -224,11 +181,8 @@ function toggleGroup(group: App.Data.PermissionGroupData, checked: boolean) {
         : grants.permissions.filter((value) => !editable.includes(value));
 }
 
-/**
- * Only the editable ones count towards the group box. A group whose rest comes
- * from a role, or sits above the viewer's own ceiling, would otherwise never
- * read as fully ticked.
- */
+/* Only editable boxes count: a group whose rest comes from a role, or sits
+   above the viewer's own ceiling, would never read as fully ticked. */
 function groupState(
     group: App.Data.PermissionGroupData,
 ): boolean | 'indeterminate' {
@@ -246,36 +200,24 @@ function groupState(
 
 const inheritedCount = computed(() => Object.keys(inherited.value).length);
 
-/**
- * The roles the matrix below is actually drawn from - saved ones once the
- * account exists, because that is what `inherited` answers about. It is not
- * the same list as the picker above while an edit is unsaved, which is the
- * point of showing it here.
- */
+/* Saved roles once the account exists - what `inherited` answers about, and
+   deliberately not the picker above while an edit is unsaved. */
 const effectiveRoles = computed(() => props.user?.roles ?? assignment.roles);
 
-/**
- * A direct grant that the roles now selected would cover. Only reachable while
- * creating, where both halves move at once: tick the permission, then tick a
- * role that already carries it. The server refuses the overlap, so it is said
- * here first rather than after a round trip.
- */
+/* A direct grant the selected roles already cover. The server refuses the
+   overlap, so it is said here first. */
 const redundant = computed(() =>
     props.user !== null
         ? []
         : grants.permissions.filter((permission) => isInherited(permission)),
 );
 
-// -----------------------------------------------------------------------------
+// =========================================================================
 // Saving
-// -----------------------------------------------------------------------------
+// =========================================================================
 
-/**
- * Creating posts the whole account at once - details, roles and direct grants
- * are one thing to fill in, not three. Editing splits them, because each half
- * answers to a different permission and an administrator who may correct a
- * surname is not automatically one who may widen what somebody can do.
- */
+/* Creating posts the whole account at once; editing splits it into three
+   writes, because each half answers to a different permission. */
 function saveDetails() {
     if (props.user === null) {
         details
@@ -316,11 +258,8 @@ function saveGrants() {
     });
 }
 
-/*
- * While creating there is one submit, so an error about a role or a grant
- * comes back on the form that carried it - which declares neither field, hence
- * the widening. Editing posts three forms, each holding its own errors.
- */
+/* While creating there is one submit, so errors about roles and grants come
+   back on `details`, which declares neither field - hence the widening cast. */
 const detailsErrors = computed(
     () => details.errors as Record<string, string | undefined>,
 );
@@ -335,19 +274,9 @@ const permissionsError = computed(() =>
         : grants.errors.permissions,
 );
 
-// -----------------------------------------------------------------------------
-// Password
-// -----------------------------------------------------------------------------
-
 const settingPassword = ref<PasswordSubject | null>(null);
 
-/*
- * The same layout callback the other forms in this application use: one
- * component serves creating and editing, and only the page's own props know
- * which one this is. The trail stops at Roles because that is where the list
- * of people actually lives - it is a panel on that screen, not a page of its
- * own - and a crumb has to go where it says it goes.
- */
+/* The people list is a panel on the Roles screen, not a page of its own. */
 defineOptions({
     layout: (page: { user: App.Data.UserFormData | null }) => ({
         breadcrumbs: [
@@ -359,19 +288,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  One account, and everything about it.
-
-  No back link: the crumb trail sits directly above this, and a second way to
-  the same place one row down reads as a mistake rather than a convenience.
-
-  The cards are separate writes on purpose once the account exists. Correcting
-  a name, moving somebody between roles, pinning a capability to a person and
-  setting the password behind the login are four different kinds of trust, each
-  answering to its own permission - so they get four forms rather than one Save
-  that quietly does all of it. Creating is the exception: there is nothing to
-  edit piecemeal yet, so one button posts the lot.
--->
 <template>
     <Head :title="heading" />
 
@@ -440,10 +356,6 @@ defineOptions({
                                 data-test="field-email"
                             />
                             <InputError :message="details.errors.email" />
-                            <!-- The same rule the profile screen holds: a new
-                                 address has not been shown to reach anybody
-                                 yet, so the account goes back to unverified
-                                 until it is. -->
                             <p
                                 v-if="
                                     props.user &&
@@ -457,8 +369,6 @@ defineOptions({
                             </p>
                         </div>
 
-                        <!-- Only while the account is being made. Afterwards
-                             the password is its own action, below. -->
                         <template v-if="props.user === null">
                             <div>
                                 <Label for="password">
@@ -501,14 +411,11 @@ defineOptions({
                 </div>
             </Card>
 
-            <!-- Editing saves the account on its own, so its button belongs
-                 with it. Creating has one button for the whole page, at the
-                 bottom, because there is nothing to save separately yet. -->
             <div
                 v-if="props.user"
                 class="mt-5 flex items-center justify-end gap-3"
             >
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="rolesIndex().url">Cancel</Link>
                 </Button>
                 <Button
@@ -521,12 +428,7 @@ defineOptions({
             </div>
         </form>
 
-        <!--
-          The job the account does. Its own write once the account exists, and
-          the same one the Roles screen posts - so the two screens cannot
-          disagree about what assigning a role does, including trimming the
-          direct grants the new roles now cover.
-        -->
+        <!-- ===================== Roles ===================== -->
         <form @submit.prevent="saveRoles">
             <Card as="section" class="gap-0 p-0">
                 <div class="border-b border-divider px-5 py-3.5">
@@ -552,11 +454,6 @@ defineOptions({
                         }}
                     </p>
 
-                    <!-- A picker rather than a card each: the list grows
-                         with every role the showroom invents, and an account
-                         holds one or two of them. Read-only it is not a picker
-                         at all - a disabled box you cannot open says less than
-                         the names themselves. -->
                     <template v-if="props.can.assign_roles">
                         <Label for="roles" class="sr-only">Roles</Label>
                         <OptionMultiCombobox
@@ -597,9 +494,6 @@ defineOptions({
                     </div>
                 </div>
 
-                <!-- What a newly ticked role brings only shows in the
-                     permissions card once it is actually saved, because until
-                     then it grants nothing and a locked tick would be a lie. -->
                 <div
                     v-if="props.user && props.can.assign_roles"
                     class="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-4"
@@ -624,13 +518,7 @@ defineOptions({
             </Card>
         </form>
 
-        <!--
-          What this account holds, split into the two halves an administrator
-          has to be able to tell apart. A role grant is shown locked and
-          labelled with the role behind it; a direct grant is the only thing
-          editable here, and it is the one that survives the role being taken
-          away.
-        -->
+        <!-- ===================== Permissions ===================== -->
         <form @submit.prevent="saveGrants">
             <Card as="section" class="gap-0 p-0">
                 <div
@@ -754,10 +642,6 @@ defineOptions({
                                 />
                                 {{ permission.label }}
 
-                                <!-- The whole point of the section: a grant
-                                     that came with a job says which job, so
-                                     nobody mistakes it for one pinned to the
-                                     person. -->
                                 <Badge
                                     v-if="isInherited(permission.value)"
                                     variant="outline"
@@ -790,9 +674,6 @@ defineOptions({
                     v-if="props.can.permissions"
                     class="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-4"
                 >
-                    <!-- Said here rather than after a round trip: a role
-                         ticked above already carries this, and pinning it as
-                         well would leave a grant behind when the role goes. -->
                     <p
                         v-if="redundant.length > 0"
                         class="mr-auto text-xs text-destructive"
@@ -861,14 +742,11 @@ defineOptions({
             </div>
         </Card>
 
-        <!-- One button for the whole page while the account is being made: the
-             details, the roles and the direct grants are one thing to fill in,
-             so they are one thing to submit. -->
         <div
             v-if="props.user === null"
             class="flex items-center justify-end gap-3"
         >
-            <Button as-child variant="quiet">
+            <Button as-child variant="outline">
                 <Link :href="rolesIndex().url">Cancel</Link>
             </Button>
             <Button

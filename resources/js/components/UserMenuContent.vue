@@ -16,10 +16,7 @@ defineProps<{ user: User }>();
 
 const page = usePage();
 
-/**
- * The role they hold, headlined. Null when they hold none, rather than a
- * placeholder - an account waiting to be given a role should look like one.
- */
+/** The role they hold, or null - an account with no role shows nothing here. */
 const roleLabel = computed(() => {
     const roles = page.props.auth.roles ?? [];
 
@@ -38,19 +35,6 @@ const handleLogout = () => {
 };
 </script>
 
-<!--
-  The identity block is tinted rather than ruled off, and the only separator
-  sits above Sign Out - so the menu reads as "you, then what you can do, then
-  the way out".
-
-  One door rather than two: Settings lands on the profile page, which is the
-  first tab of the settings screen and carries the rest beside it. A separate
-  Profile item pointed at that same page under a second name.
-
-  No avatar, here or on the trigger that opens this: nothing in the showroom
-  ever sets one, so the circle was always a pair of initials standing in for a
-  picture that does not exist. The name is already written underneath it.
--->
 <template>
     <DropdownMenuLabel
         class="mb-1 rounded-lg bg-brand-50 p-2.5 font-normal dark:bg-brand-950"

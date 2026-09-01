@@ -5,9 +5,8 @@ use App\Models\User;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Hands one capability straight to an account, which is what a role would
- * otherwise do. Enough for the questions here, which are about the permission
- * rather than about who granted it.
+ * A direct grant rather than a role: these tests are about the permission,
+ * not about who granted it.
  */
 function accountGranted(Permission $permission): User
 {
@@ -44,15 +43,8 @@ test('profile information can be updated', function () {
     expect($user->refresh()->name)->toBe('Test User');
 });
 
-/**
- * The address an account signs in at is also the one a reset would be sent to,
- * so moving it is a takeover rather than a preference. No role grants
- * `profile.email.update` by default; without it the change belongs to the
- * Users screen, behind `users.update`.
- *
- * A posted address is dropped rather than refused: the field is disabled on
- * the form, so anything arriving under that name is a stale page.
- */
+# Dropped rather than refused: the field is disabled on the form, so an
+# address arriving under that name is a stale page, not an attack.
 test('the email address cannot be changed without profile.email.update', function () {
     $user = User::factory()->create(['email' => 'mine@sheffieldafrica.com']);
 
@@ -71,16 +63,10 @@ test('the email address cannot be changed without profile.email.update', functio
 
     expect($user->email)->toBe('mine@sheffieldafrica.com')
         ->and($user->name)->toBe('Test User')
-        /* And the account is not sent back to unverified over a change that
-           never happened. */
+        # Not sent back to unverified over a change that never happened.
         ->and($user->email_verified_at)->not->toBeNull();
 });
 
-/**
- * The other half: a showroom that would rather let its staff correct their own
- * typo grants the permission and gets the field back. The address still goes
- * to unverified, because nobody has been shown to reach the new one.
- */
 test('the email address can be changed with profile.email.update', function () {
     $user = accountGranted(Permission::ProfileEmailUpdate);
 

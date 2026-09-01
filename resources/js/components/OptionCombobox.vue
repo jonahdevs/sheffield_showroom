@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/combobox';
 import { countMatches, matchOptions } from '@/lib/options';
 
-/** The chosen record's id, or null while nothing is chosen. */
 const model = defineModel<number | null>({ required: true });
 
 const props = withDefaults(
@@ -43,19 +42,13 @@ const selected = computed(
     () => props.options.find((option) => option.value === model.value) ?? null,
 );
 
-/*
-  `ignore-filter` on the root, and the narrowing done here instead. Reka's own
-  filter keeps every item mounted and hides the ones that miss, which for a
-  catalogue of over a thousand is a thousand rows built each time the box
-  opens. This renders a screenful and counts the rest.
-*/
+/* `ignore-filter` on the root, and the narrowing done here instead: reka's own
+   filter keeps every item mounted and merely hides the misses, so a catalogue
+   of a thousand builds a thousand rows each time the box opens. */
 const matches = computed(() => matchOptions(props.options, search.value));
 
-/*
-  Whether this list is one with pictures at all. Decided across the whole list
-  rather than per row, so a customer list is not indented by a column of empty
-  frames it will never fill.
-*/
+/* Decided across the whole list rather than per row, so a list with no
+   pictures is not indented by a column of empty frames. */
 const hasImages = computed(() =>
     props.options.some((option) => (option.image_url ?? null) !== null),
 );
@@ -64,7 +57,6 @@ const hiddenCount = computed(
     () => countMatches(props.options, search.value) - matches.value.length,
 );
 
-/** A term left over from last time reads as a box that lost its list. */
 watch(open, (isOpen) => {
     if (!isOpen) {
         search.value = '';
@@ -72,11 +64,6 @@ watch(open, (isOpen) => {
 });
 </script>
 
-<!--
-  One record picked out of many, by name or by the line under it - a customer
-  is found by their phone number as often as by their name, so both are
-  searched.
--->
 <template>
     <Combobox v-model="model" v-model:open="open" ignore-filter class="w-full">
         <ComboboxAnchor as-child class="w-full">
@@ -147,9 +134,6 @@ watch(open, (isOpen) => {
                             "
                         />
 
-                        <!-- The frame is drawn whether or not there is a
-                             picture in it, so the labels stay on one vertical
-                             line down the list. -->
                         <span
                             v-if="hasImages"
                             class="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
@@ -165,9 +149,6 @@ watch(open, (isOpen) => {
                             <ImageOff v-else class="size-3.5 text-faint" />
                         </span>
 
-                        <!-- Stacked rather than side by side: in a side
-                             panel a code sharing the row leaves the name
-                             too little to be read at all. -->
                         <span class="flex min-w-0 flex-1 flex-col">
                             <span class="truncate">{{ option.label }}</span>
                             <span
@@ -181,8 +162,6 @@ watch(open, (isOpen) => {
                 </ComboboxGroup>
             </ComboboxViewport>
 
-            <!-- Said rather than silently truncated: a list that stops at
-                 fifty with no explanation reads as a missing record. -->
             <p
                 v-if="hiddenCount > 0"
                 class="border-t px-3 py-2 text-center text-xs text-faint"

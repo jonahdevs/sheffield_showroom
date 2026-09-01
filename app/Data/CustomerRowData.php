@@ -10,10 +10,6 @@ use Carbon\CarbonImmutable;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * A customer as the list shows them. Deliberately thinner than
- * `CustomerFormData`: the table has no column for an address or a note.
- */
 #[TypeScript(location: ['App', 'Data'])]
 class CustomerRowData extends Data
 {
@@ -37,27 +33,17 @@ class CustomerRowData extends Data
             type: $customer->type,
             type_label: $customer->type->label(),
             display_name: $customer->displayName(),
-            /* The two names in their own right, because the table gives each
-               a column. A company customer is a person and a business, and one
-               cell cannot show both without choosing between them. */
             name: $customer->name,
             company_name: $customer->company_name,
             phone: $customer->phone,
             email: $customer->email,
-            /* Both come off `withCount`/`withMax` in the list query. Defaulted
-               rather than required, so a row built outside that query reads as
-               nobody having visited rather than failing. */
             visits_count: (int) ($customer->visits_count ?? 0),
             last_visit: self::lastVisit($customer),
         );
     }
 
-    /**
-     * When they were last in, as the column aggregate hands it over.
-     *
-     * `withMax` returns whatever the driver gave it - a string on some, a cast
-     * value on others - so it is parsed rather than formatted directly.
-     */
+    # `withMax` returns whatever the driver gave it - a string on some, a cast
+    # value on others - so parse rather than formatting it directly.
     private static function lastVisit(Customer $customer): ?string
     {
         $moment = $customer->visits_max_visited_at ?? null;

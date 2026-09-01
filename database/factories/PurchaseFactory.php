@@ -24,8 +24,6 @@ class PurchaseFactory extends Factory
             'customer_id' => Customer::factory(),
             'visit_id' => null,
             'reference' => strtoupper(fake()->bothify('INV-####')),
-            /* Showroom money. Wide enough that a campaign threshold has
-               something to fall either side of. */
             'amount' => fake()->randomFloat(2, 5_000, 500_000),
             'status' => PurchaseStatus::Completed,
             'purchased_at' => fake()->dateTimeBetween('-3 months', 'now'),
@@ -48,7 +46,7 @@ class PurchaseFactory extends Factory
         ]);
     }
 
-    /** Worth an exact amount, for a test standing either side of a threshold. */
+    /** For a test standing either side of a threshold. */
     public function worth(float $amount): static
     {
         return $this->state(fn (array $attributes) => [

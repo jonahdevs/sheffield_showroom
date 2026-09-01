@@ -17,14 +17,9 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * Giving a customer their turn, and running it for them when they cannot.
- *
- * The staff fallback calls exactly the same `ShuffleRewardService::claim()`
- * the customer's phone does. There is deliberately no second implementation:
- * two ways of choosing a reward would be two ways of choosing it wrongly, and
- * the one behind the counter would be the one nobody tested.
- */
+# The staff fallback calls the same `ShuffleRewardService::claim()` the customer's phone
+# does. Never write a second implementation: two ways of choosing a reward is two ways of
+# choosing it wrongly.
 class ShuffleSessionController extends Controller
 {
     public function __construct(
@@ -33,13 +28,6 @@ class ShuffleSessionController extends Controller
         private readonly RewardEligibilityService $eligibility,
     ) {}
 
-    /**
-     * Mints the turn a qualifying purchase has earned.
-     *
-     * The refusal is shown rather than swallowed. A member of staff standing
-     * in front of a customer needs to know that the sale was two thousand
-     * short, not merely that there is no button.
-     */
     public function store(Request $request, Purchase $purchase): RedirectResponse
     {
         $this->authorize('create', ShuffleSession::class);
@@ -61,12 +49,8 @@ class ShuffleSessionController extends Controller
         return to_route('admin.shuffles.show', $session);
     }
 
-    /**
-     * The QR screen: a code big enough to scan from across a counter.
-     *
-     * This is the only authenticated page that carries a session token, and it
-     * carries it because that is the whole job - see `ShuffleSessionData`.
-     */
+    # The only authenticated page that carries a session token, because that is the job.
+
     public function show(Request $request, ShuffleSession $session): Response
     {
         $this->authorize('view', $session);
@@ -85,10 +69,6 @@ class ShuffleSessionController extends Controller
         ]);
     }
 
-    /**
-     * The fallback: staff runs the shuffle on the showroom screen because the
-     * customer's phone will not scan, or they do not have one with them.
-     */
     public function run(ShuffleSession $session): RedirectResponse
     {
         $this->authorize('run', $session);
@@ -102,7 +82,6 @@ class ShuffleSessionController extends Controller
         return back();
     }
 
-    /** Taking a turn back before it is used. */
     public function destroy(ShuffleSession $session): RedirectResponse
     {
         $this->authorize('cancel', $session);

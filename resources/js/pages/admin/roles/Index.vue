@@ -105,15 +105,10 @@ function headline(name: string): string {
     return name.replace(/-/g, ' ');
 }
 
-// -----------------------------------------------------------------------------
-// Assigning roles
-// -----------------------------------------------------------------------------
-
 const assigning = ref<App.Data.RoleHolderData | null>(null);
 
 const assignForm = useForm<{ roles: string[] }>({ roles: [] });
 
-/** Only roles the viewer could have built themselves are worth offering. */
 const assignableRoles = computed(() => props.roles);
 
 function openAssign(holder: App.Data.RoleHolderData) {
@@ -141,22 +136,12 @@ function submitAssign() {
     });
 }
 
-// -----------------------------------------------------------------------------
-// Row actions
-// -----------------------------------------------------------------------------
-
 const settingPassword = ref<PasswordSubject | null>(null);
 
 /*
- * Each item is asked about separately rather than the whole menu being hidden
- * on your own row. Correcting your own name is an ordinary thing to do, where
- * handing yourself a role and setting your own password without typing the old
- * one are both ways round a check - so the row keeps the first and drops the
- * other two.
- *
- * `is_manageable` is the server's answer for this row: it is false for an
- * account that can do more than the viewer can, so the menu never offers a
- * door the controller would shut.
+ * `is_self` drops only the two items that are ways round a check: granting
+ * yourself a role, and setting your own password without the old one. Editing
+ * your own name stays. `is_manageable` is the server's per-row answer.
  */
 function canReRole(holder: App.Data.RoleHolderData): boolean {
     return props.can.assign && !holder.is_self;
@@ -170,13 +155,9 @@ function hasActions(holder: App.Data.RoleHolderData): boolean {
     return holder.is_manageable || canReRole(holder);
 }
 
-// -----------------------------------------------------------------------------
-// Deleting a role
-// -----------------------------------------------------------------------------
-
 /**
- * A role nobody holds is a plain confirmation. One with members has to say
- * where they go first: `RoleController::destroy` refuses to strand them.
+ * A role with members must name where they go: `RoleController::destroy`
+ * refuses to strand them.
  */
 async function removeRole(role: App.Data.RoleData) {
     if (role.holders === 0) {
@@ -221,11 +202,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  The roles this showroom hands out, and the people holding them. What a role
-  can actually do is edited one screen along, on the permission matrix - this
-  page is about which roles exist and who is in them.
--->
 <template>
     <Head title="Roles" />
 
@@ -258,7 +234,6 @@ defineOptions({
                         {{ headline(role.name) }}
                     </h2>
 
-                    <!-- A role with nobody in it wears no face. -->
                     <Avatar
                         v-if="role.first_holder_name"
                         class="size-8 shrink-0"
@@ -308,9 +283,6 @@ defineOptions({
                         }}
                     </Link>
 
-                    <!-- A badge by the name would say this twice; the lock
-                         says it where the delete button would otherwise be,
-                         and explains itself on hover. -->
                     <Tooltip v-if="role.is_system">
                         <TooltipTrigger as-child>
                             <span
@@ -326,7 +298,7 @@ defineOptions({
                     </Tooltip>
                     <Button
                         v-else-if="props.can.delete"
-                        variant="quiet"
+                        variant="outline"
                         size="icon"
                         class="size-8.5 rounded-[9px]"
                         :aria-label="`Delete the ${headline(role.name)} role`"
@@ -339,10 +311,6 @@ defineOptions({
             </Card>
         </div>
 
-        <!--
-          Who holds what. Roles mean nothing until somebody is in one, so the
-          list of people sits under the list of roles rather than a page away.
-        -->
         <Card
             v-if="props.can.view_users && props.holders"
             class="min-w-0 gap-0 overflow-hidden p-0"
@@ -421,9 +389,8 @@ defineOptions({
                 </div>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "nobody matches" over rows
-                 that are about to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: reordering these flashes
+                 "nobody matches" over rows that are about to land. -->
             <TableSkeleton
                 v-if="processing"
                 class="px-5 py-2"
@@ -445,9 +412,6 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
-                    <!-- Semibold rather than bold: the lead cell of every row below
-                         is itself text-xs font-bold, so a bold header would read as
-                         one more row instead of the label for all of them. -->
                     <div
                         class="grid min-w-[680px] grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
@@ -507,12 +471,9 @@ defineOptions({
                                     No role
                                 </span>
 
-                                <!-- A capability pinned to the person rather
-                                     than to a role appears nowhere else on
-                                     this screen: take every role away and it
-                                     stays. So the row says it, or the page
-                                     would quietly lie about what somebody
-                                     can do. -->
+                                <!-- Permissions granted to the account itself
+                                     survive every role being taken away, so
+                                     the row has to say they exist. -->
                                 <Tooltip v-if="holder.direct_permissions > 0">
                                     <TooltipTrigger as-child>
                                         <Badge
@@ -573,9 +534,6 @@ defineOptions({
                                             Change roles
                                         </DropdownMenuItem>
 
-                                        <!-- Last, and separated: it is the one
-                                             item here that cannot be undone by
-                                             putting the old value back. -->
                                         <template v-if="canSetPassword(holder)">
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem

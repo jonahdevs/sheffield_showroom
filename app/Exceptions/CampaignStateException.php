@@ -6,15 +6,6 @@ namespace App\Exceptions;
 
 use RuntimeException;
 
-/**
- * An administrator asking a campaign to do something its state does not allow.
- *
- * Separate from `ShuffleUnavailableException` because the audience is
- * different: this is somebody at a desk being told they cannot publish an
- * empty campaign, not a customer at a counter being told the promotion is
- * over. These are worth surfacing as validation errors on the form that
- * caused them.
- */
 class CampaignStateException extends RuntimeException
 {
     public static function alreadyPublished(): self
@@ -31,11 +22,8 @@ class CampaignStateException extends RuntimeException
         );
     }
 
-    /**
-     * Only one campaign runs at a time. Two would leave eligibility guessing
-     * which promotion a purchase was measured against, and a customer holding
-     * a reward from the wrong one.
-     */
+    # Only one campaign runs at a time: two would leave eligibility guessing
+    # which promotion a purchase was measured against.
     public static function anotherIsActive(string $name): self
     {
         return new self(

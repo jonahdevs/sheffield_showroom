@@ -4,30 +4,27 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Data\OptionData;
 use App\Data\RewardCampaignData;
 use App\Enums\Permission;
 use App\Exceptions\CampaignStateException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RewardCampaignRequest;
+use App\Models\Product;
 use App\Models\Reward;
 use App\Models\RewardCampaign;
 use App\Services\Rewards\CampaignService;
 use App\Services\Rewards\RewardPoolService;
 use App\Support\Http\PageSize;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * The promotions themselves.
- *
- * Everything that changes a campaign's state goes through `CampaignService`
- * rather than being written here, because those transitions carry rules a
- * controller cannot hold: publishing is one-way, only one campaign runs at a
- * time, and both have to be decided while the row is locked.
- */
+# Every state change goes through `CampaignService`, never written here: publishing is
+# one-way and only one campaign runs at a time, and both must be decided under the row lock.
 class RewardCampaignController extends Controller
 {
     public function __construct(
@@ -43,8 +40,6 @@ class RewardCampaignController extends Controller
 
         $campaigns = RewardCampaign::query()
             ->withCount('sessions')
-            /* Newest first: the one somebody wants is almost always the one
-               they just made or the one running now. */
             ->latest('id')
             ->paginate(PageSize::from($request))
             ->withQueryString()
@@ -72,38 +67,34 @@ class RewardCampaignController extends Controller
         return Inertia::render('admin/rewards/Form', [
             'campaign' => null,
             'catalogue' => $this->catalogue(),
+            'products' => $this->products(),
             'can' => ['update' => true, 'publish' => false, 'delete' => false],
         ]);
     }
 
-    /**
-     * One screen for the campaign and its drawer.
-     *
-     * A published campaign opens the same form with its rewards locked - the
-     * quantities are inventory now, and `RewardCampaignRequest` drops anything
-     * arriving under `rewards` rather than refusing it, so a stale tab cannot
-     * rewrite the odds.
-     */
+    # `RewardCampaignRequest` drops anything arriving under `rewards` for a published
+    # campaign rather than refusing it, so a stale tab cannot rewrite the odds.
     public function edit(Request $request, RewardCampaign $campaign): Response
     {
         $this->authorize('view', $campaign);
 
-        /* Three hops for one table: the attachment, the catalogue row it names
-           and the products it is paired to. Loading them here is what keeps
-           `CampaignRewardData::fromModel` from asking per row. */
+        # `withTrashed()` on the pairing is load-bearing, and the `:id,name` shorthand cannot
+        # express it. Withdrawing a product leaves its `campaign_reward_product` row standing;
+        # without this the pairing vanishes off the screen and the next save posts back what
+        # was shown, unpairing it for good.
         $campaign->load([
             'rewards.reward.product:id,name',
-            'rewards.qualifyingProducts:id,name',
+            'rewards.qualifyingProducts' => fn (BelongsToMany $products) => $products
+                ->withTrashed()
+                ->select('products.id', 'products.name'),
         ])->loadCount('sessions');
 
         $viewer = $request->user();
 
         return Inertia::render('admin/rewards/Form', [
             'campaign' => RewardCampaignData::fromModel($campaign, $this->pool->inventory($campaign)),
-            /* Everything still on offer, plus whatever this campaign already
-               holds - a retired reward stays pickable on the draft that had it
-               before it was retired, or the form would drop a row on save. */
             'catalogue' => $this->catalogue($campaign),
+            'products' => $this->products(),
             'can' => [
                 'update' => $viewer->can('update', $campaign),
                 'publish' => $viewer->can('publish', $campaign),
@@ -144,8 +135,7 @@ class RewardCampaignController extends Controller
                 'max_shuffles_per_customer', 'minimum_purchase_amount',
             ]));
 
-            /* Only while it is a draft. After publication the pool has been
-               written and the definitions behind it are history. */
+            # Drafts only. After publication the pool is written and the definitions are history.
             if ($request->editsRewards()) {
                 $campaign->rewards()->delete();
                 $this->writeRewards($campaign, $request);
@@ -160,12 +150,7 @@ class RewardCampaignController extends Controller
         return to_route('admin.rewards.edit', $campaign);
     }
 
-    /**
-     * Writes the pool and opens the doors.
-     *
-     * The one action here that cannot be undone, which is why it is its own
-     * route and its own button rather than a checkbox on the form.
-     */
+    # Writes the pool and opens the doors. One-way — hence its own route, not a form checkbox.
     public function publish(RewardCampaign $campaign): RedirectResponse
     {
         $this->authorize('publish', $campaign);
@@ -187,13 +172,6 @@ class RewardCampaignController extends Controller
         return back();
     }
 
-    /**
-     * Starting, stopping and ending a campaign.
-     *
-     * One route rather than three, because they are one decision from the
-     * screen's point of view - a row of buttons that each set a state - and
-     * three near-identical actions would be three places to forget a check.
-     */
     public function transition(Request $request, RewardCampaign $campaign): RedirectResponse
     {
         $this->authorize('update', $campaign);
@@ -223,10 +201,6 @@ class RewardCampaignController extends Controller
         return back();
     }
 
-    /**
-     * Only ever a way to tidy away a draft nobody used - the policy refuses a
-     * published one, because a campaign with a pool has history.
-     */
     public function destroy(RewardCampaign $campaign): RedirectResponse
     {
         $this->authorize('delete', $campaign);
@@ -244,13 +218,10 @@ class RewardCampaignController extends Controller
     }
 
     /**
-     * The rewards the form may choose from.
-     *
-     * The active catalogue, plus anything this campaign already holds. A
-     * reward retired after a draft picked it up has to stay in the list, or
-     * reopening that draft would show a blank row and saving it would drop the
-     * reward - see `RewardCampaignRequest::refuseRetiredRewards()`, which
-     * refuses only newly added retired rewards for the same reason.
+     * The active catalogue *plus* whatever this campaign already holds: a reward retired
+     * after a draft picked it up must stay pickable, or reopening the draft shows a blank
+     * row and saving drops the reward. `RewardCampaignRequest::refuseRetiredRewards()`
+     * refuses only newly added retired rewards, for the same reason.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -280,20 +251,25 @@ class RewardCampaignController extends Controller
     }
 
     /**
-     * The reward attachments, as the form sent them.
+     * Deliberately *not* widened with withdrawn products the way `catalogue()` is widened
+     * with held rewards. An existing pairing is named through the combobox's `selected`
+     * prop, which keeps the chip labelled without offering a withdrawn product to new rows.
      *
-     * Rewritten wholesale rather than diffed: this only ever runs on a draft,
-     * where nothing points at an attachment yet, so replacing them is both
-     * simpler and impossible to get subtly wrong.
-     *
-     * Nothing describing the reward is written here. The row names a catalogue
-     * entry and carries only what the campaign decides - how many, how long,
-     * and which products put somebody in the running.
+     * @return array<int, OptionData>
      */
+    private function products(): array
+    {
+        return Product::query()
+            ->orderBy('name')
+            ->get()
+            ->map(OptionData::fromProduct(...))
+            ->all();
+    }
+
+    # Rewritten wholesale rather than diffed: only ever runs on a draft, where nothing
+    # points at an attachment yet.
     private function writeRewards(RewardCampaign $campaign, RewardCampaignRequest $request): void
     {
-        /* One query for the whole form rather than one per row, and the
-           source of the fallback below. */
         $catalogue = Reward::query()
             ->whereIn('id', array_column($request->rewards(), 'reward_id'))
             ->get()
@@ -305,10 +281,8 @@ class RewardCampaignController extends Controller
             $attachment = $campaign->rewards()->create([
                 'reward_id' => $reward['reward_id'],
                 'quantity' => $reward['quantity'],
-                /* The campaign's own deadline, falling back to whatever the
-                   catalogue suggests. Copied down rather than read through at
-                   win time, so retuning the catalogue later cannot move a
-                   deadline this campaign has already promised. */
+                # Copied down, never read through at win time, so retuning the catalogue
+                # cannot move a deadline this campaign has already promised.
                 'validity_days' => $reward['validity_days']
                     ?? $catalogueRow?->default_validity_days,
                 'is_active' => true,

@@ -13,26 +13,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Whether a purchase has earned somebody a turn.
- *
- * Kept in one place on purpose. Every one of these questions is the sort that
- * gets asked again on a screen, in a controller, and in the button that
- * decides whether to show a QR code - and a rule that lives in three places is
- * a rule that will disagree with itself the first time somebody changes it.
- *
- * The answer carries its reason. A member of staff standing in front of a
- * customer needs to know *why* there is no reward, and "not eligible" sends
- * them to find a manager.
+ * Whether a purchase has earned somebody a turn. The one place that answers it, so the
+ * screen, the controller and the claim cannot disagree about the same receipt.
  */
 class RewardEligibilityService
 {
     /**
-     * The campaign this purchase would be measured against, or null when
-     * nothing is running.
-     *
-     * At most one campaign is active at a time - `CampaignService` holds that -
-     * so this takes the first deterministically rather than trusting that only
-     * one came back.
+     * At most one campaign runs at a time - `CampaignService` holds that invariant - so
+     * this takes the first rather than trusting that only one came back.
      */
     public function campaignFor(Purchase $purchase): ?RewardCampaign
     {
@@ -42,12 +30,7 @@ class RewardEligibilityService
     }
 
     /**
-     * Why this purchase cannot earn a turn, or null when it can.
-     *
-     * Ordered the way a person would ask: is there a promotion at all, does
-     * this sale count, is it big enough, have they had their turn, and is
-     * there anything left to win. The cheapest questions come first, so the
-     * two that touch the database only run when they have to.
+     * Why this purchase cannot earn a turn, or null when it can. Cheapest checks first.
      */
     public function refusalFor(Purchase $purchase, ?RewardCampaign $campaign = null): ?string
     {
@@ -75,9 +58,8 @@ class RewardEligibilityService
             );
         }
 
-        /* One turn per sale. The unique index on `shuffle_sessions.purchase_id`
-           is what actually enforces it - this is so the screen can say so
-           before somebody presses the button. */
+        # One turn per sale is enforced by the unique index on
+        # `shuffle_sessions.purchase_id`; this only lets the screen say so first.
         if ($purchase->shuffleSession()->exists()) {
             return 'This purchase has already been given a shuffle.';
         }
@@ -96,45 +78,61 @@ class RewardEligibilityService
             return 'Every reward in this campaign has been won.';
         }
 
-        /* Last, and only when something is paired. Everything above is about
-           the sale; this is about what is left that this particular sale can
-           win, which is a different question and a more expensive one. */
-        if ($this->availableCountFor($campaign, $purchase->product_id) === 0) {
-            return $purchase->product_id === null
-                ? 'The rewards left in this campaign are all paired to a product, and no product was recorded on this purchase.'
-                : 'Nothing left in this campaign is paired with what this customer bought.';
+        $productIds = $this->productIdsOn($purchase);
+
+        if ($this->availableCountFor($campaign, $productIds) === 0) {
+            return $productIds === []
+                ? 'The rewards left in this campaign are all paired to a product, and nothing was recorded as bought on this purchase.'
+                : 'Nothing left in this campaign is paired with anything this customer bought.';
         }
 
         return null;
     }
 
     /**
-     * The attachments in this campaign that a purchase of this product is in
-     * the running for.
-     *
-     * A reward naming no products qualifies against anything - that is the
-     * common case and the reason pairing is opt-in. A reward that does name
-     * products is in the running only for the ones it named, so a purchase
-     * with nothing recorded on it wins only from the unpaired set.
-     *
-     * One query, and deliberately separate from the claim. `ShuffleRewardService`
-     * calls this before it opens its locking statement so that statement stays
-     * one table and one index - see `.ai/rules/rewards.md`.
+     * Reads the loaded relation when there is one - a list that does not eager-load
+     * `products` pays a query per row. Null is a staff-run turn and names nothing.
      *
      * @return array<int, int>
      */
-    public function qualifyingRewardIds(RewardCampaign $campaign, ?int $productId): array
+    public function productIdsOn(?Purchase $purchase): array
+    {
+        if ($purchase === null) {
+            return [];
+        }
+
+        $products = $purchase->relationLoaded('products')
+            ? $purchase->products->pluck('id')
+            : $purchase->products()->pluck('products.id');
+
+        return $products->map(fn (int|string $id): int => (int) $id)->all();
+    }
+
+    /**
+     * A reward naming no products qualifies against any purchase, and that silence is
+     * the common case. A reward that does name products qualifies on *any one* of them.
+     * An empty $productIds draws only from the unpaired set.
+     *
+     * Called before `ShuffleRewardService` opens its locking statement, so that
+     * statement stays one table and one index. Do not fold it into the claim.
+     *
+     * @param  array<int, int>  $productIds
+     * @return array<int, int>
+     */
+    public function qualifyingRewardIds(RewardCampaign $campaign, array $productIds): array
     {
         return CampaignReward::query()
             ->where('campaign_id', $campaign->id)
             ->where('is_active', true)
-            ->where(function (Builder $query) use ($productId): void {
+            ->where(function (Builder $query) use ($productIds): void {
                 $query->whereDoesntHave('qualifyingProducts');
 
-                if ($productId !== null) {
+                if ($productIds !== []) {
+                    # Qualified: the relation joins the pivot, and `product_id` is a
+                    # column on both sides of it.
                     $query->orWhereHas(
                         'qualifyingProducts',
-                        fn (Builder $products) => $products->whereKey($productId),
+                        fn (Builder $products) => $products->whereIn('products.id', $productIds),
                     );
                 }
             })
@@ -144,15 +142,14 @@ class RewardEligibilityService
     }
 
     /**
-     * How many units this purchase could actually win.
+     * Not `RewardCampaign::availableCount()`, which counts the whole drawer - a campaign
+     * full of trays has nothing for somebody who did not buy an oven.
      *
-     * Not the same as `RewardCampaign::availableCount()`, which counts the
-     * whole drawer. A campaign can be full of trays and have nothing at all
-     * for somebody who did not buy an oven.
+     * @param  array<int, int>  $productIds
      */
-    public function availableCountFor(RewardCampaign $campaign, ?int $productId): int
+    public function availableCountFor(RewardCampaign $campaign, array $productIds): int
     {
-        $rewardIds = $this->qualifyingRewardIds($campaign, $productId);
+        $rewardIds = $this->qualifyingRewardIds($campaign, $productIds);
 
         if ($rewardIds === []) {
             return 0;
@@ -164,18 +161,14 @@ class RewardEligibilityService
             ->count();
     }
 
-    /** Whether a turn can be minted for this purchase. */
     public function qualifies(Purchase $purchase, ?RewardCampaign $campaign = null): bool
     {
         return $this->refusalFor($purchase, $campaign) === null;
     }
 
     /**
-     * How many turns this customer has had in this campaign.
-     *
-     * A cancelled turn does not count against them - it was taken back by
-     * staff, not used - but an expired one does: they were given their chance
-     * and the window closed.
+     * A cancelled turn does not count against the customer - staff took it back - but an
+     * expired one does: they were given their chance and the window closed.
      */
     private function turnsTaken(RewardCampaign $campaign, int $customerId): int
     {

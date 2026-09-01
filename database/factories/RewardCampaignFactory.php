@@ -22,9 +22,8 @@ class RewardCampaignFactory extends Factory
         return [
             'name' => fake()->monthName().' showroom rewards',
             'description' => fake()->optional()->sentence(),
-            /* Draft by default: a campaign has no pool until somebody
-               publishes it, and a fixture that arrives already running would
-               let a test shuffle against an empty drawer. */
+            # Draft by default: a fixture arriving already running would
+            # let a test shuffle against an empty drawer.
             'status' => CampaignStatus::Draft,
             'starts_at' => null,
             'ends_at' => null,
@@ -34,7 +33,7 @@ class RewardCampaignFactory extends Factory
         ];
     }
 
-    /** Running now, with the calendar deliberately open at both ends. */
+    /** Running now. */
     public function active(): static
     {
         return $this->state(fn (array $attributes) => [

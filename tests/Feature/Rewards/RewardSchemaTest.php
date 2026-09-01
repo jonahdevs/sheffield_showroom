@@ -11,16 +11,9 @@ use App\Models\ShuffleSession;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 
-/**
- * The constraints under the reward feature, tested against the database rather
- * than against the code that is supposed to respect them.
- *
- * The claiming transaction takes a row lock and should make all three of these
- * unreachable. These tests are here for the day somebody adds a second path to
- * these tables and gets the locking wrong: the database has to refuse, so that
- * the failure is an error rather than a customer holding a reward that was
- * already given away.
- */
+# The claiming transaction takes a row lock, so these three are unreachable
+# through the application as it stands. They are here for the day somebody
+# adds a second path to these tables and gets the locking wrong.
 it('refuses a second result against the same turn', function () {
     $result = ShuffleResult::factory()->create();
 
@@ -37,11 +30,6 @@ it('refuses to hand the same reward unit to two people', function () {
     ]))->toThrow(QueryException::class);
 });
 
-/**
- * The rule the whole entitlement model rests on. Held by a unique index rather
- * than by the eligibility service, because a service can be raced by two staff
- * pressing the button at once and an index cannot.
- */
 it('refuses a second turn against the same purchase', function () {
     $purchase = Purchase::factory()->create();
 
@@ -52,11 +40,6 @@ it('refuses a second turn against the same purchase', function () {
     ]))->toThrow(QueryException::class);
 });
 
-/**
- * The other half of that index: nulls repeat. A staff-run turn with no
- * purchase behind it has to stay possible, and several of them must not
- * collide with each other.
- */
 it('allows any number of turns with no purchase behind them', function () {
     ShuffleSession::factory()->count(3)->create(['purchase_id' => null]);
 
@@ -84,9 +67,9 @@ it('will not drop a campaign that has given somebody a turn', function () {
         ->toThrow(QueryException::class);
 });
 
-// -----------------------------------------------------------------------------
-// What the models say about state
-// -----------------------------------------------------------------------------
+# =========================================================================
+# What the models say about state
+# =========================================================================
 
 it('only calls a campaign running when it is active and the calendar agrees', function (
     CampaignStatus $status,
@@ -110,11 +93,6 @@ it('only calls a campaign running when it is active and the calendar agrees', fu
     'still a draft' => [CampaignStatus::Draft, null, null, false],
 ]);
 
-/**
- * Expiry is stamped when a reward is won, never recomputed. An administrator
- * lengthening `validity_days` afterwards must not move a deadline somebody was
- * already given.
- */
 it('reads an expiry off the reward definition at the moment of winning', function () {
     $wonAt = CarbonImmutable::parse('2026-08-31 10:00:00');
 
@@ -142,9 +120,8 @@ it('counts what is left off the pool rather than off the quantity loaded', funct
         'campaign_reward_id' => $reward->id,
     ]);
 
-    /* `quantity` is what was loaded and never falls; a void unit is off the
-       table but still counted as loaded, which is what makes the reporting
-       reconcile. */
+    # `quantity` is what was loaded and never falls: a void unit is off the
+    # table but still counted as loaded.
     expect($reward->quantity)->toBe(10)
         ->and($reward->availableCount())->toBe(6)
         ->and($campaign->availableCount())->toBe(6)

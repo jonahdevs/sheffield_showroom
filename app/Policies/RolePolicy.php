@@ -30,10 +30,8 @@ class RolePolicy
         return $user->can(Permission::RolesDelete->value) && $role->isEditable();
     }
 
-    /**
-     * Handing a role to somebody. Never to yourself: an account that can widen
-     * its own reach is a ceiling that does not hold.
-     */
+    # Never to yourself: an account that can widen its own reach is a ceiling
+    # that does not hold.
     public function assignTo(User $user, User $subject): bool
     {
         return $user->isNot($subject) && $user->can(Permission::RolesAssign->value);

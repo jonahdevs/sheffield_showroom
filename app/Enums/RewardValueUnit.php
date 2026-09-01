@@ -6,13 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * How to read the number on a reward.
- *
- * `10` means nothing on its own: ten per cent off is not ten shillings off.
- * The column is nullable alongside `value` itself, because most rewards here
- * are services whose worth is written in their terms rather than counted.
- */
 #[TypeScript]
 enum RewardValueUnit: string
 {
@@ -27,12 +20,6 @@ enum RewardValueUnit: string
         };
     }
 
-    /**
-     * The value as somebody reads it off a card.
-     *
-     * A single currency is assumed throughout, the same way the customer form
-     * assumes Kenya: a showroom on one floor in Nairobi does not price in two.
-     */
     public function format(float $value): string
     {
         return match ($this) {

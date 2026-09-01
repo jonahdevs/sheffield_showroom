@@ -78,12 +78,6 @@ class Customer extends Model
     }
 
     /**
-     * Every call they have made at the showroom.
-     *
-     * A removed visit is not one of them: `Visit` soft deletes, so the
-     * relation carries its own scope and a count taken through here is a count
-     * of what still stands.
-     *
      * @return HasMany<Visit, $this>
      */
     public function visits(): HasMany
@@ -92,12 +86,6 @@ class Customer extends Model
     }
 
     /**
-     * What they have bought.
-     *
-     * The inverse of `Purchase::customer`, and the thing a reward campaign is
-     * measured against - `RewardEligibilityService` asks how much a sale was
-     * worth and whether it has already earned a turn.
-     *
      * @return HasMany<Purchase, $this>
      */
     public function purchases(): HasMany
@@ -105,10 +93,6 @@ class Customer extends Model
         return $this->hasMany(Purchase::class);
     }
 
-    /**
-     * What to call them. A company is named by the company, not by whoever
-     * from it walked in - that person is `name`, and they are who you ask for.
-     */
     public function displayName(): string
     {
         return $this->isCompany()
@@ -116,9 +100,6 @@ class Customer extends Model
             : (string) $this->name;
     }
 
-    /**
-     * The address as one line, skipping whatever was left blank.
-     */
     public function addressLine(): ?string
     {
         $parts = array_filter([
@@ -143,21 +124,12 @@ class Customer extends Model
         return $this->type === CustomerType::Individual;
     }
 
-    /**
-     * How many digits of a number identify the subscriber, once the country
-     * code and the trunk prefix are off the front. Nine covers Kenya and its
-     * neighbours, which is who walks into this showroom.
-     */
+    # Digits identifying the subscriber once the country code and trunk
+    # prefix are off the front. Nine covers Kenya and its neighbours.
     private const SUBSCRIBER_DIGITS = 9;
 
     /**
-     * Search across both names, the email, the ID number and the phone.
-     *
-     * People write a number down however they please and the record keeps
-     * whatever shape it was given, so both sides are reduced to digits and
-     * compared on their tail. That is what makes `0722 000 111`,
-     * `0722000111` and `+254722000111` all find each other: strip the
-     * punctuation and the last nine digits are the same number.
+     * Phone is compared on the stripped subscriber tail - see `matchingPhone`.
      *
      * @param  Builder<static>  $query
      */
@@ -185,11 +157,6 @@ class Customer extends Model
         });
     }
 
-    /**
-     * The digits of a number that identify the subscriber: everything after a
-     * country code or a trunk prefix. A term shorter than that is used whole,
-     * so a partial number still finds something.
-     */
     private static function subscriberTail(string $term): string
     {
         $digits = preg_replace('/\D+/', '', $term) ?? '';
@@ -209,13 +176,8 @@ class Customer extends Model
     }
 
     /**
-     * The customer reachable on this number, whichever way it was written.
-     *
-     * The number is the one thing a returning visitor gives the same way
-     * twice, so it is what stops the visit form filing them a second time
-     * under a slightly different spelling of their name. Compared on the
-     * subscriber tail for the same reason `search()` is: `0722 000 111` and
-     * `+254722000111` are one telephone.
+     * Compared on the stripped subscriber tail, not the string: `0722 000 111`
+     * and `+254722000111` are one telephone.
      *
      * @param  Builder<static>  $query
      */
@@ -225,8 +187,8 @@ class Customer extends Model
         $tail = self::subscriberTail($phone);
 
         if ($tail === '') {
-            /* Nothing to match on. Matched against no one rather than against
-               everyone, which would attach the visit to a stranger. */
+            # No one rather than everyone - the latter attaches the visit to
+            # a stranger.
             $query->whereRaw('1 = 0');
 
             return;

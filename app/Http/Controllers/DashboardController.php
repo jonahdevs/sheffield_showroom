@@ -31,20 +31,12 @@ use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * The showroom at a glance: how many came in over a window, why, from where,
- * what they were shown, and who took them.
- *
- * Every panel counts in the database rather than in PHP. The dashboard is the
- * one screen that reads the whole log at once, and a page that pulled a
- * quarter's visits into memory to add them up would be the first thing to fall
- * over as the log grows.
- *
- * Every panel also runs through `visible()`, so a salesperson's dashboard
- * measures their own work on the same boundary their visits list draws.
+ * The showroom at a glance. Every panel counts in the database and runs through
+ * `visible()`, so a salesperson's dashboard draws the same boundary their visits
+ * list does.
  */
 class DashboardController extends Controller
 {
-    /** Enough to see who the week belonged to, not a leaderboard of the whole floor. */
     private const TOP_PRODUCTS = 5;
 
     private const TOP_RESPONDENTS = 6;
@@ -61,19 +53,8 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             ...$this->panels($viewer, $range),
             'recent' => $this->recentVisits($viewer, $range),
-            /* The named windows the picker offers as one click each - the same
-               list the visits log and the rewards list are handed, so "this
-               month" means the same days on all three. Sent as a prop rather
-               than written into the template, because the labels belong beside
-               the dates they resolve to. */
             'presets' => DashboardRangeData::options(),
-            /* Only the formats this host can actually produce. Paper needs a
-               headless browser the machine may not have, and a download button
-               that always fails is worse than one format fewer. */
             'formats' => $this->formats(),
-            /* A salesperson is looking at their own numbers, not the floor's;
-               saying so stops a quiet personal week reading as a quiet
-               showroom. */
             'scoped_to_own' => ! $viewer->can(Permission::VisitsViewAny->value),
             'can' => [
                 'view_visits' => $viewer->can('viewAny', Visit::class),
@@ -82,12 +63,8 @@ class DashboardController extends Controller
     }
 
     /**
-     * The same figures the page shows, as a spreadsheet or as paper.
-     *
-     * No permission of its own beyond opening the dashboard: this file is what
-     * the reader is already looking at, narrowed by the same window and the
-     * same visibility, so a second gate would only refuse them a copy of what
-     * is on their screen.
+     * No permission of its own beyond opening the dashboard: the file is narrowed by
+     * the same window and the same visibility as the screen the reader already has.
      */
     public function export(Request $request): BinaryFileResponse|HttpResponse|RedirectResponse
     {
@@ -116,13 +93,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * Every panel's figures for one window.
-     *
-     * Shared by the screen and the download rather than gathered twice. A file
-     * taken off a screen has to say what the screen said, and two passes at the
-     * database - even an instant apart - is how a total in a spreadsheet ends
-     * up disagreeing with the tile it came from.
-     *
      * @return array{
      *     range: DashboardRangeData,
      *     stats: array<int, DashboardStatData>,
@@ -158,8 +128,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * The KPI row, each figure beside the same figure from the window before.
-     *
      * @return array<int, DashboardStatData>
      */
     private function stats(User $viewer, DashboardRangeData $range): array
@@ -180,10 +148,6 @@ class DashboardController extends Controller
      */
     private function totals(User $viewer, DashboardRangeData $range): array
     {
-        /* Both in one round trip. They read the same rows behind the same
-           filter - the visits, and the people behind them - and forty visits
-           from twenty-five people is a different floor than forty from
-           thirty-nine, so the pair is the answer rather than two answers. */
         $counted = $this->within($viewer, $range)
             ->selectRaw('COUNT(*) AS visits')
             ->selectRaw('COUNT(DISTINCT visits.customer_id) AS customers')
@@ -192,26 +156,14 @@ class DashboardController extends Controller
         return [
             'visits' => (int) ($counted?->visits ?? 0),
             'customers' => (int) ($counted?->customers ?? 0),
-
-            /* How many of those had never been before. There is deliberately
-               no returning figure beside it - it would be this subtracted
-               from the count above, which is the tile immediately to its
-               left, and a row that carries a total and both its halves is
-               three numbers doing two numbers' work. */
             'new_customers' => $this->newCustomers($viewer, $range),
-
             'product_interests' => $this->productInterests($viewer, $range),
         ];
     }
 
     /**
-     * Customers whose first visit in this viewer's reach falls inside the
-     * window.
-     *
-     * "First" is measured against the visits this viewer may see, not against
-     * the customer's whole history. For a salesperson the question is who is
-     * new to them; a customer another branch of the floor met last year is
-     * still somebody they are meeting for the first time.
+     * "First" is measured against the visits this viewer may see, not the customer's
+     * whole history - for a salesperson the question is who is new to them.
      */
     private function newCustomers(User $viewer, DashboardRangeData $range): int
     {
@@ -223,9 +175,8 @@ class DashboardController extends Controller
                 ->select(DB::raw(1))
                 ->from('visits as earlier')
                 ->whereColumn('earlier.customer_id', 'visits.customer_id')
-                /* The soft-delete scope does not reach inside a raw subquery,
-                   so a removed visit would otherwise still make somebody a
-                   returning customer. */
+                # The soft-delete scope does not reach inside a raw subquery, so a
+                # removed visit would otherwise still make somebody a returning customer.
                 ->whereNull('earlier.deleted_at')
                 ->where('earlier.visited_at', '<', $startsAt)
                 ->when($scoped, fn (QueryBuilder $query) => $query->where('earlier.created_by', $viewer->id)))
@@ -233,13 +184,6 @@ class DashboardController extends Controller
             ->count('visits.customer_id');
     }
 
-    /**
-     * How many products were named across the window's visits.
-     *
-     * Attachments rather than distinct products: this is the appetite the
-     * floor saw, and one product asked after on thirty visits is thirty
-     * conversations, not one.
-     */
     private function productInterests(User $viewer, DashboardRangeData $range): int
     {
         return $this->within($viewer, $range)
@@ -248,15 +192,12 @@ class DashboardController extends Controller
     }
 
     /**
-     * Visits per day, with the empty days filled back in.
-     *
      * @return array<int, DashboardTrendPointData>
      */
     private function trend(User $viewer, DashboardRangeData $range): array
     {
-        /* `date()` rather than a format string: it is the one spelling both
-           MySQL, which runs the showroom, and SQLite, which runs the tests,
-           agree on. */
+        # `date()` rather than a format string: the one spelling both MySQL, which
+        # runs the showroom, and SQLite, which runs the tests, agree on.
         $counts = $this->within($viewer, $range)
             ->selectRaw('date(visits.visited_at) as day')
             ->selectRaw('count(*) as total')
@@ -281,12 +222,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * A donut's wedges: how the window's visits divide across one enum column.
-     *
-     * Only the values something landed on come back. Nine purposes with four
-     * of them at zero is a legend that is mostly nothing, and the wedges that
-     * matter get lost in it.
-     *
      * @param  'purpose'|'source'  $column
      * @param  class-string<VisitPurpose|CustomerSource>  $enum
      * @return array<int, DashboardSliceData>
@@ -324,21 +259,12 @@ class DashboardController extends Controller
             );
         }
 
-        /* Biggest wedge first, and the enum's declaration order to settle a
-           tie. The legend is read top to bottom against a ring read clockwise
-           from twelve, and the two only line up if both run by size. */
         usort($slices, fn (DashboardSliceData $a, DashboardSliceData $b) => $b->count <=> $a->count);
 
         return $slices;
     }
 
     /**
-     * The products named on the most visits in the window.
-     *
-     * Two queries rather than a count against the whole catalogue: the pivot
-     * is where the answer lives, and ranking there means the catalogue is only
-     * read for the handful of rows that won.
-     *
      * @return array<int, DashboardProductInterestData>
      */
     private function topProducts(User $viewer, DashboardRangeData $range): array
@@ -358,9 +284,9 @@ class DashboardController extends Controller
             return [];
         }
 
+        # `image_path` has to be among the columns, or `imageUrl()` has nothing to
+        # build the thumbnail from and every row comes back blank.
         $products = Product::query()
-            /* `image_path` among them, or `imageUrl()` has nothing to build
-               the thumbnail from and every row comes back blank. */
             ->whereIn('id', $ranked->pluck('product_id')->all())
             ->get(['id', 'name', 'image_path'])
             ->keyBy('id');
@@ -370,9 +296,6 @@ class DashboardController extends Controller
         foreach ($ranked as $row) {
             $product = $products->get((int) $row->product_id);
 
-            /* A product retired since the visit is soft deleted and drops out
-               here. The bar would have nothing to name, and resurrecting it
-               for a chart is not worth undoing the removal for. */
             if ($product === null) {
                 continue;
             }
@@ -384,11 +307,8 @@ class DashboardController extends Controller
     }
 
     /**
-     * Who took the window's visits, and what came of them.
-     *
-     * Falls back to whoever logged the visit, the same way the visits list
-     * does, so a row recorded before the respondent was asked for still counts
-     * towards somebody rather than vanishing into an unnamed bucket.
+     * Falls back to whoever logged the visit, the same way the visits list does, so a
+     * row recorded before the respondent was asked for still counts towards somebody.
      *
      * @return array<int, DashboardRespondentData>
      */
@@ -399,8 +319,6 @@ class DashboardController extends Controller
             ->selectRaw("coalesce(nullif(visits.respondent, ''), users.name, ?) as respondent_name", ['Unattributed'])
             ->selectRaw('count(*) as visits_count')
             ->selectRaw('count(distinct visits.customer_id) as customers_count')
-            /* `count` over a nullable column counts the rows that have one,
-               which is exactly what a pencilled-in follow-up is. */
             ->selectRaw('count(visits.expected_follow_up_on) as follow_ups_count')
             ->groupBy('respondent_name')
             ->orderByDesc('visits_count')
@@ -418,12 +336,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * The last few calls, as the visits list would show them.
-     *
-     * `VisitRowData` rather than a shape of its own: the panel names the same
-     * things a row on the list names, and two objects describing one visit is
-     * two places for the fallbacks to disagree.
-     *
      * @return array<int, VisitRowData>
      */
     private function recentVisits(User $viewer, DashboardRangeData $range): array
@@ -431,9 +343,6 @@ class DashboardController extends Controller
         return $this->within($viewer, $range)
             ->with(['customer', 'creator', 'products:id,name'])
             ->orderByDesc('visited_at')
-            /* The id to break a tie, or a handful of visits filed on the same
-               round hour come back in whatever order the table hands them
-               over. */
             ->orderByDesc('id')
             ->limit(self::RECENT_VISITS)
             ->get()
@@ -442,8 +351,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * The visits this user is allowed to see at all, narrowed to the window.
-     *
      * @return Builder<Visit>
      */
     private function within(User $viewer, DashboardRangeData $range): Builder
@@ -453,12 +360,12 @@ class DashboardController extends Controller
     }
 
     /**
-     * The same boundary the visits list draws: `visits.view.any` is the whole
-     * floor, anything less is what this person logged themselves.
+     * The same boundary the visits list draws: `visits.view.any` is the whole floor,
+     * anything less is what this person logged themselves.
      *
-     * Qualified rather than leaning on the model's `loggedBy` scope, because
-     * half the panels here join `products`, which carries a `created_by` of
-     * its own - unqualified, the column is ambiguous and the query fails.
+     * `visits.created_by` stays qualified rather than leaning on the model's `loggedBy`
+     * scope: half the panels join `products`, which has a `created_by` of its own, and
+     * unqualified the column is ambiguous and the query fails.
      *
      * @return Builder<Visit>
      */

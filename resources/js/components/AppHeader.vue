@@ -59,7 +59,7 @@ const mainNavItems: NavItem[] = [
     <div>
         <div class="border-b border-sidebar-border/80">
             <div class="mx-auto flex h-16 items-center px-4 md:max-w-7xl">
-                <!-- Mobile Menu -->
+                <!-- ===================== Mobile menu ===================== -->
                 <div class="lg:hidden">
                     <Sheet>
                         <SheetTrigger :as-child="true">
@@ -76,9 +76,10 @@ const mainNavItems: NavItem[] = [
                                 >Navigation menu</SheetTitle
                             >
                             <SheetHeader class="flex justify-start text-left">
-                                <!-- Chipped for the same reason as the sidebar mark: the
-                                     sheet is near-black in dark mode and would swallow the
-                                     flame's navy half. -->
+                                <!-- White chip for the same reason as the
+                                     sidebar mark: the sheet is near-black in
+                                     dark mode and would swallow the flame's
+                                     navy half. -->
                                 <span
                                     class="flex size-8 items-center justify-center rounded-md bg-white ring-1 ring-border"
                                 >
@@ -116,7 +117,7 @@ const mainNavItems: NavItem[] = [
                     <AppLogo />
                 </Link>
 
-                <!-- Desktop Menu -->
+                <!-- ===================== Desktop menu ===================== -->
                 <div class="hidden h-full lg:flex lg:flex-1">
                     <NavigationMenu class="ml-10 flex h-full items-stretch">
                         <NavigationMenuList

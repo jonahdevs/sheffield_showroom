@@ -10,11 +10,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
-/**
- * Setting which roles a user holds. The same ceiling as `RoleRequest`, read
- * one level up: a role you could not have built is a role you cannot hand out,
- * or assigning becomes the way around the grant check.
- */
+# A role you could not have built is a role you cannot hand out, or assigning
+# becomes the way around RoleRequest's grant check.
 class UserRolesRequest extends FormRequest
 {
     public function authorize(): bool
@@ -40,11 +37,9 @@ class UserRolesRequest extends FormRequest
     {
         return [
             function (Validator $validator) {
-                /* Super admin is named rather than read off its rows:
-                   `Gate::before` hands that role every ability while it may
-                   hold no permission row at all, so a subset test against the
-                   database says it grants nothing and anybody with
-                   `roles.assign` could hand it out. */
+                # Super admin is named, not read off its rows: `Gate::before`
+                # gives it every ability while its role may hold no permission
+                # row, so a subset test says it grants nothing.
                 $beyondReach = Role::query()
                     ->whereIn('name', (array) $this->input('roles', []))
                     ->with('permissions:id,name')

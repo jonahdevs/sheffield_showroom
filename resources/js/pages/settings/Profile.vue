@@ -30,10 +30,9 @@ const user = computed(() => page.props.auth.user);
 const { can } = usePermissions();
 
 /*
- * Off unless a role hands it over. The address is where a sign-in is made and
- * where a reset would land, so moving it is normally an administrator's job on
- * the Users screen - a showroom that would rather let its staff fix their own
- * typo grants `profile.email.update` and this becomes a field again.
+ * Off unless a role grants `profile.email.update`: the address is what a
+ * sign-in and a password reset go through, so moving it is an administrator's
+ * job on the Users screen by default.
  */
 const canUpdateEmail = computed(() => can('profile.email.update'));
 </script>
@@ -74,11 +73,10 @@ const canUpdateEmail = computed(() => can('profile.email.update'));
             </div>
 
             <!--
-              A field or a fact, by whether the account is trusted to move it.
-              Disabled rather than hidden: knowing which address you sign in
-              with is worth reading even when it is not yours to change, and a
-              disabled input posts nothing, so the name never reaches the
-              server at all.
+              Disabled rather than hidden, so the address stays readable. The
+              `name` is dropped as well: a disabled input posts nothing, but
+              dropping the name is what keeps `email` out of the request even
+              if the attribute is ever re-enabled in the DOM.
             -->
             <div class="grid gap-2">
                 <Label for="email">Email address</Label>

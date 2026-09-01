@@ -12,17 +12,6 @@ use RuntimeException;
 
 use function Laravel\Prompts\table;
 
-/**
- * Runs the catalogue sync from a terminal.
- *
- * The same service the Fetch button calls, reachable without a browser. That
- * matters for the two occasions the button is no use: a first import on a
- * server nobody has logged into yet, and working out why a sync went wrong -
- * where a stack trace on the console beats a toast that says something broke.
- *
- * Also the natural thing to hang on the scheduler when somebody decides the
- * catalogue should keep itself current overnight.
- */
 class ProductsSync extends Command
 {
     protected $signature = 'products:sync
@@ -37,8 +26,6 @@ class ProductsSync extends Command
         try {
             $summary = $sync->run((bool) $this->option('include-unpublished'));
         } catch (RuntimeException $exception) {
-            /* The service's messages are written for a person rather than for
-               a log, so they are shown as they stand. */
             $this->error($exception->getMessage());
 
             return self::FAILURE;
@@ -60,11 +47,6 @@ class ProductsSync extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * Where the catalogue now stands, which is the answer the sync is actually
-     * being run for: a count that says "updated 400" tells nobody whether the
-     * floor has anything on it.
-     */
     private function statuses(): void
     {
         $live = Product::query()

@@ -15,7 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * One reward unit. A hundred rewards is a hundred of these.
+ * `Claimed` is one-way - a won unit never returns to the pool. Use `Void` to
+ * take unwon units off the table; reporting counts void as loaded, which is
+ * what makes `loaded = available + claimed + void` reconcile.
  *
  * @property int $id
  * @property int $campaign_id
@@ -65,11 +67,9 @@ class RewardPoolEntry extends Model
     }
 
     /**
-     * Who won it, if anybody has.
-     *
-     * `hasOne` because the unique index on `shuffle_results.reward_pool_entry_id`
-     * makes a second one impossible - that index is the backstop under the
-     * row lock, and the reason one unit can never be handed to two people.
+     * `hasOne` because the unique index on
+     * `shuffle_results.reward_pool_entry_id` makes a second impossible. That
+     * index is the backstop under the row lock in `ShuffleRewardService`.
      *
      * @return HasOne<ShuffleResult, $this>
      */
@@ -79,8 +79,6 @@ class RewardPoolEntry extends Model
     }
 
     /**
-     * The units still there to be won.
-     *
      * @param  Builder<RewardPoolEntry>  $query
      */
     #[Scope]

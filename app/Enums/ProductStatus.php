@@ -6,16 +6,8 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Whether a product belongs on the showroom floor today.
- *
- * Three of these mirror the website: it publishes a product, holds one back as
- * a draft, or withdraws one altogether. `Inactive` has no counterpart there and
- * never will - it is what somebody standing on the floor sets when a product is
- * still sold but not worth showing this month, and the sync is written to leave
- * it alone precisely because the website cannot know about it. See
- * `CatalogueSync::status()`, which is where that promise is kept.
- */
+# `Inactive` is local-only and has no counterpart on the website, so
+# `CatalogueSync::status()` must never set or overwrite it.
 #[TypeScript]
 enum ProductStatus: string
 {

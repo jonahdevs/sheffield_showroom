@@ -10,13 +10,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
-/**
- * Creating and editing a role. The rule that matters is the last one: nobody
- * may grant a permission they do not hold themselves, or a role becomes a way
- * to promote yourself past the ceiling your own account sits under. It lives
- * in `RoleAssignmentRules`, shared with the screens that hand roles and
- * permissions to a person.
- */
+# `refusePermissionsBeyondReach` is load-bearing: without it a role is a way to
+# grant yourself a permission your own account does not hold.
 class RoleRequest extends FormRequest
 {
     use RoleAssignmentRules;

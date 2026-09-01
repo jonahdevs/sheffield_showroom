@@ -10,29 +10,24 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 /**
  * Every capability the application checks for.
  *
- * Permissions are declared here rather than in the database: a check in a
- * controller or a policy compares against one of these values, so a row with
- * no case behind it is a promise nothing keeps. `permissions:sync` reconciles
- * this enum into the spatie tables.
- *
- * The value reads `group.action`, and the group before the dot is what the
- * permission matrix and the permissions list group by.
+ * Declared here rather than in the database - a permission row with no case behind
+ * it is a promise nothing keeps. `permissions:sync` reconciles this enum into the
+ * spatie tables. The value reads `group.action`, and the group is what the
+ * permission matrix groups by.
  */
 #[TypeScript]
 enum Permission: string
 {
-    // =========================================================================
-    // Dashboard
-    // =========================================================================
+    # =========================================================================
+    # Dashboard
+    # =========================================================================
 
     case DashboardView = 'dashboard.view';
 
-    // =========================================================================
-    // Visits
-    // =========================================================================
+    # =========================================================================
+    # Visits
+    # =========================================================================
 
-    /* The split every operational resource here needs: a manager sees the
-       whole showroom's visits, a salesperson sees the ones they logged. */
     case VisitsViewAny = 'visits.view.any';
     case VisitsViewOwn = 'visits.view.own';
     case VisitsCreate = 'visits.create';
@@ -40,113 +35,88 @@ enum Permission: string
     case VisitsDelete = 'visits.delete';
     case VisitsExport = 'visits.export';
 
-    // =========================================================================
-    // Customers
-    // =========================================================================
+    # =========================================================================
+    # Customers
+    # =========================================================================
 
     case CustomersViewAny = 'customers.view.any';
     case CustomersCreate = 'customers.create';
     case CustomersUpdate = 'customers.update';
     case CustomersDelete = 'customers.delete';
     case CustomersExport = 'customers.export';
-
-    /* Reading the list out and writing a file of it back are not the same
-       trust: an export leaks, an import rewrites hundreds of records at once
-       and there is no undo behind it. */
     case CustomersImport = 'customers.import';
 
-    // =========================================================================
-    // Products
-    // =========================================================================
+    # =========================================================================
+    # Products
+    # =========================================================================
 
     case ProductsViewAny = 'products.view.any';
     case ProductsCreate = 'products.create';
     case ProductsUpdate = 'products.update';
     case ProductsDelete = 'products.delete';
 
-    // =========================================================================
-    // Purchases
-    // =========================================================================
+    # =========================================================================
+    # Purchases
+    # =========================================================================
 
-    /* What somebody bought, and for how much. The first money in this
-       application, and the thing a reward shuffle is earned by - which is why
-       recording one is its own trust rather than part of logging a visit. */
     case PurchasesViewAny = 'purchases.view.any';
     case PurchasesCreate = 'purchases.create';
     case PurchasesUpdate = 'purchases.update';
     case PurchasesDelete = 'purchases.delete';
 
-    // =========================================================================
-    // Reward shuffle
-    // =========================================================================
+    # =========================================================================
+    # Reward shuffle
+    # =========================================================================
 
-    /* Reading the campaigns, the pool and what has been won. Separate from
-       running one: a manager watching the numbers is not necessarily the
-       person standing at the screen handing rewards out. */
     case RewardsView = 'rewards.view';
 
-    /* Shaping the promotion itself - the dates, the reward definitions and
-       the quantities behind them. Publishing a campaign turns those numbers
-       into controlled inventory, so this is the most consequential of the
-       four. */
     case RewardsCampaignsCreate = 'rewards.campaigns.create';
     case RewardsCampaignsUpdate = 'rewards.campaigns.update';
     case RewardsCampaignsDelete = 'rewards.campaigns.delete';
 
-    /* Giving a customer their turn: minting a session for a qualifying
-       purchase, and running the shuffle from the showroom screen when the
-       customer cannot scan. The customer's own shuffle needs no permission -
-       it answers to the token in the QR code instead. */
+    # -------------------------------------------------------------------------
+    # Writing the catalogue is a standing trust, apart from running a campaign
+    # out of it. Reading it rides on `rewards.view`.
+    # -------------------------------------------------------------------------
+    case RewardsCatalogueCreate = 'rewards.catalogue.create';
+    case RewardsCatalogueUpdate = 'rewards.catalogue.update';
+    case RewardsCatalogueDelete = 'rewards.catalogue.delete';
+
+    # The customer's own shuffle needs no permission - it answers to the token
+    # in the QR code instead.
     case RewardsShuffle = 'rewards.shuffle';
 
-    /* Handing the reward over and writing that down. Kept apart from
-       `rewards.shuffle` because they happen weeks apart and often at
-       different desks. */
     case RewardsRedeem = 'rewards.redeem';
 
-    // =========================================================================
-    // Administration
-    // =========================================================================
+    # =========================================================================
+    # Administration
+    # =========================================================================
 
     case RolesView = 'roles.view';
     case RolesCreate = 'roles.create';
     case RolesUpdate = 'roles.update';
     case RolesDelete = 'roles.delete';
-
-    /* Handing a role to somebody, which is not the same as editing what the
-       role can do. A supervisor may staff their own team without being
-       trusted to widen what that team is allowed to touch. */
     case RolesAssign = 'roles.assign';
 
     case UsersViewAny = 'users.view.any';
     case UsersCreate = 'users.create';
 
-    /* The account itself: name, email, and the password behind it. Setting
-       somebody's password is the same trust as owning their login, so it sits
-       under this rather than earning a permission of its own - anyone allowed
-       to change the email a reset goes to already holds the account. */
+    # Setting somebody's password is the same trust as owning their login, so it
+    # sits under this rather than earning a permission of its own.
     case UsersUpdate = 'users.update';
 
-    /* Granting a capability to one person rather than to the job they do.
-       Kept apart from `users.update` because it is the one grant that does not
-       show up on the Roles screen: whoever holds this can leave an ability
-       attached to an account after the role behind it is taken away, so it is
-       handed out on purpose rather than as a side effect of editing a name. */
+    # The one grant that does not show up on the Roles screen: whoever holds this
+    # can leave an ability attached to an account after the role behind it is
+    # taken away. Handed out on purpose, not as a side effect of `users.update`.
     case UsersPermissions = 'users.permissions';
 
-    // =========================================================================
-    // Your own account
-    // =========================================================================
+    # =========================================================================
+    # Your own account
+    # =========================================================================
 
-    /* Moving the address your own account signs in at.
-
-       Off by default, and the only permission here that is about yourself
-       rather than about somebody else. The address is where a password reset
-       lands, so an account that can move it can be handed to whoever is
-       sitting at an unlocked laptop - which is why changing one is normally an
-       administrator's job on the Users screen. A showroom that would rather
-       let its staff correct their own typo grants this to a role and gets that
-       back, without also handing out `users.update` over everybody else. */
+    # Off by default, and granted by no role. The address is where a password
+    # reset lands, so an account that can move its own is an account that can be
+    # taken over; the normal door is the Users screen, behind `users.update`.
     case ProfileEmailUpdate = 'profile.email.update';
 
     /**

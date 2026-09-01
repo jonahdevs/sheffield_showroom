@@ -14,19 +14,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-/**
- * Logging and correcting a visit.
- *
- * The form types the customer's name and offers whoever already answers to it,
- * so the details always arrive and the id only says whether they describe a
- * record already on file. `resolveCustomer()` is what turns the pair into one.
- *
- * The date and the time arrive as two fields because that is how they are
- * entered; `visitedAt()` is what puts them back together for the column.
- */
 class VisitRequest extends FormRequest
 {
-    /** Past this it is a typo, not an order the showroom floor took. */
     private const MAX_QUANTITY = 9999;
 
     public function authorize(): bool
@@ -43,28 +32,17 @@ class VisitRequest extends FormRequest
      */
     public function rules(): array
     {
-        /* Asked for either way. The form no longer has a picked mode and a
-           typed one - the name is typed, and the id only says whether the
-           details on screen belong to a record already or to somebody about
-           to become one. */
         $isCompany = $this->input('customer_type') === CustomerType::Company->value;
 
         return [
-            /* `exists` rather than a bare integer: the suggestions send an id,
-               and a soft-deleted customer must not be attachable to a new
-               visit even though the id is still in the table. */
+            # A soft-deleted customer keeps its id, so `exists` must exclude them.
             'customer_id' => [
                 'nullable',
                 Rule::exists('customers', 'id')->whereNull('deleted_at'),
             ],
 
             'customer_type' => ['required', Rule::enum(CustomerType::class)],
-            /* Asked of both kinds. A company does not walk into a showroom;
-               somebody from it does, and they are who the counter dealt
-               with. */
             'customer_name' => ['required', 'string', 'max:120'],
-            /* Digits, spaces and the punctuation people actually write:
-               +254 700 123 456, 0700-123-456, (020) 271 1000. */
             'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+()\s-]+$/'],
             'email' => ['nullable', 'email', 'max:180'],
             'id_number' => ['nullable', 'string', 'max:30'],
@@ -78,12 +56,8 @@ class VisitRequest extends FormRequest
             'purpose' => ['required', Rule::enum(VisitPurpose::class)],
             'source' => ['required', Rule::enum(CustomerSource::class)],
 
-            /* Who took the visit. The form pre-fills whoever is signed in, so
-               requiring it costs the common case nothing and the floor gets a
-               name against every call. */
             'respondent' => ['required', 'string', 'max:120'],
 
-            /* You chase somebody after seeing them, never before. */
             'expected_follow_up_on' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:visited_on'],
 
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -94,31 +68,14 @@ class VisitRequest extends FormRequest
                 'integer',
                 Rule::exists('products', 'id')->whereNull('deleted_at'),
             ],
-            /* Nobody enquires after none of something, and a showroom
-               order of ten thousand sheets is a typo rather than a sale. */
             'products.*.quantity' => ['required', 'integer', 'min:1', 'max:'.self::MAX_QUANTITY],
-            /* Required rather than defaulted here: the form puts a level
-               against every row it adds, so one arriving without it is a form
-               that has gone wrong rather than a salesperson who declined to
-               say. */
             'products.*.interest_level' => ['required', Rule::enum(InterestLevel::class)],
         ];
     }
 
-    /**
-     * The customer this visit belongs to, adding or correcting them as needed.
-     *
-     * Three ways in, in order of how sure each one is: the id the suggestions
-     * sent, the telephone number matched against everyone on file, and only
-     * then a new record. The middle step is what stops a walk-in who came last
-     * month being filed a second time because nobody thought to search first.
-     *
-     * Picked off the suggestions, the fields stay editable and what comes back
-     * is written to the record: a wrong number noticed at the counter is
-     * corrected where it was noticed. Only by somebody who may edit customers
-     * though - the form shows the details read-only to anybody else, and an
-     * edit that arrives regardless is not one they were offered.
-     */
+    # Id, then phone match, then a new record. The phone step is what stops a
+    # returning walk-in being filed twice; the `can('update')` gate is what stops
+    # a read-only form quietly rewriting the customer it was only shown.
     public function resolveCustomer(): Customer
     {
         $picked = $this->validated('customer_id');
@@ -153,23 +110,14 @@ class VisitRequest extends FormRequest
     }
 
     /**
-     * The customer half of the form, as the columns keep it.
-     *
-     * The person is recorded either way; the company is what the type adds.
-     * A form should not quietly rewrite a field it never showed, so the
-     * business half is left out entirely for an individual rather than
-     * nulled.
-     *
      * @return array<string, mixed>
      */
     private function customerAttributes(): array
     {
         $type = CustomerType::from((string) $this->validated('customer_type'));
 
-        /* The business half only for a company. Left out rather than nulled
-           for an individual, so a record that already carries an employer
-           entered under Customers is not cleared by a visit write-up that
-           never showed the field. */
+        # Left out rather than nulled for an individual: a visit write-up must
+        # not clear an employer the Customers screen entered but never showed.
         $business = $type === CustomerType::Company
             ? [
                 'company_name' => $this->validated('company_name'),
@@ -187,13 +135,8 @@ class VisitRequest extends FormRequest
         ];
     }
 
-    /**
-     * The visit as the column stores it.
-     *
-     * Guarded against a future moment even after the two fields pass their own
-     * rules: `visited_on` can be today and `visited_time` an hour from now,
-     * and neither rule alone can see that.
-     */
+    # Still guarded against the future after both fields pass: `visited_on` may
+    # be today and `visited_time` an hour off, and neither rule alone sees that.
     public function visitedAt(): CarbonImmutable
     {
         $moment = CarbonImmutable::createFromFormat(
@@ -205,13 +148,6 @@ class VisitRequest extends FormRequest
     }
 
     /**
-     * The products shown and the interest against each, as `sync()` wants it.
-     *
-     * Keyed by id, which drops duplicates on the way: the pivot is unique on
-     * the pair, and a product listed twice would fail on the way in rather
-     * than here. The last mention of a repeated product wins, which is the one
-     * whose level the person was looking at.
-     *
      * @return array<int, array{quantity: int, interest_level: string}>
      */
     public function productSync(): array
@@ -232,8 +168,6 @@ class VisitRequest extends FormRequest
     }
 
     /**
-     * What belongs on the visit itself, without the customer half of the form.
-     *
      * @return array<string, mixed>
      */
     public function visitAttributes(): array

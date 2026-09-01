@@ -6,13 +6,8 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Where a product row came from.
- *
- * The distinction matters the day a sync runs: a row somebody typed in here is
- * theirs and must survive, and a row the website put here is the website's to
- * replace.
- */
+# A `Manual` row was typed in here and must survive a sync; a `Website` row is
+# the website's to replace.
 #[TypeScript]
 enum ProductSource: string
 {

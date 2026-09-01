@@ -17,9 +17,8 @@ import { Label } from '@/components/ui/label';
 import { update as setPassword } from '@/routes/admin/users/password';
 
 /**
- * The account being given a new password. Structural rather than one generated
- * type, so the list's row data and the edit page's own record both satisfy it
- * without either pretending to be the other.
+ * Structural rather than a generated type, so both the list's row data and the
+ * edit page's record satisfy it.
  */
 export interface PasswordSubject {
     id: number;
@@ -33,9 +32,8 @@ const emit = defineEmits<{ (event: 'close'): void }>();
 const form = useForm({ password: '', password_confirmation: '' });
 
 /*
- * Cleared on the way in rather than on the way out. A password left sitting in
- * a closed dialog's state would be handed to whoever the menu is opened on
- * next, and the field would look filled for an account it was never typed for.
+ * Cleared on open, not on close: a password left in a closed dialog's state
+ * shows up prefilled for whichever account it is opened on next.
  */
 watch(
     () => props.subject,
@@ -62,16 +60,6 @@ function submit() {
 }
 </script>
 
-<!--
-  Setting somebody else's password, kept behind a dialog of its own rather than
-  sitting on the edit form as one more field.
-
-  Two reasons it is not a field. It cannot be undone by typing the old value
-  back, so it should never be something a stray keystroke does on the way to
-  saving a corrected surname. And it is the one write here with a consequence
-  the person doing it has to be told about first: whoever is signed in as this
-  account is signed out of it, on every device, the moment Save is pressed.
--->
 <template>
     <Dialog
         :open="props.subject !== null"
@@ -128,7 +116,7 @@ function submit() {
                 </p>
 
                 <DialogFooter>
-                    <Button variant="quiet" @click="emit('close')">
+                    <Button variant="outline" @click="emit('close')">
                         Cancel
                     </Button>
                     <Button

@@ -43,11 +43,9 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <!--
-  The two-ended twin of `Calendar`, and deliberately the same component down to
-  the prop names: `layout="month-and-year"` puts the month and the year in the
-  page's own native selects rather than in a popover of their own, which is
-  what stops a calendar opened inside a popover from stacking a second one on
-  top of it.
+  `layout="month-and-year"` puts the month and year in native selects rather
+  than popovers of their own, so a calendar opened inside a popover does not
+  stack a second one on top of it.
 -->
 <template>
   <DefineMonthTemplate v-slot="{ date }">

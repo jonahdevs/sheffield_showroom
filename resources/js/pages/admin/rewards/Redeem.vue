@@ -20,17 +20,14 @@ import { index as redeemIndex, store } from '@/routes/admin/rewards/redeem';
 
 const props = defineProps<{
     code: string;
-    /** Whether a code was actually submitted, as opposed to an empty screen. */
     searched: boolean;
     reward: App.Data.ShuffleRewardData | null;
     can: { redeem: boolean };
 }>();
 
 /*
- * The lookup is a filter rather than a form post, so the code lands in the URL
- * and the screen can be reloaded, bookmarked or read back over the phone to
- * somebody at another desk. It is the same mechanism every list in this
- * application uses to hold its search.
+ * The lookup is a filter, not a form post, so the code lands in the URL and the
+ * screen can be reloaded, bookmarked or read back over the phone.
  */
 const { filters, processing } = useFilters({
     url: redeemIndex().url,
@@ -39,11 +36,6 @@ const { filters, processing } = useFilters({
     only: ['code', 'searched', 'reward', 'can'],
 });
 
-/*
- * Recording the handover is a separate write from finding the reward, because
- * they are separate decisions: staff read what the code resolved to, look at
- * the person in front of them, and only then hand something over.
- */
 const redemption = useForm({ code: props.code, notes: '' });
 
 const found = computed(() => props.reward !== null);
@@ -65,14 +57,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  The desk a customer walks up to weeks later holding a code.
-
-  One field, because that is the whole interaction: they read six characters
-  out, the screen says what it is and who won it, and somebody presses a
-  button. The QR link they scanned in August expired the next morning and is
-  no use here, which is exactly why the code exists.
--->
 <template>
     <Head title="Redeem a reward" />
 
@@ -105,11 +89,6 @@ defineOptions({
             </div>
         </Card>
 
-        <!--
-          A code that finds nothing is a typo, not an error. Staff mistype
-          these constantly, so it says so quietly and leaves the field alone
-          for them to try again.
-        -->
         <Card
             v-if="props.searched && !found && !processing"
             as="section"
@@ -157,9 +136,6 @@ defineOptions({
                         </span>
                     </div>
 
-                    <!-- Who won it. The one screen in this feature that names
-                         the customer, because the whole question at this desk
-                         is whether the person in front of you is them. -->
                     <dl
                         class="grid gap-x-6 gap-y-2 text-sm @lg/page:grid-cols-2"
                     >

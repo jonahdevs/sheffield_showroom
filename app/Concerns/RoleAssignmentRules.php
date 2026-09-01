@@ -10,14 +10,9 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
- * Handing out what somebody may do, wherever the application asks for it:
- * roles onto an account, and permissions onto a role or straight onto an
- * account.
- *
- * The ceiling is what is worth sharing. You cannot grant a permission you do
- * not hold yourself, and you cannot hand out a role holding one - or assigning
- * becomes the way around the grant check. Two copies of that rule would drift,
- * and the copy that drifts is a hole.
+ * One ceiling, shared by every screen that hands out reach: you cannot grant a
+ * permission you do not hold, nor a role holding one - otherwise assigning becomes the
+ * way around the grant check. A second copy of this rule would drift into a hole.
  */
 trait RoleAssignmentRules
 {
@@ -43,9 +38,6 @@ trait RoleAssignmentRules
         ];
     }
 
-    /**
-     * Refuse any role carrying a permission the assigner does not hold.
-     */
     protected function refuseRolesBeyondReach(Validator $validator): void
     {
         $beyondReach = Role::query()
@@ -66,9 +58,6 @@ trait RoleAssignmentRules
         }
     }
 
-    /**
-     * Refuse any permission the grantor does not hold themselves.
-     */
     protected function refusePermissionsBeyondReach(Validator $validator): void
     {
         $ungrantable = array_values(array_diff(
@@ -86,8 +75,7 @@ trait RoleAssignmentRules
     }
 
     /**
-     * What this person may hand out. A super admin passes every check through
-     * `Gate::before`, so the whole set is theirs to give.
+     * A super admin passes every check through `Gate::before`, so the whole set is theirs.
      *
      * @return array<int, string>
      */

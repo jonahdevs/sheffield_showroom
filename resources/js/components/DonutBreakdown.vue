@@ -9,9 +9,15 @@ const props = withDefaults(
         /** What sits in the hole, which is the figure the ring divides up. */
         total: number;
         label: string;
+        /**
+         * What the ring counts, plural and lower case. It is written into the
+         * tooltip, so leaving the visits default on a ring of anything else
+         * gives a hover reading "12 visits".
+         */
+        unit?: string;
         size?: number;
     }>(),
-    { size: 210 },
+    { unit: 'visits', size: 210 },
 );
 
 const { theme } = useChartTheme();
@@ -26,21 +32,17 @@ const options = computed<ApexCharts.ApexOptions>(() => ({
     chart: {
         type: 'donut',
         height: props.size,
-        /* The application's own face rather than Apex's Helvetica, which is
-           the difference between a chart on the page and a chart pasted onto
-           it. */
         fontFamily: 'inherit',
         animations: { enabled: true, speed: 400 },
         toolbar: { show: false },
     },
     labels: props.slices.map((slice) => slice.label),
     colors: colours.value,
-    /* Drawn in the markup instead, where it can be read, keyed to the same
-       swatch as the ring and given the counts a hover would otherwise hide. */
+    /* The legend is drawn in the markup below instead. */
     legend: { show: false },
     dataLabels: { enabled: false },
-    /* The seam is the card behind it, so the ring separates into wedges in
-       both themes without a border that only works in one. */
+    /* The seam is the card behind it, so the wedges separate in both themes
+       without a border colour that only works in one. */
     stroke: { width: 2, colors: [theme.value.surface] },
     plotOptions: {
         pie: {
@@ -50,20 +52,12 @@ const options = computed<ApexCharts.ApexOptions>(() => ({
     },
     tooltip: {
         theme: theme.value.isDark ? 'dark' : 'light',
-        y: { formatter: (value: number) => `${value} visits` },
+        y: { formatter: (value: number) => `${value} ${props.unit}` },
     },
     states: { active: { filter: { type: 'none' } } },
 }));
 </script>
 
-<!--
-  A ring and the legend that reads it.
-
-  The total sits in the hole as HTML rather than as one of Apex's centre
-  labels: it is a figure the page already knows, and drawing it here keeps it
-  on the same type scale as every other number on the dashboard instead of on
-  whatever the chart library thinks a label should be.
--->
 <template>
     <div class="flex flex-wrap items-center justify-center gap-5 p-5">
         <div class="relative shrink-0" :style="{ width: `${size}px` }">
@@ -83,7 +77,7 @@ const options = computed<ApexCharts.ApexOptions>(() => ({
                 <span
                     class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
                 >
-                    Visits
+                    {{ props.unit }}
                 </span>
             </div>
         </div>

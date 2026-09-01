@@ -11,11 +11,6 @@ use Spatie\TypeScriptTransformer\Transformers\EnumTransformer;
 use Spatie\TypeScriptTransformer\TypeScriptTransformerConfigFactory;
 use Spatie\TypeScriptTransformer\Writers\GlobalNamespaceWriter;
 
-/**
- * Turns the `#[TypeScript]` classes and enums under app/ into one ambient
- * declaration file, so an Inertia page types its props against the object the
- * controller actually sent rather than a hand-copied interface.
- */
 class TypeScriptTransformerServiceProvider extends BaseTypeScriptTransformerServiceProvider
 {
     protected function configure(TypeScriptTransformerConfigFactory $config): void

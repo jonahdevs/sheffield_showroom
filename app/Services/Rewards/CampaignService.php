@@ -10,38 +10,26 @@ use App\Models\RewardCampaign;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Moving a campaign through its life, and holding the two rules that the
- * database cannot.
+ * Holds the two rules the database cannot.
  *
- * The first: publishing is one-way. A draft is an administrator's to reshape;
- * everything after it is controlled inventory, because the pool has been
- * written and people have been told what they are playing for.
- *
- * The second: only one campaign runs at a time. MySQL has no partial unique
- * index to say "at most one row where status = active", so it is said here,
- * inside a transaction that locks what it checked. Two would leave eligibility
- * guessing which promotion a purchase was measured against.
+ * Publishing is one-way: after it the pool is written and the campaign is controlled
+ * inventory. And only one campaign runs at a time - MySQL has no partial unique index
+ * for "at most one row where status = active", so it is enforced here, inside a
+ * transaction that locks what it checked. Two would leave eligibility guessing.
  */
 class CampaignService
 {
     public function __construct(private readonly RewardPoolService $pool) {}
 
     /**
-     * Writes the pool and moves the campaign out of draft.
-     *
-     * Whether it lands on `active` or `scheduled` is the calendar's business,
-     * not the administrator's: a campaign that starts next Monday is scheduled
-     * until Monday, and one with no start date is running the moment it is
-     * published.
-     *
      * @return int the number of reward units written
      */
     public function publish(RewardCampaign $campaign): int
     {
         return DB::transaction(function () use ($campaign): int {
-            /* Re-read under a lock. Two administrators pressing Publish at the
-               same moment would otherwise both find a draft and both write a
-               pool, and the campaign would hand out twice what it promised. */
+            # Re-read under a lock, or two administrators pressing Publish at the same
+            # moment both find a draft, both write a pool, and the campaign hands out
+            # twice what it promised.
             $campaign = RewardCampaign::query()
                 ->lockForUpdate()
                 ->findOrFail($campaign->id);
@@ -74,10 +62,7 @@ class CampaignService
     }
 
     /**
-     * Starts a campaign that was scheduled or paused.
-     *
-     * A draft cannot be started - it has no pool yet, and starting one would
-     * be a promotion with nothing behind it. Publish it instead.
+     * A draft cannot be started - it has no pool yet. Publish it instead.
      */
     public function activate(RewardCampaign $campaign): void
     {
@@ -99,9 +84,7 @@ class CampaignService
     }
 
     /**
-     * Stops a campaign without ending it. The pool is untouched and the turns
-     * already handed out keep their rewards - pausing is for a showroom that
-     * wants to think, not for undoing what has happened.
+     * The pool is untouched and turns already handed out keep their rewards.
      */
     public function pause(RewardCampaign $campaign): void
     {
@@ -109,11 +92,8 @@ class CampaignService
     }
 
     /**
-     * Ends a campaign for good.
-     *
-     * Nothing is deleted and nothing is returned to the pool. The results, the
-     * redemptions and the reporting behind them all outlive the campaign -
-     * that is the whole point of keeping them.
+     * Nothing is deleted and nothing returns to the pool - results, redemptions and
+     * the reporting behind them outlive the campaign.
      */
     public function complete(RewardCampaign $campaign): void
     {
@@ -125,10 +105,6 @@ class CampaignService
         $this->moveTo($campaign, CampaignStatus::Cancelled);
     }
 
-    /**
-     * Whether a published campaign is running now or waiting for its start
-     * date.
-     */
     private function statusOnPublication(RewardCampaign $campaign): CampaignStatus
     {
         return $campaign->starts_at !== null && $campaign->starts_at->isFuture()
@@ -150,11 +126,8 @@ class CampaignService
     }
 
     /**
-     * The one-active-campaign rule.
-     *
-     * Called only from inside a transaction that has already locked the
-     * campaign being changed, so the row it finds cannot start or stop
-     * underneath the check.
+     * Only ever called from inside a transaction that has already locked the campaign
+     * being changed, so the row it finds cannot start or stop underneath the check.
      */
     private function refuseIfAnotherIsRunning(RewardCampaign $campaign): void
     {

@@ -21,7 +21,7 @@ A reward may name the products that qualify for it — buy the oven, win the tra
 
 `ShuffleRewardService` resolves the qualifying `campaign_reward_id`s in one cheap query *before* the transaction takes any lock (`RewardEligibilityService::qualifyingRewardIds()`), then narrows the locking statement with a literal `whereIn`. Do not turn this into a join or a `whereHas` on the claim: the whole point of the denormalised `campaign_id` is that the hot statement reads one table through one index.
 
-A purchase with no `product_id` draws only from the unpaired rewards. It has not met "buy the oven", and guessing otherwise hands the tray to anybody. `purchases.product_id` is one nullable column, not line items — the sale is still an eligibility record, not a ledger.
+A purchase naming none of a reward's products draws only from the unpaired rewards. It has not met "buy the oven", and guessing otherwise hands the tray to anybody. What a sale names lives in `purchase_product` — see *A purchase names many products, through purchase_product* below. The sale is still an eligibility record and not a ledger, which is why that pivot carries no price and no quantity.
 
 ## The reward claim is one statement, and the unique indexes are the backstop
 Claiming a reward must select and lock in the same statement — a randomised `lockForUpdate()` over `reward_pool_entries` where `campaign_id = ? and status = 'available'`. Do not follow the order in the architecture document ("lock an available entry, then randomly choose one"): locking first and choosing second lets two concurrent shuffles pick the same row.
@@ -33,3 +33,10 @@ Three unique indexes are the safety net under the lock, and none of them may be 
 `claimed` is one-way: a won unit never returns to the pool, even if the result is cancelled or expires. Use `PoolEntryStatus::Void` to take unwon units off the table — reporting counts void as loaded, which is what makes `loaded = available + claimed + void` reconcile.
 
 Expiry is stamped onto `shuffle_results.expires_at` at win time from `campaign_rewards.validity_days`, never recomputed, so editing a definition cannot move a deadline somebody already has. `rewards:expire` (scheduled daily in bootstrap/app.php) only tidies statuses — `isShuffleable()` and `isRedeemable()` read the date, so an unswept row is already refused.
+
+## A purchase names many products, through purchase_product
+`purchases.product_id` is gone. A sale names any number of products through the `purchase_product` pivot (`Purchase::products()`), because one column could only ever be right by luck on a receipt carrying an oven and a coffee machine - whichever the salesperson clicked decided whether the paired tray went out.
+
+Eligibility matches on **any** one of them: `RewardEligibilityService::qualifyingRewardIds($campaign, $productIds)` and `availableCountFor($campaign, $productIds)` take an array, and a reward paired to the oven qualifies as soon as the oven is on the sale, whatever else is beside it. Read the ids with `RewardEligibilityService::productIdsOn($purchase)`, which reads a loaded relation when there is one - a list that does not eager-load `products` pays a query per row. An empty array behaves exactly as the old null did: it draws only from the unpaired rewards, because a sale that recorded nothing has not met "buy the oven".
+
+Still not a ledger. The pivot carries no price and no quantity, deliberately - it answers "which products were on this sale" and nothing else. `Purchase::products()` is `withTrashed()` so a withdrawn product still names itself on a historical sale; `CampaignReward::qualifyingProducts()` deliberately keeps the default scope, so a pairing to a withdrawn product stops qualifying anybody.

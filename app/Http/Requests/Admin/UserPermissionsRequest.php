@@ -11,19 +11,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
-/**
- * Pinning capabilities to one account rather than to the job it does.
- *
- * Two rules keep the direct set honest. The first is the ceiling every grant
- * in this application sits under: nobody hands out what they do not hold
- * themselves, or this becomes the shortest route past `RoleRequest`.
- *
- * The second is narrower and is the reason the whole feature is risky. A
- * permission a role already carries may not also be pinned to the account,
- * because a duplicate grant survives the role being taken away and there is
- * nothing on the Roles screen to say so. Refusing it here means the direct set
- * only ever holds what the roles do not, so revoking a role really does revoke.
- */
+# Nobody grants what they do not hold themselves, and the direct set must stay
+# disjoint from what the roles grant: a duplicate survives the role being taken
+# away and shows up nowhere, so revoking a role would stop revoking.
 class UserPermissionsRequest extends FormRequest
 {
     public function authorize(): bool
@@ -69,10 +59,8 @@ class UserPermissionsRequest extends FormRequest
                     return;
                 }
 
-                /* Only what this write is adding. A duplicate that already
-                   exists - left behind by a role gaining a permission its
-                   holder was separately given - has to stay saveable, or the
-                   one form that can clear it would refuse to submit. */
+                # Only what this write adds. An existing duplicate must stay
+                # saveable or the one form that can clear it cannot submit.
                 $added = array_diff($wanted, $subject->permissions->pluck('name')->all());
 
                 $inherited = array_values(array_intersect(
@@ -92,9 +80,6 @@ class UserPermissionsRequest extends FormRequest
     }
 
     /**
-     * What this person may hand out. A super admin passes every check through
-     * `Gate::before`, so the whole set is theirs to give.
-     *
      * @return array<int, string>
      */
     public function grantable(): array

@@ -19,20 +19,12 @@ createInertiaApp({
                 return AppLayout;
         }
     },
-    /*
-      The bar across the top of a page that is on its way. Taken from the brand
-      token rather than written out, so it cannot be the one red in the
-      application that stays behind when the brand moves. Inertia interpolates
-      this into a stylesheet it injects itself, and the custom property is
-      declared on `:root`, so it resolves there like anywhere else.
-    */
+    // Inertia interpolates this into a stylesheet it injects itself, so a
+    // `:root` custom property resolves here like anywhere else.
     progress: {
         color: 'var(--color-brand-500)',
     },
 });
 
-// This will set light / dark mode on page load...
 initializeTheme();
-
-// This will listen for flash toast data from the server...
 initializeFlashToast();

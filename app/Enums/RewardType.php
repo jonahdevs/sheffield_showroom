@@ -6,18 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * What a reward actually is.
- *
- * A closed list rather than free text, because the reporting screen groups by
- * it and the customer-facing card needs a glyph for each one. A showroom that
- * invents a sixth kind of reward adds a case here, which is the point: the
- * front end then has to be told how to draw it rather than silently rendering
- * a blank.
- *
- * `Discount` is the only one carrying a number worth reading - the rest are
- * services, whose worth is in their terms.
- */
 #[TypeScript]
 enum RewardType: string
 {
@@ -40,14 +28,8 @@ enum RewardType: string
         };
     }
 
-    /**
-     * Whether this kind of reward is a thing off the floor, and so names a
-     * row in `products`.
-     *
-     * The one type whose worth is not written in its terms and not a figure
-     * either - it is whatever the product is. `RewardRequest` requires a
-     * `product_id` for it and refuses one for everything else.
-     */
+    # The one type that names a row in `products`: `RewardRequest` requires a
+    # `product_id` for it and refuses one for every other type.
     public function isProduct(): bool
     {
         return $this === self::Product;

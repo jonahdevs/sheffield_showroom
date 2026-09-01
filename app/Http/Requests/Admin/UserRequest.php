@@ -14,26 +14,14 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
-/**
- * Creating an account and editing the account part of one: who it belongs to
- * and where it is reachable. What it may do is two other requests.
- *
- * A new account is given its roles and its direct permissions here rather than
- * on a second screen. An account with no role keeps its login and loses every
- * ability on it, which reads as a broken account rather than a new one - the
- * same reason `RoleController::destroy` refuses to strand a role's members.
- * Both sets answer to the checks their own screens hold, read at the moment
- * the account is born, because creating one would otherwise be the shortest
- * way around them.
- */
+# Roles and direct grants are settable here only on create, and only under the
+# same checks UserRolesRequest and UserPermissionsRequest hold - creating an
+# account would otherwise be the way around them.
 class UserRequest extends FormRequest
 {
     use PasswordValidationRules, ProfileValidationRules;
 
     /**
-     * The roles named on the way in, read once: both checks below want them
-     * and each read is a query.
-     *
      * @var Collection<int, Role>|null
      */
     private ?Collection $chosenRoles = null;
@@ -59,10 +47,6 @@ class UserRequest extends FormRequest
             'email' => $this->emailRules($subject?->id),
         ];
 
-        /* Roles, direct permissions and a password belong to creating an
-           account. Editing one changes each through its own action, behind its
-           own check, so none of them can be moved by a stray field on the
-           details form. */
         if ($subject === null) {
             $rules['password'] = $this->passwordRules();
             $rules['roles'] = ['present', 'array'];
@@ -108,11 +92,6 @@ class UserRequest extends FormRequest
         return $user instanceof User ? $user : null;
     }
 
-    /**
-     * The ceiling `UserRolesRequest` holds, read at the moment the account is
-     * born: creating a user would otherwise be the way around the check that
-     * assigning one enforces.
-     */
     private function validateRoles(Validator $validator): void
     {
         $roles = $this->roles();
@@ -130,9 +109,8 @@ class UserRequest extends FormRequest
             return;
         }
 
-        /* Super admin is named rather than read off its rows, because
-           `Gate::before` gives it every ability while its role may hold none -
-           a subset test against an empty list passes. */
+        # Super admin is named, not read off its rows: `Gate::before` gives it
+        # every ability while its role may hold none, so a subset test passes.
         $beyondReach = $this->chosenRoles()
             ->filter(fn (Role $role) => $role->isSuperAdmin()
                 ? ! $this->user()->hasRole(Role::SUPER_ADMIN)
@@ -151,12 +129,8 @@ class UserRequest extends FormRequest
         }
     }
 
-    /**
-     * The two rules `UserPermissionsRequest` holds, for the same reasons:
-     * nobody hands out what they do not hold themselves, and nothing a role on
-     * this very form already carries may also be pinned to the account - a
-     * duplicate grant outlives the role and says so nowhere.
-     */
+    # Nobody grants what they do not hold, and nothing the chosen roles already
+    # carry may also be pinned: a duplicate grant outlives the role, invisibly.
     private function validateDirectPermissions(Validator $validator): void
     {
         $wanted = $this->permissions();
@@ -196,9 +170,6 @@ class UserRequest extends FormRequest
     }
 
     /**
-     * What this person may hand out. A super admin passes every check through
-     * `Gate::before`, so the whole set is theirs to give.
-     *
      * @return array<int, string>
      */
     private function grantable(): array
@@ -210,8 +181,6 @@ class UserRequest extends FormRequest
     }
 
     /**
-     * Everything the roles on this form would hand the new account.
-     *
      * @return array<int, string>
      */
     private function rolePermissions(): array

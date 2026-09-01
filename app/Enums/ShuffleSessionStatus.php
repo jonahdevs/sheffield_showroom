@@ -6,19 +6,8 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * One customer's single opportunity to shuffle.
- *
- * `Pending` is the only state a shuffle can run from, and the transition out
- * of it happens inside the same transaction that claims the reward. That is
- * what stops a refreshed page, a double tap, or two phones on the same QR from
- * producing two rewards: the second attempt finds a session that is no longer
- * pending.
- *
- * A session whose campaign has run out of rewards stays `Pending` rather than
- * failing. Nothing was won, so nothing should be spent - the customer keeps
- * their turn and staff can settle it.
- */
+# `Pending` is the only state a shuffle runs from, and the move out of it happens
+# inside the claiming transaction — that is what stops a double tap winning twice.
 #[TypeScript]
 enum ShuffleSessionStatus: string
 {

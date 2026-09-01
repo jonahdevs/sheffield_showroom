@@ -28,9 +28,6 @@ use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-/**
- * The people and organisations who visit the showroom.
- */
 class CustomerController extends Controller
 {
     public function index(Request $request): Response
@@ -51,8 +48,6 @@ class CustomerController extends Controller
             'filters' => $filters,
             'types' => CustomerType::options(),
             'page_sizes' => PageSize::OPTIONS,
-            /* Only the formats this host can actually produce - see
-               `ExportResponse::available()`. */
             'formats' => ExportResponse::available(),
             'counts' => $this->counts(),
             'can' => [
@@ -65,14 +60,6 @@ class CustomerController extends Controller
         ]);
     }
 
-    /**
-     * The list the viewer is looking at, as a file.
-     *
-     * Built from the same query the list is, filters and all, so what
-     * downloads is what was on the screen rather than the whole table. A
-     * salesperson who searched for one company and exported should get that
-     * company.
-     */
     public function export(Request $request): BinaryFileResponse|HttpResponse|RedirectResponse
     {
         $this->authorize('export', Customer::class);
@@ -85,23 +72,10 @@ class CustomerController extends Controller
             'customers-'.CarbonImmutable::today()->toDateString(),
             ExportResponse::format($request->query('format')),
             'Customers',
-            /* Only the paper format prints this, and only paper needs it: a
-               spreadsheet carries its filename and a workbook tab, where a
-               printed sheet has nothing on it to say which slice of the list
-               it is. The customers screen has no date filter, so the window
-               reads as the whole history and the narrowing is whatever the
-               toolbar was set to. */
             $this->exportSubtitle($filters),
         );
     }
 
-    /**
-     * The same file, going the other way.
-     *
-     * One step rather than the upload-then-confirm the file size here does not
-     * warrant: the counts come back as a toast, and a row the rules refused is
-     * reported in it rather than stopping the rest of the file landing.
-     */
     public function import(Request $request, LegacyExtract $extract): RedirectResponse
     {
         $this->authorize('import', Customer::class);
@@ -115,10 +89,6 @@ class CustomerController extends Controller
 
         $import = new CustomerImport($extract, $request->user()->id);
 
-        /* All or nothing on anything the import did not expect. A row it did
-           expect to refuse is skipped without throwing, so the transaction is
-           there for the failures nobody wrote a rule for - a column that
-           breaks a constraint halfway through a four hundred row file. */
         DB::transaction(fn () => Excel::import($import, $file));
 
         $summary = $import->summary();
@@ -179,10 +149,6 @@ class CustomerController extends Controller
         return to_route('admin.customers.index');
     }
 
-    /**
-     * Soft deleted. A customer is attached to the visits they made, and a hard
-     * delete would take that history with them.
-     */
     public function destroy(Customer $customer): RedirectResponse
     {
         $this->authorize('delete', $customer);
@@ -200,10 +166,7 @@ class CustomerController extends Controller
     }
 
     /**
-     * The customer list under a set of filters.
-     *
-     * One definition, shared by the screen and the download, so an export
-     * cannot quietly widen past what the viewer had narrowed to.
+     * One definition shared by the screen and the download - keep it that way.
      *
      * @param  array{search: string, type: string}  $filters
      * @return Builder<Customer>
@@ -211,9 +174,6 @@ class CustomerController extends Controller
     private function filtered(array $filters): Builder
     {
         return Customer::query()
-            /* How many calls they have made and when the last one was. Counted
-               and maxed in the one query rather than loaded: the row shows two
-               numbers, not the visits behind them. */
             ->withCount('visits')
             ->withMax('visits', 'visited_at')
             ->when($filters['search'] !== '', fn (Builder $query) => $query->search($filters['search']))
@@ -224,9 +184,6 @@ class CustomerController extends Controller
     }
 
     /**
-     * The line under the title on a printed export: which slice of the list
-     * this is.
-     *
      * @param  array{search: string, type: string}  $filters
      */
     private function exportSubtitle(array $filters): string
@@ -234,8 +191,6 @@ class CustomerController extends Controller
         $parts = [ExportWindow::label(null, null)];
 
         if ($filters['type'] !== '') {
-            /* Spelled out rather than pluralised off the label, which would
-               print "Companys" on the paper. */
             $parts[] = match (CustomerType::from($filters['type'])) {
                 CustomerType::Individual => 'Individuals only',
                 CustomerType::Company => 'Companies only',
@@ -250,16 +205,8 @@ class CustomerController extends Controller
     }
 
     /**
-     * How many customers sit under each tab.
-     *
-     * Grouped in one query rather than counted type by type, the same way
-     * `ProductController::counts()` does it: the answer is one row of a
-     * two-value column, and asking for it three times is three round trips
-     * for one fact.
-     *
-     * Unfiltered on purpose. The tabs say how many there are of each kind,
-     * not how many the search left behind - a count that moved with the
-     * filter would leave the tab you are on reading its own result back.
+     * Unfiltered on purpose: a count that moved with the search would leave the tab you
+     * are on reading its own result back.
      *
      * @return array<string, int>
      */

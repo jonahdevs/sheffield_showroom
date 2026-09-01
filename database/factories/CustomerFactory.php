@@ -35,11 +35,9 @@ class CustomerFactory extends Factory
     }
 
     /**
-     * The same person, buying for the business they work for.
-     *
-     * `name` is left as it is rather than swapped out: a company row names
-     * whoever came in from it just as an individual row does, and the company
-     * is what is added on top.
+     * The same person, buying for the business they work for. `name` is left
+     * as it is: a company row names whoever came in from it, and the company
+     * is added on top.
      */
     public function company(): static
     {

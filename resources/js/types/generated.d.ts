@@ -153,6 +153,7 @@ declare namespace App {
             id: number;
             customer_name: string;
             reference: string | null;
+            product_names: string[];
             amount: string;
             status: App.Enums.PurchaseStatus;
             status_label: string;
@@ -181,6 +182,57 @@ declare namespace App {
             turns_given: number;
             rewards: App.Data.CampaignRewardData[];
         };
+        export type RewardCampaignSummaryData = {
+            id: number;
+            name: string;
+            status: App.Enums.CampaignStatus;
+            status_label: string;
+            ran: string;
+            loaded: number;
+            won: number;
+            redeemed: number;
+            collection_rate: number | null;
+        };
+        export type RewardData = {
+            id: number;
+            name: string;
+            description: string | null;
+            type: App.Enums.RewardType;
+            type_label: string;
+            product_id: number | null;
+            product_name: string | null;
+            product_image_url: string | null;
+            value: string | null;
+            value_unit: App.Enums.RewardValueUnit | null;
+            value_label: string | null;
+            terms: string | null;
+            default_validity_days: number | null;
+            is_active: boolean;
+            campaigns_count: number;
+            can_delete: boolean;
+            added: string;
+        };
+        export type RewardDrawerRowData = {
+            id: number;
+            name: string;
+            loaded: number;
+            available: number;
+            claimed: number;
+            void: number;
+            claimed_share: number;
+        };
+        export type RewardExpiringRowData = {
+            id: number;
+            code: string;
+            customer_name: string;
+            expires_on: string;
+            days_left: number;
+        };
+        export type RewardHeadlineData = {
+            campaign: App.Data.RewardCampaignData;
+            dormant_reason: string | null;
+            days_remaining: number | null;
+        };
         export type RewardWinnerRowData = {
             id: number;
             code: string;
@@ -199,6 +251,9 @@ declare namespace App {
             status_label: string;
             redeemed_on: string | null;
             redeemed_by: string | null;
+            purchase_reference: string | null;
+            purchased_on: string | null;
+            qualifying_products: string[];
         };
         export type RoleData = {
             id: number;
@@ -311,7 +366,6 @@ declare namespace App {
             | 'referral'
             | 'website'
             | 'social_media'
-            | 'exhibition'
             | 'repeat'
             | 'advertisement'
             | 'sales_call'
@@ -344,6 +398,9 @@ declare namespace App {
             | 'rewards.campaigns.create'
             | 'rewards.campaigns.update'
             | 'rewards.campaigns.delete'
+            | 'rewards.catalogue.create'
+            | 'rewards.catalogue.update'
+            | 'rewards.catalogue.delete'
             | 'rewards.shuffle'
             | 'rewards.redeem'
             | 'roles.view'
@@ -379,7 +436,6 @@ declare namespace App {
             | 'product_viewing'
             | 'follow_up'
             | 'order'
-            | 'after_sales'
             | 'complaint'
             | 'collection'
             | 'other';

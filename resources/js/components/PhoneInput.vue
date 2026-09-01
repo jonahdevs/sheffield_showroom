@@ -37,11 +37,6 @@ const props = withDefaults(
     },
 );
 
-/*
- * The two halves are held separately because that is how they are edited, and
- * joined on the way out because a phone number is one string everywhere else -
- * the column, the DTO and whatever eventually dials it.
- */
 const initial = splitDial(model.value);
 
 const dial = ref(initial.dial);
@@ -52,19 +47,11 @@ const current = computed(
     () => DIAL_CODES.find((code) => code.dial === dial.value) ?? DIAL_CODES[0],
 );
 
-/*
- * An empty box is an absent number, not a bare country code: a row holding
- * `+254` describes nobody.
- *
- * The leading zero goes because it is a trunk prefix, not part of the number:
- * `0722 000 111` dialled from abroad is `+254 722 000 111`, and keeping both
- * would store a number nothing can call.
- */
+/* An empty box is an absent number, not a bare country code. The leading zero
+   is a trunk prefix rather than part of the number - `0722 000 111` dialled
+   from abroad is `+254 722 000 111` - and the grouping separators are the
+   typist's, so both come off before storing. */
 const joined = computed(() => {
-    /* Separators come off too. The person typing groups the digits to read
-       them back; a stored `+254722 000 111` is not a number anything can
-       dial, and it is not what the same number typed without spaces would
-       have produced. */
     const national = number.value.replace(/[^\d]/g, '').replace(/^0+/, '');
 
     return national === '' ? '' : `${dial.value}${national}`;
@@ -72,11 +59,8 @@ const joined = computed(() => {
 
 watch(joined, (value) => (model.value = value));
 
-/**
- * A number set from outside - a form reset, or a record arriving late - is read
- * back apart. Guarded on the joined value so the watcher above cannot feed its
- * own write back in and fight the person typing.
- */
+/* A number set from outside is read back apart. Guarded on the joined value so
+   the watcher above cannot feed its own write back in and fight the typist. */
 watch(model, (value) => {
     if (value === joined.value) {
         return;
@@ -94,17 +78,8 @@ function choose(value: string) {
 }
 </script>
 
-<!--
-  A phone number: the country's flag and dial code on the left, the rest of the
-  number beside it. One control over two fields, so a caller binds a single
-  string and never has to remember which half it kept.
-
-  Eighty-seven countries is too many to scroll, so the code is picked from a
-  searchable list - by name, by ISO code or by the dialling code itself.
-
-  The flag is an image rather than the emoji such a list usually carries:
-  Windows ships no flag glyphs, so the emoji renders there as two bare letters.
--->
+<!-- The flags are images rather than emoji: Windows ships no flag glyphs, so
+     the emoji renders there as two bare letters. -->
 <template>
     <InputGroup>
         <InputGroupAddon class="pr-0">

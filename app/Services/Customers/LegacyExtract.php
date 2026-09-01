@@ -7,43 +7,15 @@ namespace App\Services\Customers;
 use App\Enums\CustomerType;
 use RuntimeException;
 
-/**
- * Reshapes the customer extract from the old system into rows this
- * application's `customers` table can take.
- *
- * The extract is a phpMyAdmin dump: an array of blocks, of which exactly one
- * describes a table and carries the rows. It is kept in the repository
- * untouched as the record of what was handed over, so nothing here writes back
- * to it - the transform is one-way and repeatable, and re-running it is how a
- * mapping decision gets revisited rather than by hand-editing the result.
- *
- * The old system carried a wider record than this one does: a date of birth,
- * a second number, a TIN, an occupation, a preferred contact method. Those
- * columns were dropped from this application deliberately, so they are dropped
- * here too rather than quietly resurrected by an import.
- */
 class LegacyExtract
 {
-    /**
-     * The digits that identify a subscriber once a country code or trunk
-     * prefix is off the front. Matches `Customer::matchingPhone`, which is
-     * what decides two records are the same telephone once they are in the
-     * database - the duplicate count reported here has to mean the same thing.
-     */
+    # Must match `Customer::matchingPhone`, or the duplicate count reported here means
+    # something other than what the application will treat as one telephone.
     private const SUBSCRIBER_DIGITS = 9;
 
-    /**
-     * The country behind a number written the way it is dialled at home.
-     *
-     * The extract is a Kenyan showroom's book: 419 of the 424 dialable rows
-     * are `07...` or `01...`, which is a Kenyan mobile with its trunk prefix
-     * on the front. The five that are not say where they are from themselves.
-     */
     private const KENYA = '+254';
 
     /**
-     * The transformed rows, what was left out, and where the numbers collide.
-     *
      * @return array{
      *     rows: list<array<string, mixed>>,
      *     skipped: list<array{id: mixed, phone: string}>,
@@ -78,8 +50,6 @@ class LegacyExtract
     }
 
     /**
-     * One extract row as one `customers` row, or null when it cannot be one.
-     *
      * @param  array<string, mixed>  $source
      * @return array<string, mixed>|null
      */
@@ -87,11 +57,6 @@ class LegacyExtract
     {
         $phone = $this->phone($source['phone_primary'] ?? null);
 
-        /* A record whose only contact detail is "N/A" cannot be phoned, cannot
-           be matched against a returning visitor, and cannot be de-duplicated
-           against the rest of the extract. It is a name and nothing else, so
-           it is left out rather than imported as a row somebody has to chase
-           the missing half of. */
         if ($phone === null) {
             return null;
         }
@@ -100,21 +65,13 @@ class LegacyExtract
         $isCompany = $type === CustomerType::Company;
 
         return [
-            /* The id the row had in the old system, carried over so a second
-               import can find the customer this row became. The `notes`
-               column is a visit log and is imported separately, and by then
-               nothing else about the row identifies it: phone numbers are
-               shared between records and the keys this table hands out depend
-               on what was in it beforehand. */
             'legacy_id' => $this->legacyId($source['id'] ?? null),
 
             'type' => $type->value,
             'name' => $this->name($source),
 
-            /* Company columns for companies only. One individual in the
-               extract carries a company name and an industry, which the form
-               in this application never shows for a person and would therefore
-               never let them correct. */
+            # The form never shows these for a person, so anything set here on an
+            # individual is uncorrectable.
             'company_name' => $isCompany ? $this->named($source['company_name'] ?? null) : null,
             'industry' => $isCompany ? $this->named($source['industry'] ?? null) : null,
 
@@ -128,25 +85,14 @@ class LegacyExtract
             'postal_code' => $this->text($source['postal_code'] ?? null),
             'country' => $this->text($source['country'] ?? null) ?? 'Kenya',
 
-            /* When they were first written down in the old system, not when
-               this import ran. Stamping today would make every customer look
-               like a walk-in from the day of the migration and flatten the
-               only history the extract carries. */
             'created_at' => $this->text($source['created_at'] ?? null),
             'updated_at' => $this->text($source['updated_at'] ?? null),
         ];
     }
 
     /**
-     * The rows out of the phpMyAdmin wrapper.
-     *
-     * The export is three blocks - a header, the database, and the table -
-     * and only the last of those holds anything. Found by its `type` rather
-     * than by position, because a re-export with different options moves it.
-     *
-     * Public because the visit log is read out of the same export by
-     * `LegacyVisitLog`, and two copies of "where the rows are" would drift
-     * apart the first time the old system is re-exported with other options.
+     * The table block is found by its `type`, never by position - a re-export with
+     * different options moves it.
      *
      * @return list<array<string, mixed>>
      */
@@ -168,14 +114,6 @@ class LegacyExtract
     }
 
     /**
-     * What to call them.
-     *
-     * The two name columns are joined rather than concatenated blindly, so a
-     * record holding only a surname does not arrive with a leading space.
-     * Thirteen rows in the extract name nobody at all - they were filed under
-     * the business - and those fall back to the company, because a customer
-     * with no name is unfindable on the list that sorts by it.
-     *
      * @param  array<string, mixed>  $source
      */
     private function name(array $source): ?string
@@ -191,18 +129,8 @@ class LegacyExtract
     }
 
     /**
-     * Individual or company.
-     *
-     * Anything unrecognised is a person: an individual keeps the name the
-     * extract gave, where treating the row as a company would null that name
-     * in favour of a company it has not got.
-     *
-     * A row filed as a company but carrying no company name is read the same
-     * way. Three of them hold `company_name` "N/A" and `industry` "INDIVIDUAL"
-     * over a real person's name - whoever typed them into the old system said,
-     * as plainly as its form allowed, that this was not a business. Taken at
-     * face value they would appear on the list as "N/A", because a company is
-     * named by its company; taken as what they are they appear by name.
+     * A row filed as a company but carrying no company name is a person. Taken at face
+     * value it appears on the list as "N/A", because a company is named by its company.
      *
      * @param  array<string, mixed>  $source
      */
@@ -220,15 +148,8 @@ class LegacyExtract
             : $type;
     }
 
-    /**
-     * A name, or null when what is there stands in for not having one.
-     *
-     * The old system's fields were required, so somebody with nothing to put
-     * in them typed something that meant nothing - and stored as it stands,
-     * "N/A" is read off a customer list as though it were a business trading
-     * under that name. `CatalogueSync` guards the SKU column the same way and
-     * for the same reason.
-     */
+    # The old system's fields were required, so "N/A" and its cousins mean "empty" -
+    # stored as they stand they read off a customer list as a business of that name.
     private function named(mixed $value): ?string
     {
         $text = $this->text($value);
@@ -244,25 +165,10 @@ class LegacyExtract
         ) ? null : $text;
     }
 
-    /**
-     * The number in the one shape this application stores a telephone: a `+`,
-     * a country code, and the subscriber number - no spaces, no trunk zero.
-     *
-     * That is what `PhoneInput` writes for anything typed on the floor, so an
-     * imported `0722000111` is the same telephone spelled a second way. The
-     * database does not mind - `Customer::matchingPhone` compares stripped
-     * tails and calls them one number - but the form does: the box splits a
-     * stored value on its dialling code, and a number with no code to find
-     * opens on the wrong country with the trunk zero still in it.
-     *
-     * The leading apostrophe comes off first. It is an Excel artefact, how a
-     * spreadsheet keeps `0722...` from being read as the integer 722, and not
-     * part of anybody's telephone.
-     *
-     * Nine digits is the shortest thing that can be a subscriber number here.
-     * Below that the value is punctuation somebody typed to get past a
-     * required field - `N/A`, `#`, `;`, `//`, `++`, `00`.
-     */
+    # Exactly the shape `PhoneInput` writes: a `+`, a country code, no separators, no
+    # trunk zero. The database never needed this - `Customer::matchingPhone` compares
+    # stripped tails - but the form does: it splits a stored value on its dialling code,
+    # and a value with no code to find opens on the wrong country with the zero still in.
     private function phone(mixed $value): ?string
     {
         $written = trim(ltrim(trim((string) $value), "'"));
@@ -272,40 +178,26 @@ class LegacyExtract
             return null;
         }
 
-        /* Already international. It says where it is from, so only the
-           separators come off. */
         if (str_starts_with($written, '+')) {
             return '+'.$digits;
         }
 
         if (str_starts_with($written, '0')) {
-            /* A trunk zero is not part of the number: `0722 000 111` dialled
-               from anywhere else is `+254 722 000 111`, and keeping both
-               would store a number nothing can call. */
             $national = ltrim($digits, '0');
 
-            /* Unless the zeros were `00`, which is the old way of writing the
-               plus - that number already carries a country code and must not
-               gain a second one. */
+            # `00` is the older spelling of the plus: that number already carries a
+            # country code and must not be given a second one.
             return str_starts_with($national, ltrim(self::KENYA, '+'))
                 ? '+'.$national
                 : self::KENYA.$national;
         }
 
-        /* No plus and no zero. Nine digits is a Kenyan national number typed
-           without its prefix; anything longer is already carrying a country
-           code and only wants the plus put back. */
+        # Anything longer than a bare national number already carries a country code.
         return strlen($digits) === self::SUBSCRIBER_DIGITS
             ? self::KENYA.$digits
             : '+'.$digits;
     }
 
-    /**
-     * The email address, or null when what is there is not one.
-     *
-     * Validated rather than trusted: a column holding a note to self is worse
-     * than an empty one, because the application will try to send to it.
-     */
     private function email(mixed $value): ?string
     {
         $email = $this->text($value);
@@ -317,14 +209,8 @@ class LegacyExtract
         return filter_var($email, FILTER_VALIDATE_EMAIL) === false ? null : $email;
     }
 
-    /**
-     * The row's key in the old system, or null if it has not got one.
-     *
-     * Every row in the export carries one and it is written as a string, the
-     * way phpMyAdmin writes every column. Null rather than 0 for anything
-     * else: 0 is a key, and two records sharing it would be joined to each
-     * other by the visit import.
-     */
+    # Null rather than 0: 0 is a key, and two records sharing it would be joined to
+    # each other by the visit import.
     private function legacyId(mixed $value): ?int
     {
         $id = $this->text($value);
@@ -332,13 +218,8 @@ class LegacyExtract
         return $id !== null && ctype_digit($id) ? (int) $id : null;
     }
 
-    /**
-     * A trimmed string, or null where the extract left an empty one.
-     *
-     * An empty string in a nullable column is a third state nothing in this
-     * application tests for: `whereNull` misses it and a form shows it as
-     * filled in.
-     */
+    # An empty string in a nullable column is a third state nothing tests for:
+    # `whereNull` misses it and a form shows it as filled in.
     private function text(mixed $value): ?string
     {
         if (! is_scalar($value)) {
@@ -351,13 +232,8 @@ class LegacyExtract
     }
 
     /**
-     * How many rows share a telephone with another row, by subscriber tail.
-     *
-     * Reported rather than resolved. Several of these are genuinely one person
-     * filed twice, but some are a switchboard, a landlord's number, or a
-     * business whose staff all give the office line, and merging those on the
-     * strength of a shared number would lose customers. No unique constraint
-     * for the same reason - this is a figure for somebody to look at.
+     * Reported, never resolved: a shared number is as often a switchboard as a
+     * duplicate. No unique constraint on the column, for the same reason.
      *
      * @param  list<array<string, mixed>>  $rows
      * @return array<string, int>

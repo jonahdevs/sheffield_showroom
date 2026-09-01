@@ -13,8 +13,8 @@ const props = defineProps<{
     role="group"
     :class="cn(
       'group/input-group border-input dark:bg-input/30 relative flex w-full items-center rounded-md border shadow-xs transition-[color,box-shadow] outline-none',
-      // No fixed height: the control inside sets it from its own padding, so
-      // a search box stands exactly as tall as a bare Input beside it.
+      // No fixed height: the control inside sets it, so a search box stands
+      // exactly as tall as a bare Input beside it.
       'min-w-0',
 
       // Variants based on alignment.

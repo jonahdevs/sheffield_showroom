@@ -1,7 +1,6 @@
 import { inject, onScopeDispose, provide, ref } from 'vue';
 import type { InjectionKey } from 'vue';
 
-/** The `onStart`/`onFinish` pair a visit is handed so it reports itself. */
 export type VisitReporter = {
     onStart: () => void;
     onFinish: () => void;
@@ -10,24 +9,16 @@ export type VisitReporter = {
 const VisitPendingKey = Symbol('visit-pending') as InjectionKey<VisitReporter>;
 
 /**
- * Whether a list is waiting on the server, and the hooks that say so.
- *
- * The owner of a list — the page, or whatever called `useFilters` — holds the
- * flag, and every reload that belongs to that list reports through it: the
- * filter bar, the pager, the page-size box. The reporter is handed down the
- * tree so those controls need no wiring at the call site.
+ * Whether a list is waiting on the server. The reporter is provided down the
+ * tree, so the pager and the page-size box report through the list's own flag
+ * without any wiring at the call site.
  */
 export function useVisitPending() {
     const processing = ref(false);
 
-    /**
-     * Counted, not a plain boolean. These visits overlap: a debounced filter
-     * can put a second request on the wire before the first one answers, and a
-     * pager click can land on top of both. Flipping the flag off in the first
-     * `onFinish` would clear the table's loading state while it is still
-     * waiting on the later request, which is the stale-rows flicker we are
-     * here to remove.
-     */
+    /* Counted, not a plain boolean: these visits overlap, so flipping the flag
+       off in the first `onFinish` would clear the loading state while a later
+       request is still out - the stale-rows flicker this exists to remove. */
     let inFlight = 0;
 
     const reporter: VisitReporter = {
@@ -41,11 +32,8 @@ export function useVisitPending() {
         },
     };
 
-    /*
-      A visit outlives the component that sent it — Inertia still calls back
-      after a redirect tears the page down — so the count is dropped here
-      rather than left to be decremented against a list nobody is looking at.
-    */
+    /* A visit outlives the component that sent it - Inertia still calls back
+       after a redirect tears the page down - so the count is dropped here. */
     onScopeDispose(() => {
         inFlight = 0;
         processing.value = false;
@@ -56,11 +44,8 @@ export function useVisitPending() {
     return { processing, reporter };
 }
 
-/**
- * For a control that reloads the list it sits in — the pager, the page-size
- * box. No-ops when it is used outside a list that tracks its own visits, so
- * both components stay usable on their own.
- */
+/** No-ops outside a list that tracks its own visits, so a control that
+ *  reloads the list it sits in stays usable on its own. */
 export function useVisitReporter(): VisitReporter {
     return inject(VisitPendingKey, {
         onStart: () => {},

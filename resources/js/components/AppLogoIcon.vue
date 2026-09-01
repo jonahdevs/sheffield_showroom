@@ -14,25 +14,14 @@ defineProps<Props>();
 
 <template>
     <!--
-        The Sheffield flame, inlined from the same vector master that public/favicon.svg
-        is cut from, so the sidebar mark and the browser tab icon are the identical
-        artwork rather than two drawings that drift apart when one is retouched.
+        The viewBox stays at the master's full 1268 square even though the flame
+        fills only ~26% of it: every call site sizes this with a square utility,
+        and tightening the box would letterbox the mark inside those classes.
 
-        The viewBox is left at the master's full 1268 square even though the flame only
-        occupies the middle ~26% of that width. Every call site sizes this with a square
-        utility (size-5 through size-9), and a square viewBox makes those classes behave:
-        the mark lands in the same place at every size and matches the favicon crop
-        exactly. Tightening the box to the ink would make the component non-square and
-        silently letterbox itself inside those same classes for no visual gain.
-
-        The fills are the literal artwork hexes, not --color-brand-500 / --color-brand-blue-500.
-        Those tokens are close in name only: brand-500 resolves to #C12534 and the flame's
-        red is #EC1E24, and the blue token is a mid indigo against the mark's near-black
-        navy. Driving the logo from them would leave the in-app mark a visibly duller,
-        lighter flame than the favicon sitting inches above it in the browser chrome. A
-        two-colour identity mark is also the one thing on the page that must NOT answer to
-        currentColor or to theme tokens -- it has to read the same in light and dark, which
-        is why the call sites give it a light chip to sit on instead of recolouring it.
+        The fills are the literal artwork hexes, not brand tokens - brand-500 is
+        #C12534 against the flame's #EC1E24. This mark must NOT answer to
+        currentColor or the theme; it reads the same in light and dark, which is
+        why call sites give it a light chip to sit on.
     -->
     <svg
         xmlns="http://www.w3.org/2000/svg"

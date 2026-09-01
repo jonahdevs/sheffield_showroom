@@ -11,17 +11,8 @@ use App\Models\Visit;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Every field the visit form reads and writes, the customer's half included.
- *
- * The form finds a customer or types one, so on an edit it needs the details
- * of whoever is already attached - it shows them back rather than making
- * somebody look the record up to check they have the right person.
- *
- * The moment is split into a date and a time because that is how it is
- * entered - a calendar and a clock are two controls - and joined back into one
- * `visited_at` by `VisitRequest`.
- */
+# `visited_on` and `visited_time` are joined back into one `visited_at` by
+# `VisitRequest`.
 #[TypeScript(location: ['App', 'Data'])]
 class VisitFormData extends Data
 {
@@ -45,9 +36,8 @@ class VisitFormData extends Data
         public ?string $respondent,
         public ?string $expected_follow_up_on,
         public ?string $notes,
-        /* What they were shown and how keen they were on each. Carries the
-           whole row rather than an id, so a product dropped from the catalogue
-           since still has a name to show rather than a bare number. */
+        # The whole row rather than an id, so a product dropped from the
+        # catalogue since still has a name to show.
         public array $products,
         public string $customer_label,
     ) {}

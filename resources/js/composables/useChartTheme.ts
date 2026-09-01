@@ -2,25 +2,16 @@ import { ref } from 'vue';
 
 export type ChartTheme = {
     isDark: boolean;
-    /** Axis ticks and anything else the chart writes for itself. */
     label: string;
-    /** Grid lines. */
     grid: string;
     /** The card a chart sits on, used as the seam between donut wedges. */
     surface: string;
-    /** The single colour a one-series chart is drawn in. */
     accent: string;
 };
 
-/**
- * The wedge colours, in the order a donut spends them.
- *
- * Fixed rather than read off `--chart-1..5`: those are shadcn's defaults, they
- * are a different five hues in dark mode than in light, and there are five of
- * them against nine purposes. These are picked at one lightness so no wedge
- * disappears into a white card or a near-black one, and they open on the two
- * brand colours so the ring belongs to the rest of the application.
- */
+/* Fixed rather than read off `--chart-1..5`: those are five against nine
+   purposes, and a different five hues in dark mode than in light. These sit at
+   one lightness, so no wedge disappears into a white card or a near-black. */
 export const CHART_PALETTE = [
     'hsl(354, 68%, 50%)',
     'hsl(229, 52%, 48%)',
@@ -53,16 +44,7 @@ const theme = ref<ChartTheme>(LIGHT);
 
 let observing = false;
 
-/**
- * The design tokens a chart needs, in colours a canvas can actually paint.
- *
- * ApexCharts writes these straight into SVG attributes and shades some of them
- * arithmetically, so `var(--faint)` is no use to it and neither is the
- * `hsl(...)` the token resolves to — the values have to arrive as hex. They are
- * read back off the document rather than duplicated here so a token that moves
- * moves the charts with it, and a hardcoded pair stands behind them for the
- * case where the stylesheet has not landed yet.
- */
+/** The design tokens a chart needs, as the hex Apex demands - see `toHex`. */
 export function useChartTheme() {
     watchDocumentTheme();
 
@@ -77,11 +59,8 @@ function watchDocumentTheme(): void {
     observing = true;
     theme.value = readTheme();
 
-    /*
-      Never disposed, and deliberately so: appearance is an application-wide
-      concern, and tearing the observer down with whichever chart happened to
-      mount first would leave every other chart stuck in the old palette.
-    */
+    /* Never disposed, deliberately: tearing the observer down with whichever
+       chart mounted first would strand every other chart in the old palette. */
     new MutationObserver(() => {
         theme.value = readTheme();
     }).observe(document.documentElement, {
@@ -104,13 +83,8 @@ function readTheme(): ChartTheme {
     };
 }
 
-/**
- * A custom property's computed value as `#rrggbb`, or the fallback.
- *
- * The `var(` guard is for the browser that hands back the declaration rather
- * than the substituted value: a fill of `var(--color-slate-600)` paints
- * nothing at all, which is worse than being one shade off.
- */
+/* The `var(` guard is for the browser that hands back the declaration rather
+   than the substituted value: a `var(...)` fill paints nothing at all. */
 function token(
     styles: CSSStyleDeclaration,
     name: string,
@@ -127,27 +101,18 @@ function token(
 
 let canvas: CanvasRenderingContext2D | null | undefined;
 
-/*
-  Keyed on the colour itself rather than on the token it came from, so nothing
-  has to remember to empty it when the theme flips: `hsl(...)` to `#rrggbb` is
-  the same answer in either appearance, and a stale entry is impossible.
-*/
+/* Keyed on the colour itself rather than the token it came from, so nothing
+   has to empty it when the theme flips - a stale entry is impossible. */
 const hexes = new Map<string, string | null>();
 
 /**
  * Any CSS colour as `#rrggbb`, painted rather than parsed.
  *
- * Apex reads every colour it is given with a hex reader and derives its
- * gradient stops, tints and shades arithmetically from the digits. Hand it the
- * `hsl(354, 68%, 45%)` that `--primary` computes to and it reads the letters as
- * hex: the wash under the trend line came out fading to a teal that appears
- * nowhere in the palette. SVG itself is happy with `hsl()` and `oklch()`, which
- * is why the stroke looked right while the fill did not.
- *
- * A canvas is used because it accepts every syntax the stylesheet might grow
- * into. The pixel is read back rather than `fillStyle`, which no longer
- * normalises a wide-gamut value and would hand an `oklch()` token straight
- * back unconverted.
+ * Apex derives tints, shades and gradient stops arithmetically from hex
+ * digits, so the `hsl(354, 68%, 45%)` that `--primary` computes to has its
+ * letters read as hex and the fill goes teal - while the stroke, which SVG
+ * renders directly, looks right. The pixel is read back rather than
+ * `fillStyle`, which hands an `oklch()` token back unconverted.
  */
 function toHex(value: string): string | null {
     const cached = hexes.get(value);
@@ -180,15 +145,9 @@ function paint(value: string): string | null {
         .join('')}`;
 }
 
-/**
- * Whether the canvas understood the colour, and left it as the fill.
- *
- * A `fillStyle` it cannot parse is discarded in silence and the previous fill
- * stands, so a garbled token would paint whatever the last one did. Offering it
- * against two different sentinels separates the two cases: a value that lands
- * on whichever sentinel it was offered against is one the canvas ignored, and a
- * genuine black cannot come back white.
- */
+/* A `fillStyle` the canvas cannot parse is discarded in silence and the
+   previous fill stands, so a garbled token would paint whatever the last one
+   did. Two sentinels separate the cases: a real black cannot come back white. */
 function accepts(context: CanvasRenderingContext2D, value: string): boolean {
     context.fillStyle = '#000000';
     context.fillStyle = value;

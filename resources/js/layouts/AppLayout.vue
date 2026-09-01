@@ -8,12 +8,6 @@ const { breadcrumbs = [] } = defineProps<{
 }>();
 </script>
 
-<!--
-  `bg-muted` is what separates the content from the shell. The rail and the
-  topbar are the page's white; the surface the content sits on is a step off
-  it, so a white card lifts off the page instead of dissolving into it and the
-  1px border stops being the only thing doing the work.
--->
 <template>
     <AppSidebarLayout>
         <PageSurface :breadcrumbs="breadcrumbs" class="bg-muted">

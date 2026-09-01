@@ -55,11 +55,6 @@ const showing = computed(() => {
 });
 </script>
 
-<!--
-  The pager every list shares. Pages are Inertia links rather than clicks, so a
-  page is a URL somebody can send to somebody else, and every visit reports
-  through the list's own pending flag.
--->
 <template>
     <div
         v-if="props.meta.total > 0"

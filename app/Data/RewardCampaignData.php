@@ -10,11 +10,8 @@ use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
 /**
- * A campaign as the rewards screens read it.
- *
- * `is_running` is the model's three-part answer rather than the status alone:
- * a campaign marked active whose end date passed last week is not running, and
- * a screen reading only the status would say it was.
+ * `is_running` is `RewardCampaign::isRunning()`, not the status: a campaign
+ * marked active whose end date passed last week is not running.
  *
  * @property array<int, CampaignRewardData> $rewards
  */

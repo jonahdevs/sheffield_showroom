@@ -10,41 +10,16 @@ use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 use Throwable;
 
-/**
- * The window every panel on the dashboard is measured over.
- *
- * One object rather than a pair of dates on the request: the deltas need the
- * window before this one, and "the same length, ending the day before" is a
- * rule that has to be written once. A panel that computed its own previous
- * period would drift the moment a preset was added.
- *
- * Named windows and a hand-picked pair land in the same shape, so nothing
- * downstream has to know which of the two the reader chose.
- */
 #[TypeScript(location: ['App', 'Data'])]
 class DashboardRangeData extends Data
 {
-    /** What the control falls back to, and what an unrecognised preset lands on. */
     public const DEFAULT = 'last_7_days';
 
-    /** A window picked on the calendar rather than named. */
     public const CUSTOM = 'custom';
 
-    /**
-     * Every window that has a name, in the order a control should offer them.
-     *
-     * Ordered shortest-first rather than alphabetically, because a rail of them
-     * is read as a dial from "just now" outwards and a list that jumped from
-     * last month back to today would have to be searched instead of aimed at.
-     *
-     * The list is public because the visits log borrows this same vocabulary
-     * for its own picker. Two screens naming windows differently - "week to
-     * date" here, "this week" there, resolving to different days - is exactly
-     * the drift a shared list prevents, and it is cheaper to share the six
-     * names than to reconcile two sets of dates later.
-     *
-     * @var array<string, string>
-     */
+    # The only declaration of the named windows; the visits log reads the same
+    # vocabulary. Do not resolve a named window anywhere else.
+    /** @var array<string, string> */
     public const PRESETS = [
         'today' => 'Today',
         'this_week' => 'This week',
@@ -55,24 +30,14 @@ class DashboardRangeData extends Data
         'last_month' => 'Last month',
     ];
 
-    /**
-     * The longest window the dashboard will draw.
-     *
-     * The trend line carries a point per day, and a hand-typed query string can
-     * ask for a decade. Two years of points is already a smear; anything past
-     * this is a chart nobody can read paid for with a query nobody wanted.
-     */
     private const MAX_DAYS = 366;
 
     public function __construct(
         public string $preset,
-        /** Inclusive, `Y-m-d`. */
+        # `from` and `to` are inclusive, `Y-m-d`.
         public string $from,
-        /** Inclusive, `Y-m-d`. */
         public string $to,
-        /** The window written out, for the control and for a panel's empty state. */
         public string $label,
-        /** How many days it covers, which is also how far back `previous()` reaches. */
         public int $days,
     ) {}
 
@@ -91,13 +56,6 @@ class DashboardRangeData extends Data
     }
 
     /**
-     * The named windows, for a control that offers them as buttons.
-     *
-     * Shaped like every other option list the pages are handed - `VisitPurpose::options()`,
-     * `PageSize::OPTIONS` - so a picker consumes it without a special case, and
-     * so the labels are written once here rather than typed again in whichever
-     * templates happen to show them.
-     *
      * @return array<int, array{value: string, label: string}>
      */
     public static function options(): array
@@ -111,42 +69,21 @@ class DashboardRangeData extends Data
         return $options;
     }
 
-    /**
-     * Whether a string off a query string names a window.
-     *
-     * Worth asking before calling `preset()`, because that method answers
-     * anything at all with the default week - which is right for the dashboard,
-     * where some window must be drawn, and wrong anywhere a missing or mangled
-     * name should mean "no window was named" rather than "here is a week you
-     * did not ask for".
-     */
+    # Ask this before calling `preset()`: that method answers an unrecognised
+    # name with the default week, which is wrong wherever a missing name should
+    # mean "no window".
     public static function isPreset(string $preset): bool
     {
         return array_key_exists($preset, self::PRESETS);
     }
 
-    /**
-     * A window named rather than drawn.
-     *
-     * All three screens that read by date - the dashboard, the visits log and
-     * the list of won rewards - offer these as buttons beside the calendar, so
-     * the common questions are one click rather than two dates typed twice.
-     * They would still be needed if none of them did: the default window is one
-     * of them, and a link somebody kept - `?range=last_30_days` - should open
-     * the month it promised rather than silently showing a week.
-     */
     public static function preset(string $preset): self
     {
         $today = CarbonImmutable::today();
 
         return match ($preset) {
-            /* A single day, so `previous()` gives yesterday - which is what the
-               visits log's old "Today" tile was compared against, kept reachable
-               now that the tile itself follows the picker. */
             'today' => self::between($preset, $today, $today),
-            /* Week to date rather than a rolling seven days: the two are
-               different questions, and `last_7_days` sits immediately below it
-               for whoever wanted the other one. */
+            # Week to date, not a rolling seven days; `last_7_days` is the other one.
             'this_week' => self::between($preset, $today->startOfWeek(), $today),
             'last_30_days' => self::between($preset, $today->subDays(29), $today),
             'last_90_days' => self::between($preset, $today->subDays(89), $today),
@@ -160,14 +97,8 @@ class DashboardRangeData extends Data
         };
     }
 
-    /**
-     * A window picked on the calendar.
-     *
-     * Anything that does not describe a window the showroom could have had -
-     * a date that will not parse, a pair the wrong way round, an end in the
-     * future, a span longer than a year - is corrected rather than refused.
-     * This is a query string, and the reader gets a dashboard either way.
-     */
+    # A nonsensical pair is clipped rather than refused - this is a query
+    # string, and the reader gets a dashboard either way.
     public static function custom(string $from, string $to): self
     {
         $start = self::parse($from);
@@ -198,10 +129,6 @@ class DashboardRangeData extends Data
         return self::between(self::CUSTOM, $start, $end);
     }
 
-    /**
-     * The equally long window immediately before this one, which is what every
-     * figure in the KPI row is compared against.
-     */
     public function previous(): self
     {
         $endsOn = $this->startsAt()->subDay();
@@ -209,11 +136,8 @@ class DashboardRangeData extends Data
         return self::between($this->preset, $endsOn->subDays($this->days - 1), $endsOn);
     }
 
-    /**
-     * The first instant inside the window. A visit is stored to the minute, so
-     * a comparison against the bare date would drop everything logged after
-     * midnight on the closing day.
-     */
+    # Visits are stored to the minute, so both ends widen to the whole day.
+    # Comparing against the bare date drops everything logged after midnight.
     public function startsAt(): CarbonImmutable
     {
         return CarbonImmutable::parse($this->from)->startOfDay();
@@ -231,8 +155,7 @@ class DashboardRangeData extends Data
             from: $from->format('Y-m-d'),
             to: $to->format('Y-m-d'),
             label: self::describe($from, $to),
-            /* Inclusive of both ends: a Monday-to-Sunday week is seven days,
-               not the six the difference between the dates would give. */
+            # Inclusive of both ends: a Monday-to-Sunday week is seven days.
             days: (int) $from->diffInDays($to) + 1,
         );
     }
@@ -250,10 +173,6 @@ class DashboardRangeData extends Data
         }
     }
 
-    /**
-     * The window as somebody would say it. The year is written once, on the
-     * closing date, unless the window straddles two of them.
-     */
     private static function describe(CarbonImmutable $from, CarbonImmutable $to): string
     {
         if ($from->isSameDay($to)) {

@@ -23,12 +23,9 @@ const props = withDefaults(
 const { isCurrentOrParentUrl } = useCurrentUrl();
 
 /**
- * One row's href as a bare path, for measuring how deep it reaches.
- *
- * Wayfinder hands back an object or a string and either may carry an origin,
- * while `activeFor` is written as a plain path. Comparing those as they arrive
- * would make an absolute URL look deeper than a relative one purely for having
- * a hostname in front of it.
+ * One row's href as a bare path. Wayfinder hrefs may carry an origin while
+ * `activeFor` is a plain path, so an absolute URL would otherwise measure
+ * deeper purely for having a hostname.
  */
 function pathOf(href: NavItem['href'] | string): string {
     const url = toUrl(href);
@@ -45,15 +42,9 @@ function pathOf(href: NavItem['href'] | string): string {
 }
 
 /**
- * How specifically this row matches the page, in path segments, or 0 where it
- * does not match at all.
- *
- * A row claims the section under it, not only its own page, so a create or an
- * edit form does not put the rail out. What it cannot know is that a row
- * sometimes leads to screens filed elsewhere - the accounts under
- * `/admin/users` are reached from Roles, because that is where the list of
- * people lives - so an item may name those sections itself through `activeFor`,
- * and a match on one of those counts as a match on that section's depth.
+ * How specifically this row matches the page, in path segments, or 0 for no
+ * match. A row claims the whole section under it, plus any section it names
+ * through `activeFor` for screens filed under a different path.
  */
 function matchDepth(item: NavItem): number {
     return [item.href, ...(item.activeFor ?? [])]
@@ -66,16 +57,8 @@ function matchDepth(item: NavItem): number {
 }
 
 /**
- * The depth of the closest match anywhere in this group.
- *
- * Rows nest: Campaigns is `/admin/rewards` and both Rewards and Redeem live
- * under it, so a section-wide match lights all three at once and the rail
- * stops saying which screen you are on. Whichever row reaches deepest into the
- * current path wins, and the shallower parents step aside.
- *
- * Worked out rather than declared per row, because the alternative is every
- * row listing the siblings it must not claim - a list that is correct only
- * until somebody adds the next one.
+ * Rows nest - Rewards and Redeem both live under Campaigns' `/admin/rewards` -
+ * so only the deepest match lights, or all three light at once.
  */
 const deepestMatch = computed(() =>
     props.items.reduce(

@@ -11,46 +11,28 @@ use App\Models\ShuffleResult;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * One won reward, as the list of them shows it.
- *
- * Distinct from `ShuffleRewardData`, which answers "what is this code" for a
- * customer holding a phone and for the redemption desk. This answers "who won
- * what, and has it been collected" for somebody reading down a page, so it
- * carries the customer and the campaign - two things the reveal screen must
- * never show - and drops the description and the terms, which are a paragraph
- * each and unreadable in a table cell.
- *
- * The pair are not merged. The reveal is reached with nothing but a token, and
- * a single object serving both would put a customer's name one forgotten flag
- * away from a page anybody who photographed a QR code can open.
- */
+# Never merge with `ShuffleRewardData`. The reveal is reached with nothing but
+# a token, and one object serving both puts the customer's name one forgotten
+# flag away from a page anybody who photographed a QR code can open.
 #[TypeScript(location: ['App', 'Data'])]
 class RewardWinnerRowData extends Data
 {
     /**
-     * What `fromModel` reaches for, so whoever builds a list can eager-load it.
-     *
-     * Four relations deep in two directions, and every one of them is read for
-     * every row: without this the page costs five queries per reward, which on
-     * a fifty-row page is two hundred and fifty round trips to draw one table.
+     * Eager-load these or the page costs a query per relation per row.
      *
      * @var array<int, string>
      */
     public const RELATIONS = [
         'session.customer',
         'session.campaign:id,name',
-        /* Two hops rather than one since rewards moved into a catalogue: the
-           pool entry names the attachment, and what the thing actually is
-           hangs off that. A product reward needs its product too, because
-           `readableName()` falls back to it. */
         'poolEntry.reward.reward.product:id,name',
+        'poolEntry.reward.qualifyingProducts:id,name',
+        'session.purchase.products:id,name',
         'redemption.redeemer:id,name',
     ];
 
     public function __construct(
         public int $id,
-        /** What the customer quotes at the counter, and what staff type into Redeem. */
         public string $code,
         public string $customer_name,
         public CustomerType $customer_type,
@@ -60,7 +42,6 @@ class RewardWinnerRowData extends Data
         public string $reward_name,
         public RewardType $type,
         public string $type_label,
-        /** "10%" or "KSh 5,000.00", or null where the reward carries no figure. */
         public ?string $value,
         public string $won_on,
         public ?string $expires_on,
@@ -68,22 +49,31 @@ class RewardWinnerRowData extends Data
         public string $status_label,
         public ?string $redeemed_on,
         public ?string $redeemed_by,
+        public ?string $purchase_reference,
+        public ?string $purchased_on,
+        /**
+         * The intersection of the receipt and the reward's pairing, not the
+         * whole receipt. Empty is the common case: the reward named no
+         * products, so any purchase qualified.
+         *
+         * @var array<int, string>
+         */
+        public array $qualifying_products,
     ) {}
 
     public static function fromModel(ShuffleResult $result): self
     {
         $customer = $result->session?->customer;
-        /* The pool entry names the attachment - how many, for how long - and
-           what was actually won is the catalogue row behind it. */
-        $reward = $result->poolEntry->reward->reward;
+        $attachment = $result->poolEntry->reward;
+        $reward = $attachment->reward;
         $redemption = $result->redemption;
+        $purchase = $result->session?->purchase;
+
+        $pairedTo = $attachment->qualifyingProducts->pluck('id');
 
         return new self(
             id: $result->id,
             code: $result->code,
-            /* `name` before `displayName()` for the same reason the visits list
-               does it: a company customer is a person who came in for a
-               business, and the business belongs on the line under them. */
             customer_name: $customer?->name
                 ?? $customer?->displayName()
                 ?? 'Unknown customer',
@@ -101,6 +91,15 @@ class RewardWinnerRowData extends Data
             status_label: $result->status->label(),
             redeemed_on: $redemption?->redeemed_at->format('j M Y'),
             redeemed_by: $redemption?->redeemer?->name,
+            purchase_reference: $purchase?->reference,
+            purchased_on: $purchase?->purchased_at->format('j M Y'),
+            qualifying_products: $pairedTo->isEmpty() || $purchase === null
+                ? []
+                : $purchase->products
+                    ->whereIn('id', $pairedTo->all())
+                    ->pluck('name')
+                    ->values()
+                    ->all(),
         );
     }
 }

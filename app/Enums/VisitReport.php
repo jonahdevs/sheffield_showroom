@@ -8,38 +8,20 @@ use App\Models\Role;
 use App\Models\User;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Which visit log somebody gets when they press Export.
- *
- * The list on the screen is one thing and the file off it is another. Everyone
- * looking at the visits page is reading the same rows, but what they need to
- * carry away from it differs by desk: the floor wants the write-up and the
- * follow-up date, and the front desk wants a sheet it can put beside a phone.
- *
- * Chosen by role rather than offered as a menu - see `forViewer()`. A report is
- * a column set and nothing more: every one of them is still the same filtered,
- * already-authorised query, mapped through the same `VisitRowData`, so no
- * report can show a row the viewer could not already see on the page.
- */
+# A report is a column set only: every one runs the same filtered, already-authorised
+# query, so no report can show a row the viewer could not already see.
 #[TypeScript]
 enum VisitReport: string
 {
-    /** The log as the showroom keeps it, write-up and all. */
     case Full = 'full';
 
-    /** The front desk's sheet: who is coming in, and who to put them with. */
     case Reception = 'reception';
 
     /**
      * The columns this report carries, in order, as key => heading.
      *
-     * The key names a field `VisitExport` knows how to read; the heading is
-     * what somebody sees at the top of the column. Both live here so that
-     * adding a report is one case rather than an edit in three files.
-     *
-     * `Full` keeps the headings it has always had. A download that quietly
-     * renamed its columns would break every spreadsheet somebody has already
-     * built on top of it.
+     * `Full` keeps the headings it has always had — renaming them breaks every
+     * spreadsheet already built on the download.
      *
      * @return array<string, string>
      */
@@ -62,12 +44,8 @@ enum VisitReport: string
                 'notes' => 'Notes',
             ],
 
-            /* Deliberately without the notes. That column is the write-up of
-               what was actually said on the floor - it is the reason the full
-               export exists - and it is not the front desk's to read. The
-               source, the date window and the products shown are left off for
-               a plainer reason: none of them helps somebody decide who to walk
-               a visitor over to. */
+            # Deliberately without `notes`: the floor's write-up is not the
+            # front desk's to read.
             self::Reception => [
                 'customer_name' => 'Visitor name',
                 'customer_company' => 'Company',
@@ -78,7 +56,6 @@ enum VisitReport: string
         };
     }
 
-    /** The sheet's tab, and the heading printed on the PDF. */
     public function title(): string
     {
         return match ($this) {
@@ -87,7 +64,6 @@ enum VisitReport: string
         };
     }
 
-    /** The downloaded file's name, before its date and extension. */
     public function basename(): string
     {
         return match ($this) {
@@ -96,18 +72,9 @@ enum VisitReport: string
         };
     }
 
-    /**
-     * The report this viewer's role calls for.
-     *
-     * Named rather than derived from permissions, the same way super admin is:
-     * reception's sheet is narrower than their permissions are, so no subset
-     * test over what they may do could arrive at it.
-     *
-     * The narrow sheet goes only to somebody whose whole job is the front
-     * desk. A manager who has also been given the reception role still gets
-     * the full log - a wider role must never be quietly narrowed by a second
-     * one, or somebody loses the notes column and has no way to tell why.
-     */
+    # Named, never derived: reception's sheet is narrower than their permissions,
+    # so no subset test could reach it. Reception-and-nothing-else only — a wider
+    # role must never be quietly narrowed by a second one.
     public static function forViewer(User $viewer): self
     {
         $roles = $viewer->getRoleNames();

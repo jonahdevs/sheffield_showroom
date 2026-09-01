@@ -49,12 +49,10 @@ const props = defineProps<{
         campaign: string;
         type: string;
         status: string;
-        /** The name of the window, where one was named rather than drawn. */
         range: string;
         from: string;
         to: string;
     };
-    /** The window written out, resolved by the server that settled it. */
     date_label: string;
     presets: { value: string; label: string }[];
     /** Null where the window has no length, which is what turns the tiles' caption off. */
@@ -68,10 +66,9 @@ const props = defineProps<{
 }>();
 
 /*
-  `all` rather than a blank string for the three selects, because a shadcn
-  `SelectItem` cannot carry an empty value - it uses one internally to mean
-  "nothing chosen" - and `blank` maps it back to the empty string the server
-  reads as "no filter". The visits list does the same with its purpose.
+  `all` rather than a blank string for the three selects: a shadcn `SelectItem`
+  cannot carry an empty value, so `blank` maps it back to the empty string the
+  server reads as "no filter".
 */
 const { filters, hasFilters, processing, apply, clear } = useFilters({
     url: index.url(),
@@ -97,15 +94,7 @@ const { filters, hasFilters, processing, apply, clear } = useFilters({
     only: ['rewards', 'filters', 'date_label', 'window_days', 'stats'],
 });
 
-/**
- * Sent at once rather than after the usual pause: a window is one decisive
- * answer rather than a phrase still being typed.
- *
- * Each clears the other spelling of the window. The server ignores a stale
- * pair of dates under a named window anyway, but a URL carrying
- * `range=this_month&from=2026-02-01` is one somebody will eventually read as a
- * contradiction and try to honour.
- */
+/** Each spelling of the window clears the other, so a URL never carries both `range` and `from`/`to`. */
 function chooseWindow(from: string, to: string): void {
     apply({ range: '', from, to });
 }
@@ -140,14 +129,6 @@ function tile(key: string) {
     return TILES[key] ?? { icon: Gift, colour: CHART_PALETTE[8] };
 }
 
-/**
- * A colour for every state, none of them left unsaid.
- *
- * There is no ordinary case here either. A reader scanning this page is asking
- * which of these are still owed to somebody, and that is the whole reason to
- * open it - so "not yet used" is amber rather than grey. It is not a problem,
- * but it is the row that still has work in it.
- */
 function statusTone(status: string): string {
     switch (status) {
         case 'redeemed':
@@ -173,20 +154,7 @@ defineOptions({
 });
 </script>
 
-<!--
-  Every reward anybody has won, newest first.
-
-  The screen the rest of the feature was missing. Campaigns says what went into
-  the drawer; Redeem answers "is this one code good" for somebody standing at
-  the counter with it. Neither could answer what an administrator actually asks
-  - what has this customer won, and is anybody still owed anything - because
-  Redeem can only be searched by a code, and a code is exactly what the person
-  asking does not have.
-
-  Read-only by design. Handing a reward over is Redeem's job and a different
-  permission, so there is one link across to it and no button here that changes
-  anything.
--->
+<!-- Read-only by design: handing a reward over is Redeem's job and a different permission. -->
 <template>
     <Head title="Rewards" />
 
@@ -200,10 +168,6 @@ defineOptions({
             </div>
 
             <div class="flex flex-wrap items-center gap-2.5">
-                <!-- Drives the whole screen - the figures, the rows and the
-                     pager's count - rather than only the table, which is what
-                     earns it a place beside the title instead of down in the
-                     filter bar with the search. -->
                 <DateRangePicker
                     :from="props.filters.from"
                     :to="props.filters.to"
@@ -215,11 +179,7 @@ defineOptions({
                     @preset="choosePreset"
                 />
 
-                <!-- The one way out of a read-only screen: somebody who has
-                     just found the reward a customer is asking about needs the
-                     counter next, and hunting for it in the rail is a step
-                     that did not need to exist. -->
-                <Button as-child variant="quiet" data-test="go-redeem">
+                <Button as-child variant="outline" data-test="go-redeem">
                     <Link :href="redeemIndex().url">
                         <TicketCheck />
                         Redeem a code
@@ -272,9 +232,6 @@ defineOptions({
                     Clear
                 </Button>
 
-                <!-- `ml-auto` only from `sm`: on a narrow bar these wrap under
-                     the search box, and a left margin of whatever is left over
-                     would push them off the card. -->
                 <Select
                     v-if="props.campaigns.length > 1"
                     v-model="filters.campaign"
@@ -340,9 +297,7 @@ defineOptions({
                 </Select>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "nothing won" over rows about
-                 to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: mid-reload this must not flash "nothing won". -->
             <TableSkeleton
                 v-if="processing"
                 class="px-5 py-2"
@@ -385,9 +340,6 @@ defineOptions({
                             class="grid min-w-[1180px] grid-cols-[minmax(0,1.15fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(0,0.65fr)_minmax(0,0.8fr)] items-center gap-4 px-5 py-3.5"
                             :data-test="`reward-${reward.id}`"
                         >
-                            <!-- Read the same way as the visits and customers
-                                 lists: the kind as an icon, the person in bold,
-                                 and what identifies them under it. -->
                             <div class="flex min-w-0 items-center gap-3">
                                 <span
                                     class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-faint"
@@ -426,10 +378,6 @@ defineOptions({
                                 </div>
                             </div>
 
-                            <!-- The same drawn glyph the customer saw on the
-                                 card they turned over, so the thing on this
-                                 row and the thing they are describing at the
-                                 counter are recognisably one reward. -->
                             <div class="flex min-w-0 items-center gap-2.5">
                                 <component
                                     :is="rewardIcon(reward.type)"
@@ -441,20 +389,38 @@ defineOptions({
                                     <p class="truncate text-xs">
                                         {{ reward.reward_name }}
                                     </p>
+                                    <!-- Suppressed when the name already contains the value ("10% discount"). -->
                                     <p
-                                        v-if="reward.value"
+                                        v-if="
+                                            reward.value &&
+                                            !reward.reward_name.includes(
+                                                reward.value,
+                                            )
+                                        "
                                         class="mt-0.5 truncate text-xs text-faint tabular-nums"
                                     >
                                         {{ reward.value }}
                                     </p>
+
+                                    <p
+                                        v-if="
+                                            reward.qualifying_products.length >
+                                            0
+                                        "
+                                        class="mt-0.5 truncate text-xs text-muted-foreground"
+                                        :title="`Paired to ${reward.qualifying_products.join(', ')}`"
+                                        :data-test="`qualified-${reward.id}`"
+                                    >
+                                        Because they bought
+                                        {{
+                                            reward.qualifying_products.join(
+                                                ', ',
+                                            )
+                                        }}
+                                    </p>
                                 </div>
                             </div>
 
-                            <!-- Monospaced and wide-tracked: this is the one
-                                 string on the page somebody reads out loud
-                                 down a phone, and O against 0 is the mistake
-                                 the alphabet it is generated from already goes
-                                 out of its way to avoid. -->
                             <span
                                 class="truncate font-mono text-xs tracking-wide"
                                 :data-test="`code-${reward.id}`"
@@ -469,9 +435,24 @@ defineOptions({
                                 {{ reward.campaign_name }}
                             </span>
 
-                            <span class="truncate text-xs tabular-nums">
-                                {{ reward.won_on }}
-                            </span>
+                            <div class="min-w-0">
+                                <p class="truncate text-xs tabular-nums">
+                                    {{ reward.won_on }}
+                                </p>
+
+                                <p
+                                    v-if="reward.purchase_reference"
+                                    class="mt-0.5 truncate font-mono text-[0.6875rem] text-faint"
+                                    :title="
+                                        reward.purchased_on
+                                            ? `Purchased ${reward.purchased_on}`
+                                            : undefined
+                                    "
+                                    :data-test="`purchase-${reward.id}`"
+                                >
+                                    {{ reward.purchase_reference }}
+                                </p>
+                            </div>
 
                             <span
                                 class="truncate text-xs tabular-nums"
@@ -489,9 +470,6 @@ defineOptions({
                                     {{ reward.status_label }}
                                 </span>
 
-                                <!-- Who handed it over and when. The question
-                                     after "has this been collected" is always
-                                     "by whom", and it is already on the row. -->
                                 <p
                                     v-if="reward.redeemed_on"
                                     class="mt-1 truncate text-[0.6875rem] text-faint"

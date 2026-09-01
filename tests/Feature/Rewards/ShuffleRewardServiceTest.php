@@ -15,9 +15,9 @@ use App\Services\Rewards\ShuffleRewardService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 
-// -----------------------------------------------------------------------------
-// Claiming a reward
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Claiming a reward
+# =========================================================================
 
 it('claims one unit, writes one result, and spends the turn', function () {
     $campaign = campaignHolding(['Free kitchen audit' => 5]);
@@ -30,8 +30,6 @@ it('claims one unit, writes one result, and spends the turn', function () {
         ->and($session->refresh()->status)->toBe(ShuffleSessionStatus::Shuffled)
         ->and($result->poolEntry->status)->toBe(PoolEntryStatus::Claimed)
         ->and($result->poolEntry->claimed_at)->not->toBeNull()
-        /* Four left of five, counted off the pool rather than off anything
-           the reward definition remembers. */
         ->and($campaign->availableCount())->toBe(4)
         ->and(ShuffleResult::query()->count())->toBe(1);
 });
@@ -46,7 +44,7 @@ it('refuses a second shuffle on the same turn', function () {
     expect(fn () => $service->claim($session->refresh()))
         ->toThrow(ShuffleUnavailableException::class);
 
-    /* And nothing was taken for the attempt. */
+    # Nothing taken for the refused attempt.
     expect($campaign->availableCount())->toBe(4)
         ->and(ShuffleResult::query()->count())->toBe(1);
 });
@@ -62,16 +60,10 @@ it('never hands out more rewards than were loaded', function () {
     expect($campaign->availableCount())->toBe(0)
         ->and(ShuffleResult::query()->count())->toBe(3);
 
-    /* The fourth customer is told the drawer is empty rather than being handed
-       a fourth of three. */
     expect(fn () => $service->claim(sessionOn($campaign)))
         ->toThrow(ShuffleUnavailableException::class);
 });
 
-/**
- * The turn survives an empty pool. The customer did nothing wrong, so they
- * keep it and a showroom that adds stock back finds them still holding it.
- */
 it('spends nothing when the pool is empty', function () {
     $campaign = campaignHolding(['Free kitchen audit' => 1]);
     $service = app(ShuffleRewardService::class);
@@ -107,11 +99,6 @@ it('refuses a turn once its campaign has stopped', function () {
     expect($campaign->availableCount())->toBe(5);
 });
 
-/**
- * Stamped at the moment of winning, never recomputed. An administrator
- * lengthening the validity afterwards must not move a deadline somebody was
- * already given.
- */
 it('stamps the expiry from the reward definition and leaves it there', function () {
     $wonAt = CarbonImmutable::parse('2026-08-31 12:00:00');
 
@@ -143,19 +130,15 @@ it('gives every reward a code somebody can read back over a counter', function (
         ->toBeTrue();
 });
 
-// -----------------------------------------------------------------------------
-// Two people at once
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Two people at once
+# =========================================================================
 
 /**
- * The failure this whole feature is built to avoid, provoked directly.
- *
- * Two transactions cannot genuinely run at once inside one test process, so
- * this attacks the invariant from the other side: it takes the unit the
- * service is about to claim and gives it away underneath, which is exactly the
- * state a lost row lock would produce. The unique index on
- * `reward_pool_entry_id` is what has to refuse - and it does, so a broken lock
- * one day becomes an error rather than two people holding the same reward.
+ * Two transactions cannot genuinely run at once in one test process, so this
+ * attacks the invariant from the other side: the unit the service is about to
+ * claim is given away underneath it, which is the state a lost row lock would
+ * produce. The unique index on `reward_pool_entry_id` is what must refuse.
  */
 it('cannot write two results against one reward unit', function () {
     $campaign = campaignHolding(['Free kitchen audit' => 1]);

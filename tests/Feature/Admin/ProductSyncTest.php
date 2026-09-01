@@ -85,10 +85,6 @@ it('imports products from the website', function () {
         ->and($sheet->imageUrl())->toBe('https://sheffieldafrica.test/storage/a.jpg');
 });
 
-/**
- * The model number is what a customer asks after - "have you got the BP-28" -
- * so it comes across with the rest rather than being left on the website.
- */
 it('imports the model number under either key the website uses', function () {
     fakeCatalogue([
         ['id' => 11, 'name' => 'Box Profile', 'sku' => 'SS-0001', 'model_number' => 'BP-28', 'image_url' => null],
@@ -101,11 +97,6 @@ it('imports the model number under either key the website uses', function () {
         ->and(Product::query()->where('external_id', 12)->sole()->model_number)->toBe('GT-400');
 });
 
-/**
- * A model written out as the literal string "null" is read off a tile and
- * quoted to a customer, so it is treated as the absence it is - the same
- * check the SKU goes through.
- */
 it('stores a blank or placeholder model number as nothing', function () {
     fakeCatalogue([
         ['id' => 11, 'name' => 'No model', 'sku' => 'SS-0001', 'model_number' => 'null', 'image_url' => null],
@@ -126,14 +117,10 @@ it('sends the token the website expects', function () {
     Http::assertSent(fn ($request) => $request->hasHeader('X-Catalogue-Token', 'test-token'));
 });
 
-/**
- * The whole reason `external_id` exists: a second run must update what the
- * first one made rather than adding it again.
- */
 it('updates rather than duplicates on a second run', function () {
-    /* A sequence rather than two `Http::fake` calls: stubs merge, so a second
-       `fake` would leave the first one still matching and both runs would see
-       the same payload. */
+    # A sequence rather than two `Http::fake` calls: stubs merge, so a second
+    # `fake` would leave the first still matching and both runs would see the
+    # same payload.
     $page = fn (string $name) => [
         'data' => [['id' => 11, 'name' => $name, 'sku' => 'SS-0001', 'image_url' => null]],
         'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 200, 'total' => 1],
@@ -154,10 +141,6 @@ it('updates rather than duplicates on a second run', function () {
         ->and(Product::query()->sole()->name)->toBe('Galvanised Sheet Mk II');
 });
 
-/**
- * A product typed in here before the sync existed is the same steel sheet, so
- * it is adopted on its SKU rather than appearing twice.
- */
 it('adopts a hand-entered product that shares a SKU', function () {
     $existing = Product::factory()->create([
         'name' => 'Sheet typed in by hand',
@@ -198,7 +181,6 @@ it('brings back a synced product that was removed here', function () {
         ['id' => 11, 'name' => 'Galvanised Sheet', 'sku' => 'SS-0001', 'image_url' => null],
     ]);
 
-    /* One stub, hit twice - the payload is the same both times here. */
     $user = catalogueSyncer();
 
     $this->actingAs($user)->post(route('admin.products.sync'));
@@ -212,10 +194,6 @@ it('brings back a synced product that was removed here', function () {
     expect(Product::query()->count())->toBe(1);
 });
 
-/**
- * The column is unique, so a blank must be null and a duplicate must be
- * dropped - otherwise one bad row on the website stops the whole sync.
- */
 it('survives blank and duplicated SKUs from the website', function () {
     fakeCatalogue([
         ['id' => 11, 'name' => 'No code', 'sku' => '', 'image_url' => null],
@@ -310,10 +288,6 @@ it('walks every page the website reports', function () {
     expect(Product::query()->count())->toBe(2);
 });
 
-/**
- * The website holds hundreds of products whose SKU is the literal string
- * "null". Stored as it stands, a salesperson reads "null" off the tile.
- */
 it('treats a placeholder SKU as no SKU', function () {
     fakeCatalogue([
         ['id' => 11, 'name' => 'Ice Machine', 'sku' => 'null', 'image_url' => null],
@@ -329,9 +303,6 @@ it('treats a placeholder SKU as no SKU', function () {
         ->and(Product::query()->whereNotNull('sku')->sole()->sku)->toBe('SS-0001');
 });
 
-/**
- * A product taken down on the website should leave the showroom floor too.
- */
 it('removes a synced product the website no longer offers', function () {
     $both = fn (array $rows) => [
         'data' => $rows,
@@ -375,10 +346,6 @@ it('never removes a product added here by hand', function () {
         ->and($local->fresh()->trashed())->toBeFalse();
 });
 
-/**
- * An empty feed is far more likely to be a broken website than a catalogue
- * that sells nothing, and acting on it would clear the floor.
- */
 it('removes nothing when the website returns an empty catalogue', function () {
     Http::fake([
         '*/api/catalogue/products*' => Http::sequence()
@@ -400,10 +367,6 @@ it('removes nothing when the website returns an empty catalogue', function () {
     expect(Product::query()->count())->toBe(1);
 });
 
-/**
- * A run that never reached the last page has not seen the whole catalogue, so
- * pruning against what it did see would remove products off an unread page.
- */
 it('removes nothing when a page fails part way through', function () {
     Http::fake([
         '*/api/catalogue/products*' => Http::sequence()
@@ -418,7 +381,7 @@ it('removes nothing when a page fails part way through', function () {
                 'data' => [['id' => 11, 'name' => 'One', 'sku' => 'SS-1', 'image_url' => null]],
                 'meta' => ['current_page' => 1, 'last_page' => 2, 'per_page' => 1, 'total' => 2],
             ])
-            /* Page two never arrives, however many times it is retried. */
+            # Page two never arrives, however many times it is retried.
             ->whenEmpty(Http::response('boom', 500)),
     ]);
 
@@ -428,15 +391,15 @@ it('removes nothing when a page fails part way through', function () {
 
     expect(Product::query()->count())->toBe(2);
 
-    /* Page one lands, page two falls over: the run throws before pruning. */
+    # Page one lands, page two falls over: the run throws before pruning.
     $this->actingAs($user)->post(route('admin.products.sync'));
 
     expect(Product::query()->count())->toBe(2);
 });
 
-// -----------------------------------------------------------------------------
-// Status, which the sync derives rather than the website dictating
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Status, which the sync derives rather than the website dictating
+# =========================================================================
 
 it('maps what the website publishes onto a status', function () {
     fakeCatalogue([
@@ -452,10 +415,6 @@ it('maps what the website publishes onto a status', function () {
         ->toBe(ProductStatus::Draft);
 });
 
-/**
- * The flag has been seen to arrive as a number or a string rather than a JSON
- * boolean, and a product read as unpublished comes off the floor.
- */
 it('reads the published flag however the feed spells it', function () {
     fakeCatalogue([
         ['id' => 11, 'name' => 'One', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => 1],
@@ -470,11 +429,6 @@ it('reads the published flag however the feed spells it', function () {
         ->and(Product::query()->where('external_id', 13)->sole()->status)->toBe(ProductStatus::Published);
 });
 
-/**
- * `Inactive` is the one status a person sets here and the website cannot know
- * about. A sync that reset it would undo a decision somebody made on the floor,
- * every single run, until they stopped bothering to make it.
- */
 it('never overwrites a status somebody set to Inactive here', function () {
     $product = Product::factory()
         ->fromWebsite(11)
@@ -505,11 +459,6 @@ it('leaves Inactive alone even when the website has unpublished the product', fu
     expect($product->fresh()->status)->toBe(ProductStatus::Inactive);
 });
 
-/**
- * An endpoint that has not been taught to send `is_published` is saying
- * nothing, not saying "draft". Reading its silence as a draft would take the
- * whole floor offline on the first run.
- */
 it('leaves a local status alone when the payload carries no status fields', function () {
     $draft = Product::factory()->fromWebsite(11)->status(ProductStatus::Draft)
         ->create(['name' => 'Not ready', 'sku' => 'SS-1']);
@@ -537,11 +486,6 @@ it('publishes a product the thin payload introduces for the first time', functio
     expect(Product::query()->sole()->status)->toBe(ProductStatus::Published);
 });
 
-/**
- * A row that arrives carrying a `deleted_at` has been withdrawn upstream. The
- * status and the soft delete have to agree about it, or the tile says one thing
- * and the list says another.
- */
 it('archives and removes a product the website reports as withdrawn', function () {
     fakeCatalogue([
         ['id' => 11, 'name' => 'Still sold', 'sku' => 'SS-1', 'image_url' => null, 'is_published' => true],
@@ -585,11 +529,6 @@ it('archives a product the website has stopped offering', function () {
         ->and($gone->status)->toBe(ProductStatus::Archived);
 });
 
-/**
- * A product back on the feed is back on the floor, so the status has to come
- * back with it - an un-deleted row still reading "Archived" is the same
- * disagreement in the other direction.
- */
 it('puts an archived product back on the floor when the website offers it again', function () {
     $product = Product::factory()->fromWebsite(11)->status(ProductStatus::Archived)
         ->create(['name' => 'Back in stock', 'sku' => 'SS-1']);

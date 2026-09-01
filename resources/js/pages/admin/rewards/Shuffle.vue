@@ -18,14 +18,8 @@ const props = defineProps<{
 }>();
 
 /*
- * The code is drawn in the browser from the URL the server sent, rather than
- * rendered server-side and shipped as an image. It means the token crosses the
- * wire exactly once - inside the page props this screen already needs - and
- * nothing has to route, cache or expire a generated image.
- *
- * A canvas rather than an SVG string: this is displayed once, at one size, on
- * a screen somebody points a phone at, and a canvas cannot be dragged out of
- * the page into an email as easily as an inline image can.
+ * Drawn client-side from `session.url`, so the token crosses the wire only in
+ * the page props and nothing has to route, cache or expire an image.
  */
 const canvas = ref<HTMLCanvasElement | null>(null);
 const drawFailed = ref(false);
@@ -38,10 +32,9 @@ async function drawCode() {
     try {
         await QRCode.toCanvas(canvas.value, props.session.url, {
             width: 320,
-            /* One module of quiet zone rather than the default four. The card
-               around it already provides the white margin a scanner needs, and
-               four leaves the code floating in the middle of a lot of nothing
-               on a screen being read from a metre away. */
+            /* One module of quiet zone rather than the library's default four:
+               the white card around the canvas already gives a scanner the
+               margin it needs. */
             margin: 1,
             errorCorrectionLevel: 'M',
             color: { dark: '#000000', light: '#ffffff' },
@@ -49,16 +42,14 @@ async function drawCode() {
 
         drawFailed.value = false;
     } catch {
-        /* A phone with the URL typed in still works, so a failed draw is a
-           degraded screen rather than a dead one. */
         drawFailed.value = true;
     }
 }
 
 onMounted(drawCode);
 
-/* Redrawn when the turn is used: the code comes off the screen entirely, and
-   the canvas it was on is gone with it. */
+/* `v-if` destroys the canvas when the turn closes, so the ref has to be redrawn
+   rather than reused if the session becomes shuffleable again. */
 watch(() => props.session.is_shuffleable, drawCode);
 
 async function cancelShuffle() {
@@ -84,13 +75,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  The screen a customer points a phone at.
-
-  Deliberately sparse. It is read across a counter, at arm's length, by
-  somebody who is being handed a phone and told to scan - so there is one
-  thing on it worth looking at, and everything else is small.
--->
 <template>
     <Head :title="`Shuffle for ${props.session.customer_name}`" />
 
@@ -123,11 +107,6 @@ defineOptions({
                 </Badge>
             </div>
 
-            <!--
-              The code, while there is still a turn behind it. Once the reward
-              is won the QR is worth nothing and showing it would invite
-              somebody to scan a page that only says "already claimed".
-            -->
             <div
                 v-if="props.session.is_shuffleable"
                 class="flex flex-col items-center gap-4 p-6"
@@ -142,8 +121,6 @@ defineOptions({
                     />
                 </div>
 
-                <!-- The address in words as well, for the phone that will not
-                     scan and the one whose camera app is being uncooperative. -->
                 <p
                     class="max-w-full text-center font-mono text-xs break-all text-muted-foreground"
                     data-test="shuffle-url"
@@ -169,11 +146,6 @@ defineOptions({
                 </p>
             </div>
 
-            <!--
-              What was won, once it has been. The same code the customer is
-              looking at on their own phone, so staff can read it back to them
-              if the screenshot did not save.
-            -->
             <div
                 v-else-if="props.session.reward"
                 class="flex flex-col gap-3 p-6"
@@ -218,7 +190,7 @@ defineOptions({
         >
             <Button
                 v-if="props.can.cancel"
-                variant="quiet"
+                variant="outline"
                 data-test="cancel-shuffle"
                 @click="cancelShuffle"
             >
@@ -226,17 +198,9 @@ defineOptions({
                 Cancel this turn
             </Button>
 
-            <!--
-              The fallback, for the customer whose phone will not scan or who
-              does not have one on them.
-
-              It goes to the customer's own page rather than drawing a table
-              here: that page is the experience, and a second copy of it on the
-              admin side would be the one that quietly drifted - and the one
-              standing in front of the customer when it did. Staff turn the
-              screen round; what the customer sees is exactly what they would
-              have seen in their hand.
-            -->
+            <!-- A plain `<a>`, not a `<Link>`: it leaves the admin SPA for the
+                 customer's own shuffle page rather than growing a second copy
+                 of that experience here. -->
             <Button
                 v-if="props.can.run"
                 as-child
@@ -249,7 +213,7 @@ defineOptions({
                 </a>
             </Button>
 
-            <Button as-child variant="quiet">
+            <Button as-child variant="outline">
                 <Link :href="rewardsIndex().url">
                     <RefreshCw />
                     Back to campaigns

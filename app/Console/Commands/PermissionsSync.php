@@ -12,13 +12,6 @@ use Spatie\Permission\PermissionRegistrar;
 
 use function Laravel\Prompts\table;
 
-/**
- * Reconciles the `Permission` enum with the spatie tables, then runs
- * `RolesSeeder` so the roles it defines match what they should grant.
- *
- * Safe to run repeatedly: it creates what is missing and leaves a role
- * somebody has edited on the Roles screen alone.
- */
 class PermissionsSync extends Command
 {
     protected $signature = 'permissions:sync
@@ -35,9 +28,8 @@ class PermissionsSync extends Command
 
         $registrar->forgetCachedPermissions();
 
-        /* The seeder creates whatever the enum has gained and then sets each
-           role from its definition, so the counting is done off what was in
-           the table before it ran. */
+        # The seeder creates whatever the enum has gained, so `$before` has to be
+        # captured above it for the counting to mean anything.
         $this->callSilent('db:seed', [
             '--class' => RolesSeeder::class,
             '--force' => true,

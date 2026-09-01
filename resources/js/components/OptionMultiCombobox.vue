@@ -16,29 +16,20 @@ import {
 } from '@/components/ui/combobox';
 import { countMatches, matchOptions } from '@/lib/options';
 
-/** The chosen ids. Empty is a valid answer - nothing was shown. */
 const model = defineModel<number[]>({ required: true });
 
 const props = withDefaults(
     defineProps<{
         options: App.Data.OptionData[];
-        /**
-         * Records already chosen that may no longer be in `options` - a
-         * product dropped from the catalogue after the visit was logged still
-         * has to show its name rather than a bare id.
-         */
+        /* Escape hatch for records already chosen that are no longer in
+           `options` - a product dropped from the catalogue after the visit was
+           logged still has to render its name rather than a bare id. */
         selected?: App.Data.OptionData[];
         id?: string;
         placeholder?: string;
         searchPlaceholder?: string;
         emptyText?: string;
-        /**
-         * Whether the chips under the box are left off.
-         *
-         * For a caller that lists the picks itself and in more detail - a
-         * table with a column per thing worth saying about them - where chips
-         * saying the same names above it are a second answer to read.
-         */
+        /** Leaves the chips off, for a caller that lists the picks itself. */
         hideChosen?: boolean;
         dataTest?: string;
     }>(),
@@ -56,10 +47,7 @@ const props = withDefaults(
 const open = ref(false);
 const search = ref('');
 
-/*
-  Every option this box can name, whether it is still on offer or only still
-  attached. Keyed by value, so a record in both lists is held once.
-*/
+/* Every option this box can name, on offer or merely still attached. */
 const known = computed(() => {
     const map = new Map<number, App.Data.OptionData>();
 
@@ -70,7 +58,6 @@ const known = computed(() => {
     return map;
 });
 
-/** The chips, in the order they were chosen. */
 const chosen = computed(() =>
     model.value
         .map((value) => known.value.get(value))
@@ -81,11 +68,8 @@ const chosen = computed(() =>
 
 const matches = computed(() => matchOptions(props.options, search.value));
 
-/*
-  Whether this list is one with pictures at all. Decided across the whole list
-  rather than per row, so a customer list is not indented by a column of empty
-  frames it will never fill.
-*/
+/* Decided across the whole list rather than per row, so a list with no
+   pictures is not indented by a column of empty frames. */
 const hasImages = computed(() =>
     props.options.some((option) => (option.image_url ?? null) !== null),
 );
@@ -105,13 +89,6 @@ function remove(value: number) {
 }
 </script>
 
-<!--
-  Several records picked out of many, shown as chips under the box so what has
-  been chosen is readable without opening it again.
-
-  The list stays open on each pick, because choosing what a customer was shown
-  is several picks in a row and closing after each one makes it several trips.
--->
 <template>
     <div class="flex flex-col gap-2.5">
         <Combobox
@@ -174,10 +151,6 @@ function remove(value: number) {
                             :value="option.value"
                             :data-test="`option-${option.value}`"
                         >
-                            <!-- A checkbox rather than a tick that fades in
-                                 and out: this box takes several answers, and
-                                 a square that is either filled or empty says
-                                 so before anything is chosen. -->
                             <div
                                 class="pointer-events-none size-4 shrink-0 rounded-[4px] border border-input transition-all select-none data-[selected=true]:border-primary data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground *:[svg]:opacity-0 data-[selected=true]:*:[svg]:opacity-100"
                                 :data-selected="model.includes(option.value)"
@@ -185,9 +158,6 @@ function remove(value: number) {
                                 <Check class="size-3.5 text-current" />
                             </div>
 
-                            <!-- The frame is drawn whether or not there is a
-                                 picture in it, so the labels stay on one
-                                 vertical line down the list. -->
                             <span
                                 v-if="hasImages"
                                 class="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
@@ -203,9 +173,6 @@ function remove(value: number) {
                                 <ImageOff v-else class="size-3.5 text-faint" />
                             </span>
 
-                            <!-- Stacked rather than side by side: in a side
-                                 panel a code sharing the row leaves the name
-                                 too little to be read at all. -->
                             <span class="flex min-w-0 flex-1 flex-col">
                                 <span class="truncate">{{ option.label }}</span>
                                 <span

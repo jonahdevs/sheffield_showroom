@@ -50,11 +50,8 @@ const heading = computed(() =>
 );
 
 /**
- * Switching type only opens or closes the business section.
- *
- * Everything above it is asked of both kinds, so nothing typed is thrown
- * away by a mis-click - and what was typed into the business section stays
- * there in case the mis-click was the switch back.
+ * Deliberately keeps every field: switching type only opens or closes the
+ * business section, so a mis-click throws nothing typed away.
  */
 function chooseType(type: CustomerType) {
     form.type = type;
@@ -83,11 +80,7 @@ function submit() {
     form.post(store().url);
 }
 
-/*
- * A layout callback rather than a static object: the same component serves
- * both routes, and only the page's own props know which one this is. Returning
- * props alone is enough - the default layout is already configured in app.ts.
- */
+/** A callback rather than a static object: the same component serves both routes. */
 defineOptions({
     layout: (page: { customer: App.Data.CustomerFormData | null }) => ({
         breadcrumbs: [
@@ -99,21 +92,8 @@ defineOptions({
 });
 </script>
 
-<!--
-  One form for both kinds of customer, in the order the counter learns things:
-  who this is, the business they came for if there is one, where they are, and
-  anything worth knowing next time.
-
-  A person is recorded either way. Somebody who says "I am Jonah and I have
-  come for the company" is one customer with two facts about them, not a
-  company with a person hidden behind it - so the name is asked of everybody
-  and the type only decides whether a business section follows it.
-
-  The rows go two across on `@2xl/page` and three on `@4xl/page` - the page's
-  own width rather than the window's, because behind the rail a viewport
-  breakpoint promises room the form does not have. Business stays at two: it
-  has two fields, and a third column there is an empty one.
--->
+<!-- Rows break on `@2xl/page` / `@4xl/page`, never viewport breakpoints:
+     behind the rail those promise room the form does not have. -->
 <template>
     <Head :title="heading" />
 
@@ -140,8 +120,6 @@ defineOptions({
                     <div
                         class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5 @4xl/page:grid-cols-3"
                     >
-                        <!-- Leads the section: it is the one answer that
-                             changes what the rest of the form asks for. -->
                         <div>
                             <Label for="type">
                                 Customer type
@@ -234,8 +212,6 @@ defineOptions({
                 </div>
             </Card>
 
-            <!-- Only for a company, and only the two fields the company itself
-                 has. Everything about the person is already above. -->
             <Card v-if="isCompany" as="section" class="gap-0 p-0">
                 <div class="border-b border-divider px-5 py-3.5">
                     <h2
@@ -289,10 +265,6 @@ defineOptions({
                     </h2>
                 </div>
 
-                <!-- Widest first: the country narrows to a state, a state to a
-                     town, and a town to the street somebody actually stands
-                     on. Read in that order it is one address rather than six
-                     boxes. -->
                 <div class="p-5">
                     <div
                         class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5 @4xl/page:grid-cols-3"
@@ -390,11 +362,9 @@ defineOptions({
 
                 <div class="p-5">
                     <Label for="notes" class="sr-only">Notes</Label>
-                    <!-- `min-h` rather than `rows`: the shared textarea is
-                         `field-sizing-content`, so it grows with what is typed
-                         and takes its floor from the class rather than the
-                         attribute. `rows` is left as the fallback for browsers
-                         that do not support the sizing yet. -->
+                    <!-- The shared textarea is `field-sizing-content`, so its
+                         height comes from `min-h`; `rows` is only the fallback
+                         for browsers without that support. Both are needed. -->
                     <Textarea
                         id="notes"
                         v-model="form.notes"
@@ -408,7 +378,7 @@ defineOptions({
             </Card>
 
             <div class="flex items-center justify-end gap-3">
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="index().url">Cancel</Link>
                 </Button>
                 <Button

@@ -51,12 +51,10 @@ const { filters, hasFilters, processing, clear } = useFilters({
     only: ['permissions', 'filters'],
 });
 
-/** What Clear offers to undo: every filter set, wherever it was set. */
 const activeFilterCount = computed(
     () => (filters.search === '' ? 0 : 1) + (filters.group === 'all' ? 0 : 1),
 );
 
-/** Three badges, then a count. A permission every role holds is not a list. */
 const SHOWN = 3;
 
 function headline(value: string): string {
@@ -74,15 +72,10 @@ defineOptions({
 </script>
 
 <!--
-  Every capability the application checks for. The list is written in code and
-  synced by `permissions:sync`, so nothing here is editable - a permission with
-  no check behind it would be a promise the application never keeps. Which
-  roles hand one out is changed on the Roles screen.
-
-  The people named in "Assigned to" are the reason it is worth reading twice.
-  A permission granted straight to an account appears nowhere on the Roles
-  screen, so unless this page names them an ability can outlive the role it
-  arrived with and no audit of roles would ever turn it up.
+  Read-only by design: the list is written in code and synced by
+  `permissions:sync`. The users named in "Assigned to" are why the screen exists
+  - a permission granted straight to an account shows nowhere on the Roles
+  screen, so this is the only place such a grant can be audited.
 -->
 <template>
     <Head title="Permissions" />
@@ -151,9 +144,7 @@ defineOptions({
                 </div>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "no permission is defined"
-                 over rows that are about to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: mid-reload this must not flash "no permission is defined". -->
             <TableSkeleton
                 v-if="processing"
                 class="px-5 py-2"
@@ -175,9 +166,6 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
-                    <!-- Semibold rather than bold: the lead cell of every row below
-                         is itself text-xs font-bold, so a bold header would read as
-                         one more row instead of the label for all of them. -->
                     <div
                         class="grid min-w-[760px] grid-cols-[minmax(0,1fr)_170px_minmax(0,1fr)] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
@@ -234,9 +222,6 @@ defineOptions({
                                     Held by no role
                                 </span>
 
-                                <!-- Outlined and pinned, so a grant that came
-                                     with a job and one nailed to a person do
-                                     not read as the same thing. -->
                                 <Badge
                                     v-for="user in permission.users.slice(
                                         0,

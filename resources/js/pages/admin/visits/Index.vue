@@ -61,29 +61,15 @@ const props = defineProps<{
         from: string;
         to: string;
     };
-    /**
-     * The date window written out - "2026-02-01 to 2026-02-28", "From
-     * 2026-02-01", or "All dates" where none was picked. Resolved by the
-     * server, because the server is what settles a window it was handed back to
-     * front, and the calendar redraws from what it settled on.
-     */
     date_label: string;
-    /** The named windows the picker offers, shortest first. */
     presets: { value: string; label: string }[];
-    /**
-     * How many days the chosen window covers, or null where it has no length -
-     * no window at all, or one open at the near end. Null is what turns the
-     * tiles' comparison caption off, and the server sends nothing to compare
-     * against in the same breath, so the two cannot disagree.
-     */
+    /** Null where the window has no length, which turns the tiles' comparison off. */
     window_days: number | null;
     purposes: { value: string; label: string }[];
     page_sizes: number[];
     formats: string[];
-    /* The chosen window's figures, unaffected by the search and the purpose
-       filter - see the controller's `stats()` for why. */
+    /** The window's figures, unaffected by the search and the purpose filter. */
     stats: App.Data.DashboardStatData[];
-    /** True for a salesperson, who sees only what they logged. */
     scoped_to_own: boolean;
     can: {
         create: boolean;
@@ -94,26 +80,16 @@ const props = defineProps<{
 }>();
 
 /*
-  The window rides in the same bag as the search and the purpose, so it lands
-  in the query string, survives a reload, counts towards `hasFilters`, is swept
-  up by Clear, and is carried into the download by `query` - none of which it
-  would get from a pair of refs kept beside the composable.
+  The window rides in the same bag as the search and the purpose so it lands in
+  the query string, survives a reload, counts towards `hasFilters`, is swept up
+  by Clear and is carried into the download by `query`.
 
-  It sits in the same bag while no longer sitting in the same bar: the control
-  moved up to the page header because the window now drives the figures and the
-  list together, the way the dashboard's does, where the search and the purpose
-  narrow only the table. Where the state lives and where the control lives are
-  separate questions, and only the second one moved.
+  `range` and the `from`/`to` pair are mutually exclusive - a named window never
+  carries dates as well, so a bookmarked "this month" still opens this month next
+  month rather than the days it happened to mean when it was saved.
 
-  `range` rides alongside `from` and `to` exactly as it does on the dashboard,
-  and the pair stays blank unless the window was drawn on the calendar - a named
-  window never carries two ways of saying the same thing in the URL, so a
-  bookmarked "this month" still opens this month next month rather than the days
-  it happened to mean when it was saved.
-
-  `stats`, `window_days` and `date_label` are reloaded with the rows: all three
-  are the server's reading of the window, and a row of figures or a button still
-  describing the old one would say the page is something it is not.
+  `stats`, `window_days` and `date_label` are in `only` because all three are the
+  server's reading of the window and must reload with the rows.
 */
 const { filters, query, hasFilters, processing, apply, clear } = useFilters({
     url: index.url(),
@@ -129,13 +105,8 @@ const { filters, query, hasFilters, processing, apply, clear } = useFilters({
 });
 
 /**
- * Sent at once rather than after the usual pause: a window is one decisive
- * answer rather than a phrase still being typed, and a beat of nothing after
- * the popover closes reads as a click that missed.
- *
- * Both of these clear the other spelling of the window rather than leaving it
- * behind. The server would ignore a stale pair of dates under a named window
- * anyway, but a URL carrying `range=this_month&from=2026-02-01` is one somebody
+ * Applied at once rather than debounced, and each clears the other spelling of
+ * the window: a URL carrying `range=this_month&from=2026-02-01` is one somebody
  * will eventually read as a contradiction and try to honour.
  */
 function chooseWindow(from: string, to: string): void {
@@ -146,30 +117,14 @@ function choosePreset(range: string): void {
     apply({ range, from: '', to: '' });
 }
 
-/**
- * What the closed picker reads.
- *
- * A named window reads by its name - "This month" rather than the four-and-
- * twenty characters of dates it resolved to - because the name is what was
- * clicked, and a button that answers a click with something the reader has to
- * decode reads as though it did something else. The calendar inside still
- * highlights the days, so the dates are one click away for anybody who wants
- * them.
- */
+/** A named window reads by its name; a drawn one by the server's resolved label. */
 const windowLabel = computed(
     () =>
         props.presets.find((preset) => preset.value === props.filters.range)
             ?.label ?? props.date_label,
 );
 
-/**
- * What every delta in the row is measured against, written out.
- *
- * One sentence for the whole row rather than one per tile, because every figure
- * is now compared against the same thing: the equally long stretch of log
- * immediately before the window. Blank where the window has no length - the
- * tiles then have nothing to compare against either, and print so themselves.
- */
+/** Blank where the window has no length - the tiles then say so themselves. */
 const comparison = computed(() => {
     if (props.window_days === null) {
         return '';
@@ -180,14 +135,6 @@ const comparison = computed(() => {
         : `vs previous ${props.window_days} days`;
 });
 
-/**
- * What the page hangs on each figure: a glyph and a colour.
- *
- * Kept here rather than sent from the server because none of it is data - it
- * is how this screen chooses to present three integers, and a controller has no
- * business holding an icon. The palette is the dashboard's, so a reader moving
- * between the two rows reads them as the same instrument.
- */
 const TILES: Record<string, { icon: Component; colour: string }> = {
     visits: { icon: Users, colour: CHART_PALETTE[0] },
     customers: { icon: UserRound, colour: CHART_PALETTE[1] },
@@ -216,11 +163,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  Every call at the showroom, newest first. A table rather than tiles: a visit
-  is read across - who, why, when, how long - and there is no picture to
-  recognise it by.
--->
 <template>
     <Head title="Visits" />
 
@@ -238,16 +180,6 @@ defineOptions({
             </div>
 
             <div class="flex flex-wrap items-center gap-2.5">
-                <!-- One control at the top of the page, beside the title, the
-                     way the dashboard's sits. It drives the whole screen - the
-                     figures below, the rows under them, the pager's count and
-                     the download - rather than only the table, which is what
-                     earns it a place up here instead of in the filter bar with
-                     the search and the purpose. Those two narrow the table; the
-                     window says which stretch of the log the page is.
-
-                     It narrows whatever this reader could already see and never
-                     widens a salesperson's list to the floor's. -->
                 <DateRangePicker
                     :from="props.filters.from"
                     :to="props.filters.to"
@@ -259,9 +191,6 @@ defineOptions({
                     @preset="choosePreset"
                 />
 
-                <!-- The export follows the filters and the same visibility
-                     split the list sits behind: a salesperson downloads their
-                     own visits, not the floor's. -->
                 <ExportMenu
                     v-if="props.can.export"
                     :url="exportMethod().url"
@@ -279,19 +208,6 @@ defineOptions({
             </div>
         </div>
 
-        <!-- Read before the list rather than after it: somebody opening this
-             screen wants to know the shape of the window before they start
-             reading rows.
-
-             One column straight to three, with no two-column width in between:
-             three tiles do not halve, so a two-across step would strand the
-             last one on a row of its own at exactly the widths a laptop behind
-             the rail actually gives this page.
-
-             Dimmed rather than skeletoned while a new window lands, as the
-             dashboard's panels are: the tiles are already the right shape, and
-             swapping three of them for placeholders makes a 200ms reload look
-             like a page load. -->
         <div
             class="grid gap-4 transition-opacity @2xl/page:grid-cols-3"
             :class="processing ? 'opacity-60' : ''"
@@ -336,9 +252,6 @@ defineOptions({
                     Clear
                 </Button>
 
-                <!-- `ml-auto` only from `sm`: on a narrow bar the select wraps
-                     under the search box and a left margin of whatever is left
-                     over would push it off the card. -->
                 <Select v-model="filters.purpose">
                     <SelectTrigger
                         class="w-52 sm:ml-auto"
@@ -360,9 +273,7 @@ defineOptions({
                 </Select>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "no visits" over rows about
-                 to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: mid-reload this must not flash "no visits". -->
             <TableSkeleton
                 v-if="processing"
                 class="px-5 py-2"
@@ -385,7 +296,7 @@ defineOptions({
                 <Button
                     v-if="!hasFilters && props.can.create"
                     as-child
-                    variant="quiet"
+                    variant="outline"
                     size="sm"
                     class="mt-3.5"
                 >
@@ -398,9 +309,6 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
-                    <!-- Semibold rather than bold: the lead cell of every row below
-                         is itself text-xs font-bold, so a bold header would read as
-                         one more row instead of the label for all of them. -->
                     <div
                         class="grid min-w-[1120px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
@@ -420,9 +328,6 @@ defineOptions({
                             class="grid min-w-[1120px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 px-5 py-3.5"
                             :data-test="`visit-${visit.id}`"
                         >
-                            <!-- Read the same way as the customers list: the
-                                 kind as an icon, the person in bold, and what
-                                 identifies them under it. -->
                             <div class="flex min-w-0 items-center gap-3">
                                 <span
                                     class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-faint"
@@ -470,9 +375,6 @@ defineOptions({
                                 />
                             </div>
 
-                            <!-- Named rather than counted: "3" tells nobody
-                                 whether to follow up with a quote for mabati
-                                 or for gutters. -->
                             <div class="flex min-w-0 items-center gap-1.5">
                                 <Package
                                     v-if="visit.products.length > 0"

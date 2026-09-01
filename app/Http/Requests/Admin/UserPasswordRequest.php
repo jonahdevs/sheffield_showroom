@@ -8,20 +8,6 @@ use App\Concerns\PasswordValidationRules;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 
-/**
- * Setting somebody else's password.
- *
- * The showroom has no outbound mail worth relying on, so an administrator hands
- * the new password over in person rather than posting a link and hoping it
- * arrives. That makes this the most dangerous thing on the Users screen, so it
- * answers to `users.update` on an account the actor's own reach already covers
- * — see `UserPolicy::updatePassword`.
- *
- * `Password::defaults()` rather than a rule spelled out here: the strength the
- * showroom asks for is decided once, in `AppServiceProvider`, and an
- * administrator setting a password for somebody should not be held to a
- * different bar than that person setting their own.
- */
 class UserPasswordRequest extends FormRequest
 {
     use PasswordValidationRules;

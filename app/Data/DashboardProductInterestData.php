@@ -8,14 +8,6 @@ use App\Models\Product;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * A product and how many visits it was shown on.
- *
- * The picture comes with it because that is how the floor recognises a
- * product - the same reason the catalogue is a grid of tiles and not a table.
- * A bar chart labelled only by name asks a salesperson to read where they
- * would otherwise glance.
- */
 #[TypeScript(location: ['App', 'Data'])]
 class DashboardProductInterestData extends Data
 {
@@ -23,7 +15,6 @@ class DashboardProductInterestData extends Data
         public int $id,
         public string $name,
         public ?string $image_url,
-        /** Visits in the window that named this product. */
         public int $visits,
     ) {}
 

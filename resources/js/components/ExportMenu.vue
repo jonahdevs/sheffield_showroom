@@ -19,20 +19,15 @@ const props = defineProps<{
     /** Where the list's export lives, without a query string. */
     url: string;
 
-    /**
-     * The filters the list is currently under, straight off `useFilters`. They
-     * go on the download's query string so the file is the list the viewer was
-     * looking at rather than the whole table.
-     */
+    /** The filters the list is currently under, straight off `useFilters`. */
     query?: Record<string, string>;
 
-    /** What is being exported, for the labels and the `data-test` hooks. */
     name: string;
 
     /**
-     * The formats this host can actually produce, as the server reported them.
-     * Paper needs a headless browser a machine may not have, and offering a
-     * download that always fails is worse than offering one format fewer.
+     * What this host can actually produce, as the server reported it. PDF needs
+     * a headless browser the machine may not have, so an omitted format is a
+     * download that would always fail.
      */
     formats?: string[];
 
@@ -44,9 +39,8 @@ function offers(format: string): boolean {
 }
 
 /*
-  A plain navigation rather than an Inertia visit: the response is a file, and
-  Inertia has nowhere to put one. The browser follows the link, the download
-  starts, and the page underneath never moves.
+  A plain navigation, never an Inertia visit: the response is a file, and
+  Inertia has nowhere to put one.
 */
 function download(format: 'csv' | 'xlsx' | 'pdf') {
     const params = new URLSearchParams(props.query ?? {});
@@ -59,10 +53,8 @@ function download(format: 'csv' | 'xlsx' | 'pdf') {
 <template>
     <DropdownMenu>
         <DropdownMenuTrigger as-child>
-            <!-- The chevron sits behind its own rule, so the button reads as
-                 a menu that opens rather than a download that fires. -->
             <Button
-                variant="quiet"
+                variant="outline"
                 :disabled="props.disabled"
                 :data-test="`export-${props.name}`"
             >

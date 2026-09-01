@@ -8,12 +8,6 @@ use App\Models\User;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * A user as the Roles screen lists them: who they are and what they hold.
- *
- * No initials here — `useInitials` already derives them on the client, and two
- * implementations of the same rule drift.
- */
 #[TypeScript(location: ['App', 'Data'])]
 class RoleHolderData extends Data
 {
@@ -25,20 +19,12 @@ class RoleHolderData extends Data
         public string $name,
         public string $email,
         public array $roles,
-        /** Whether this row is the signed-in user, who may not re-role themselves. */
         public bool $is_self,
-        /**
-         * How many capabilities are pinned to this account rather than to a
-         * role it holds. Counted in the list because a direct grant appears
-         * nowhere on the Roles screen otherwise: take the role away and the
-         * ability stays, with nothing on this page to say so.
-         */
+        # Counted here because a pinned grant appears nowhere else on this
+        # screen: take the role away and the ability stays.
         public int $direct_permissions,
-        /**
-         * Whether the viewer's own reach covers this account. False for
-         * somebody who can do more than the viewer can, so the row offers no
-         * action the server would refuse.
-         */
+        # False where the account can do more than the viewer, so the row
+        # offers no action the server would refuse.
         public bool $is_manageable,
     ) {}
 

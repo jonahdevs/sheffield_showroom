@@ -17,31 +17,16 @@ use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 /**
- * The visit log, in both formats it is offered in and in whichever column set
- * the reader's desk calls for.
- *
- * Mapped through `VisitRowData` for the same reason `CustomerExport` is: the
- * file has to be the list the viewer was looking at, and the only way to be
- * sure of that is for both to be built from one description of a row. A
- * `VisitReport` narrows which of those fields are printed and never which rows
- * are - the query arrives already filtered and already authorised.
- *
- * The write-up is the exception to `VisitRowData`. It deliberately leaves the
- * notes on the record - a table row cannot hold a paragraph - but a download is
- * exactly where somebody goes to read what was actually said on the floor, so
- * the prose, the source and the follow-up date come off the model here.
+ * A `VisitReport` narrows which fields are printed and never which rows are -
+ * the query arrives already filtered and already authorised.
  *
  * @implements WithMapping<Visit>
  */
 class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, WithHeadings, WithMapping, WithTitle
 {
     /**
-     * @param  Builder<Visit>  $query  Already filtered by the screen, and
-     *                                 already narrowed to the visits this
-     *                                 viewer is allowed to see.
-     * @param  VisitReport  $report  Which columns to print. Defaults to the
-     *                               full log, so a caller that has no opinion
-     *                               gets what this export has always produced.
+     * @param  Builder<Visit>  $query  Already filtered and authorised.
+     * @param  VisitReport  $report  Which columns to print.
      */
     public function __construct(
         private Builder $query,
@@ -84,13 +69,9 @@ class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, Wi
     }
 
     /**
-     * The phone as text, or a spreadsheet reads `0722 000 111` as a quantity
-     * and eats the leading zero that makes it dialable.
-     *
-     * Which letter that is depends on the report - contact details sit fifth
-     * in the full log and third on reception's sheet - so the column is found
-     * by name rather than written down, and a report that does not print a
-     * phone number formats nothing.
+     * The phone as text, or a spreadsheet eats its leading zero. Which column
+     * that is depends on the report, so it is found by name rather than
+     * written down.
      *
      * @return array<string, string>
      */
@@ -103,18 +84,10 @@ class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, Wi
         }
 
         return [
-            /* 0 is A. Sixteen columns would need two letters, and no report
-               here comes close. */
             chr(65 + (int) $position) => NumberFormat::FORMAT_TEXT,
         ];
     }
 
-    /**
-     * One field of one row, by the name a report asked for it under.
-     *
-     * The single place that says what each column means, so two reports naming
-     * the same column cannot print different things into it.
-     */
     private function value(string $column, Visit $row, VisitRowData $visit): mixed
     {
         return match ($column) {

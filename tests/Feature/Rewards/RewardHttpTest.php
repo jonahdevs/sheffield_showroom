@@ -28,8 +28,9 @@ use Spatie\Permission\PermissionRegistrar;
  * A user holding exactly the permissions named, through a role of their own.
  *
  * Self-contained rather than calling the equivalent helper in another test
- * file: those are global functions, and Pest gives no guarantee about which
- * file declares one first.
+ * file: these helpers are global functions, Pest gives no guarantee which
+ * file declares one first, and two files declaring the same name is a fatal
+ * error.
  *
  * @param  array<int, Permission>  $permissions
  */
@@ -52,9 +53,9 @@ function rewardsStaff(array $permissions): User
     return User::factory()->create()->assignRole($role);
 }
 
-// -----------------------------------------------------------------------------
-// Who may reach what
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Who may reach what
+# =========================================================================
 
 it('keeps the campaign screens behind rewards.view', function () {
     $this->actingAs(rewardsStaff([Permission::PurchasesViewAny]))
@@ -102,9 +103,9 @@ it('refuses to mint a turn without rewards.shuffle', function () {
     expect(ShuffleSession::query()->count())->toBe(0);
 });
 
-// -----------------------------------------------------------------------------
-// Building a campaign
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Building a campaign
+# =========================================================================
 
 it('creates a campaign with its drawer in one go', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
@@ -130,15 +131,9 @@ it('creates a campaign with its drawer in one go', function () {
 
     expect($campaign->status)->toBe(CampaignStatus::Draft)
         ->and($campaign->rewards()->count())->toBe(2)
-        /* Nothing is loaded until it is published. */
         ->and($campaign->poolEntries()->count())->toBe(0);
 });
 
-/**
- * The catalogue suggests a deadline and the campaign may override it. Without
- * the fallback a form that left the box empty would attach a reward that never
- * lapses, which is a promise nobody meant to make.
- */
 it('takes the validity the catalogue suggests when the form leaves it out', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
@@ -162,10 +157,6 @@ it('takes the validity the catalogue suggests when the form leaves it out', func
         ->and($campaign->rewards()->where('reward_id', $overridden->id)->sole()->validity_days)->toBe(7);
 });
 
-/**
- * `campaign_rewards` is uniquely indexed on `(campaign_id, reward_id)`, so a
- * form naming one reward twice would otherwise reach the database and throw.
- */
 it('refuses the same reward twice on one campaign', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
@@ -185,11 +176,6 @@ it('refuses the same reward twice on one campaign', function () {
     expect(RewardCampaign::query()->count())->toBe(0);
 });
 
-/**
- * Retiring a reward stops it going into anything new. It must not lock the
- * campaigns already carrying it, which is why the check only looks at what the
- * form is adding.
- */
 it('refuses to put a retired reward into a campaign', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
@@ -206,10 +192,6 @@ it('refuses to put a retired reward into a campaign', function () {
         ->assertSessionHasErrors('rewards.0.reward_id');
 });
 
-/**
- * Pairing is what makes "buy the oven, win the tray" possible, and it is set
- * per campaign rather than on the reward itself.
- */
 it('records the products a reward is paired to', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
@@ -235,12 +217,6 @@ it('records the products a reward is paired to', function () {
     expect($attachment->qualifyingProducts->pluck('id')->all())->toBe([$oven->id]);
 });
 
-/**
- * The form asks for a day, and a day taken literally is its midnight - the
- * start of it. A campaign set to end on the 28th would otherwise stop the
- * moment the 28th began, and the showroom would spend that day turning people
- * away from a promotion still on its own poster.
- */
 it('runs an end date to the close of its day', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
@@ -260,12 +236,10 @@ it('runs an end date to the close of its day', function () {
 
     expect($campaign->starts_at->toDateTimeString())->toBe('2026-09-01 00:00:00')
         ->and($campaign->ends_at->toDateTimeString())->toBe('2026-09-28 23:59:59')
-        /* Which is the point of it: the last day is still a running day. */
         ->and($campaign->ends_at->isAfter(CarbonImmutable::parse('2026-09-28 17:00')))
         ->toBeTrue();
 });
 
-/** A caller that named a time meant it, and keeps it. */
 it('leaves an end date alone when it already carries a time', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsCreate]);
 
@@ -296,12 +270,6 @@ it('refuses a campaign with no rewards in it', function () {
         ->assertSessionHasErrors('rewards');
 });
 
-/**
- * A figure with no unit reads as nothing: "10" is not ten per cent and not ten
- * shillings. The campaign form no longer carries the figure at all - it lives
- * on the catalogue reward now - so what this holds is the other half of that
- * rule: an unreadable figure is never printed as a bare number.
- */
 it('shows no figure for a reward whose number has no unit', function () {
     $ambiguous = Reward::factory()->create([
         'type' => RewardType::Discount,
@@ -334,11 +302,6 @@ it('publishes a draft and loads the pool', function () {
         ->and($campaign->poolEntries()->count())->toBe(30);
 });
 
-/**
- * A published campaign's quantities are inventory. A stale form is dropped
- * rather than refused - the same way the profile screen drops an email nobody
- * may change.
- */
 it('ignores reward changes posted at a published campaign', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
     $campaign = campaignHolding(['Audit' => 10]);
@@ -370,9 +333,9 @@ it('will not delete a campaign that has a pool', function () {
     expect(RewardCampaign::query()->whereKey($campaign->id)->exists())->toBeTrue();
 });
 
-// -----------------------------------------------------------------------------
-// Giving a turn, and running it
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Giving a turn, and running it
+# =========================================================================
 
 it('mints a turn for a qualifying purchase and lands on the QR screen', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffle]);
@@ -395,8 +358,6 @@ it('mints a turn for a qualifying purchase and lands on the QR screen', function
         ->assertInertia(fn ($page) => $page
             ->component('admin/rewards/Shuffle')
             ->where('session.is_shuffleable', true)
-            /* The QR screen is the one authenticated page that carries a
-               token, because drawing the code is the whole job. */
             ->where('session.url', route('rewards.shuffle.show', $session->token)));
 });
 
@@ -426,9 +387,9 @@ it('runs the staff fallback with the same service the customer uses', function (
         ->and($campaign->availableCount())->toBe(4);
 });
 
-// -----------------------------------------------------------------------------
-// The public page
-// -----------------------------------------------------------------------------
+# =========================================================================
+# The public page
+# =========================================================================
 
 it('opens the customer page with nothing but a token', function () {
     $campaign = campaignHolding(['Free kitchen audit' => 5]);
@@ -440,11 +401,9 @@ it('opens the customer page with nothing but a token', function () {
             ->component('rewards/Shuffle')
             ->where('state', 'ready')
             ->where('campaign.name', $campaign->name)
-            /* The customer's page never carries inventory. */
             ->missing('campaign.available')
             ->missing('campaign.loaded')
             ->has('cards', 1)
-            /* Nothing about who this is, and nothing about how much is left. */
             ->missing('customer')
             ->missing('available'));
 });
@@ -464,17 +423,13 @@ it('shuffles from the public page and reveals the reward', function () {
             ->where('state', 'won')
             ->where('reward.code', $result->code)
             ->where('reward.name', 'Free kitchen audit')
-            /* The reveal never names the person holding the phone. */
+            # The reveal must not name the person holding the phone.
             ->where('reward.customer_name', null));
 
     expect($session->refresh()->status)->toBe(ShuffleSessionStatus::Shuffled)
         ->and($campaign->availableCount())->toBe(4);
 });
 
-/**
- * A double tap, which is what actually happens on a phone at a counter. The
- * second post must not win a second reward.
- */
 it('gives one reward however many times the button is pressed', function () {
     $campaign = campaignHolding(['Free kitchen audit' => 5]);
     $session = sessionOn($campaign);
@@ -524,9 +479,9 @@ it('throttles the public endpoint', function () {
     $this->get(route('rewards.shuffle.show', $session->token))->assertStatus(429);
 });
 
-// -----------------------------------------------------------------------------
-// Redeeming
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Redeeming
+# =========================================================================
 
 it('finds a reward by its code and hands it over', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsRedeem]);
@@ -539,7 +494,6 @@ it('finds a reward by its code and hands it over', function () {
         ->assertInertia(fn ($page) => $page
             ->component('admin/rewards/Redeem')
             ->where('reward.code', $result->code)
-            /* The desk does need to know who won it. */
             ->where('can.redeem', true));
 
     $this->actingAs($actor)
@@ -576,9 +530,9 @@ it('refuses a second redemption of the same reward', function () {
     expect($result->refresh()->redemption()->count())->toBe(1);
 });
 
-// -----------------------------------------------------------------------------
-// Purchases
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Purchases
+# =========================================================================
 
 it('records a purchase and says whether it earned a turn', function () {
     $actor = rewardsStaff([
@@ -604,7 +558,6 @@ it('records a purchase and says whether it earned a turn', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('purchases.data.0.amount', '185,000.00')
-            /* Nothing standing between this sale and a shuffle. */
             ->where('purchases.data.0.refusal', null)
             ->where('purchases.data.0.shuffle_id', null));
 });

@@ -16,17 +16,11 @@ use Illuminate\Validation\Rules\Password;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
-        //
+        #
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->configureDefaults();
@@ -34,13 +28,8 @@ class AppServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
     }
 
-    /**
-     * Configure default behaviors for production-ready applications.
-     */
-    /**
-     * The super admin holds every ability without holding every permission
-     * row, so a capability added to the enum is theirs the moment it exists.
-     */
+    # Super admin is named, never derived: it holds every ability without holding
+    # a single permission row, so a subset test would report it grants nothing.
     protected function configureAuthorization(): void
     {
         Gate::before(
@@ -48,18 +37,8 @@ class AppServiceProvider extends ServiceProvider
         );
     }
 
-    /**
-     * The limiter behind the one public page in this application.
-     *
-     * The auth limiters live in `FortifyServiceProvider` with the rest of the
-     * sign-in machinery; this one is not about signing in, so it is here.
-     *
-     * Keyed by IP because there is nobody signed in to key it by, and by the
-     * token as well so that one person hammering their own reward cannot spend
-     * the allowance of everybody else behind the same showroom router. Ten a
-     * minute is far more than scanning a QR code and pressing a button needs,
-     * and far less than enumerating a 64-character token would.
-     */
+    # Keyed by token *and* IP: nobody is signed in to key it by, and one person
+    # hammering their own reward must not spend everybody else's allowance.
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('shuffle', function (Request $request) {

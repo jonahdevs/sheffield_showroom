@@ -55,17 +55,12 @@ const { filters, hasFilters, processing, apply, clear } = useFilters({
     },
     blank: { search: '', status: 'all' },
     only: ['products', 'filters', 'counts'],
-    /* Without this the tiles the search just found would be appended to the
-       ones it was meant to replace. */
+    /* Without this the tiles the search just found are appended to the ones
+       they were meant to replace. */
     reset: ['products'],
 });
 
-/**
- * The status filter is a tab strip rather than a select, the same as the one
- * over the customers table: a handful of choices, each worth a count. The
- * counts are of what this list can show, so soft-deleted products are in none
- * of them - which is why Archived usually reads low.
- */
+/** Counts exclude soft-deleted products, which is why Archived reads low. */
 const tabs = computed(() => [
     { value: 'all', label: 'All', count: props.counts.all ?? 0 },
     ...props.statuses.map((status) => ({
@@ -75,11 +70,7 @@ const tabs = computed(() => [
     })),
 ]);
 
-/**
- * Published is the ordinary case and every tile would wear the same badge, so
- * it goes unsaid. A status worth reading is one that explains why a product is
- * not where you expected it.
- */
+/** Null for `published`: the template reads that as "draw no badge at all". */
 function statusTone(status: App.Enums.ProductStatus): string | null {
     switch (status) {
         case 'draft':
@@ -93,23 +84,15 @@ function statusTone(status: App.Enums.ProductStatus): string | null {
     }
 }
 
-// -----------------------------------------------------------------------------
+// =========================================================================
 // Pulling the catalogue from the main website
-// -----------------------------------------------------------------------------
+// =========================================================================
 
 const syncing = ref(false);
 
-/**
- * Asked before it runs. A fetch rewrites every tile the website owns and takes
- * down the ones it has dropped, which is not what somebody reaching for the
- * refresh icon out of habit expects.
- */
 const confirmingSync = ref(false);
 
-/**
- * `preserveScroll` so the grid does not jump, and no `preserveState`: the
- * whole point is to come back with the rows the website just gave us.
- */
+/** No `preserveState`: the point is the rows the sync has just written. */
 function pullFromWebsite() {
     router.post(
         sync().url,
@@ -143,11 +126,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  The catalogue as the floor needs it. A grid rather than a table because the
-  picture is the point: a salesperson recognises the product before they read
-  the code, which is the opposite of how they find a customer.
--->
 <template>
     <Head title="Products" />
 
@@ -163,7 +141,7 @@ defineOptions({
             <div class="flex items-center gap-2.5">
                 <Button
                     v-if="props.can.sync"
-                    variant="quiet"
+                    variant="outline"
                     :disabled="syncing || !props.sync_configured"
                     :title="
                         props.sync_configured
@@ -241,9 +219,8 @@ defineOptions({
                 </Button>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "no products" over tiles
-                 about to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: reordering these flashes
+                 "no products" over tiles that are about to land. -->
             <div
                 v-if="processing"
                 class="grid gap-4 p-5 @2xl/page:grid-cols-3 @5xl/page:grid-cols-4 @6xl/page:grid-cols-5"
@@ -271,7 +248,7 @@ defineOptions({
                 <Button
                     v-if="!hasFilters && props.can.create"
                     as-child
-                    variant="quiet"
+                    variant="outline"
                     size="sm"
                     class="mt-3.5"
                 >
@@ -282,14 +259,10 @@ defineOptions({
                 </Button>
             </div>
 
-            <!-- `data` names the prop the server marked as scrollable, and the
-                 component takes it from there: it watches the end of the grid
-                 and asks for the next page before the floor reaches it.
-
-                 The grid classes belong on the component rather than on a div
-                 inside it. InfiniteScroll treats its own direct children as
-                 the items and tags each with the page it arrived on, so a
-                 wrapper in between leaves it holding one child forever. -->
+            <!-- The grid classes belong on the component, not a div inside it:
+                 InfiniteScroll treats its own direct children as the items and
+                 tags each with the page it arrived on, so a wrapper in between
+                 leaves it holding one child forever. -->
             <InfiniteScroll
                 v-else
                 data="products"
@@ -330,8 +303,6 @@ defineOptions({
                         </p>
 
                         <div class="mt-auto flex items-center gap-1.5 pt-3">
-                            <!-- Only when it says something. A Published badge
-                                 on every tile is a badge nobody reads. -->
                             <span
                                 v-if="statusTone(product.status)"
                                 class="w-fit shrink-0 rounded border px-1.5 py-0.5 text-[0.6875rem]"
@@ -379,10 +350,8 @@ defineOptions({
                     </div>
                 </div>
 
-                <!-- Where the pager used to sit: a line saying how far down
-                     the catalogue you are, so an endless grid still answers
-                     "how many of these are there?". `next` rather than
-                     `loading`, which the component only renders mid-request. -->
+                <!-- `#next` rather than `#loading`, which the component only
+                     renders mid-request: this line has to stay put. -->
                 <template #next="{ loading, hasMore }">
                     <div
                         class="flex items-center justify-center gap-2 border-t border-border px-5 py-4 text-xs text-faint tabular-nums"
@@ -420,7 +389,7 @@ defineOptions({
 
             <DialogFooter>
                 <Button
-                    variant="quiet"
+                    variant="outline"
                     :disabled="syncing"
                     @click="confirmingSync = false"
                 >

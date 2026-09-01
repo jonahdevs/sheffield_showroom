@@ -43,10 +43,6 @@ it('lists every permission in the enum', function () {
             ->where('permissions.total', count(Permission::cases())));
 });
 
-/**
- * The list is built from the enum rather than the permissions table, so it is
- * complete before anything has been synced.
- */
 it('lists permissions even when the table is empty', function () {
     $role = Role::query()->create([
         'name' => 'viewer',

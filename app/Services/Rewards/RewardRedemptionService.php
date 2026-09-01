@@ -13,22 +13,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Handing the reward over, and writing that down.
- *
- * Weeks after the shuffle, at a different desk, by whoever is on that day. The
- * reward is found by the code the customer quotes rather than by anything they
- * still hold on their phone - a link that expired the next morning is no use
- * in October.
+ * Found by the code the customer quotes, never by anything still on their phone - the
+ * shuffle link expired the next morning and this happens weeks later.
  */
 class RewardRedemptionService
 {
     /**
-     * The reward behind a code, whatever state it is in.
-     *
-     * Returns null rather than throwing on an unknown code: staff mistype
-     * these, and a blank result with "we cannot find that" is the right answer
-     * to a typo. The states that are found but unusable are the ones worth an
-     * exception, because they need explaining.
+     * Null rather than an exception on an unknown code - staff mistype these. Only a
+     * code that is found but unusable is worth explaining.
      */
     public function find(string $code): ?ShuffleResult
     {
@@ -39,13 +31,10 @@ class RewardRedemptionService
     }
 
     /**
-     * Records the reward as handed over.
-     *
-     * The status and the redemption row are written together, inside a
-     * transaction that locks the result first. Two members of staff redeeming
-     * the same code at the same moment would otherwise both read `unredeemed`
-     * and both write - and while the unique index on `shuffle_result_id` would
-     * refuse the second, an error is a worse answer than "already redeemed".
+     * Status and redemption row are written together inside a transaction that locks
+     * the result first. Two staff redeeming one code at the same moment would otherwise
+     * both read `unredeemed` and both write; the unique index would refuse the second,
+     * but an integrity error is a worse answer than "already redeemed".
      */
     public function redeem(
         ShuffleResult $result,
@@ -62,8 +51,8 @@ class RewardRedemptionService
                 throw ShuffleUnavailableException::alreadyUsed();
             }
 
-            /* Reads the date rather than the status, so a reward whose window
-               closed before anything swept it is still refused. */
+            # Reads the date, not the status, so a reward whose window closed before
+            # `rewards:expire` swept it is still refused.
             if (! $result->isRedeemable($at)) {
                 throw ShuffleUnavailableException::expired();
             }
@@ -81,9 +70,7 @@ class RewardRedemptionService
     }
 
     /**
-     * Codes are stored upper case; somebody typing one in reads it off a phone
-     * screen and will not be careful about that, or about the space they
-     * pasted with it.
+     * Codes are stored upper case, and are typed in off a phone screen.
      */
     private function normalise(string $code): string
     {

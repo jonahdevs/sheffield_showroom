@@ -6,12 +6,6 @@ import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
 import { Toaster } from '@/components/ui/sonner';
 </script>
 
-<!--
-  The shell: rail, topbar, and whatever the page puts between them. Both the
-  rail and the bar are the page's own white; what the content sits on is the
-  caller's to decide, which is why the page surface lives one level up in
-  AppLayout rather than here.
--->
 <template>
     <AppShell variant="sidebar">
         <AppSidebar />

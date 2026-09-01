@@ -15,21 +15,9 @@ use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * The customer's own shuffle. The only page in this application with no
- * sign-in behind it.
- *
- * Everything it knows comes from the token in the URL, and everything it says
- * is bounded by that: the reward, the campaign's name, and the kinds of reward
- * the animation cycles through. It never names the customer, never names the
- * purchase, and never says how many of anything are left - the last of those
- * because publishing live inventory lets somebody work out the odds, and this
- * is deliberately not that kind of product.
- *
- * Both routes are throttled. A token is 64 random characters, so guessing is
- * not a strategy, but a rate limit is what turns "not a strategy" into "not
- * worth attempting".
- */
+# The one unauthenticated page: the token in the URL is the whole input, and
+# nothing it sends is read. Never publishes remaining counts - live inventory
+# lets somebody work out the odds.
 class ShuffleController extends Controller
 {
     public function __construct(
@@ -37,14 +25,6 @@ class ShuffleController extends Controller
         private readonly ShuffleRewardService $rewards,
     ) {}
 
-    /**
-     * What the customer sees when they scan.
-     *
-     * Every refusal is a state to draw rather than an error page: a turn
-     * already taken, a link that ran out, a promotion that ended. The one
-     * exception is a token that names nothing, which is a 404 - there is
-     * nothing to draw and nothing to explain.
-     */
     public function show(string $token): Response
     {
         $session = ShuffleSession::query()
@@ -59,8 +39,6 @@ class ShuffleController extends Controller
             abort(404);
         }
 
-        /* Already shuffled: show them what they won rather than an apology.
-           A customer refreshing the page an hour later wants their code. */
         if ($session->result !== null) {
             return $this->page($session, 'won', ShuffleRewardData::fromModel($session->result));
         }
@@ -78,14 +56,6 @@ class ShuffleController extends Controller
         return $this->page($session, 'ready');
     }
 
-    /**
-     * Running it.
-     *
-     * Nothing from the request body is read. The token in the URL is the whole
-     * input, and what is won is decided entirely by
-     * `ShuffleRewardService::claim()` - the browser is told the answer
-     * afterwards and animates towards it.
-     */
     public function store(string $token): RedirectResponse
     {
         try {
@@ -93,39 +63,22 @@ class ShuffleController extends Controller
 
             $this->rewards->claim($session);
         } catch (ShuffleUnavailableException $exception) {
-            /* Back to the same page, which will now draw the state this
-               refusal describes - including "won" if they simply double
-               tapped and the first tap succeeded. */
             return to_route('rewards.shuffle.show', $token);
         }
 
         return to_route('rewards.shuffle.show', $token);
     }
 
-    /**
-     * The page, in whichever state it is in.
-     *
-     * The reward names are sent so the animation has cards to cycle through.
-     * Names and types only - never the counts, which would be the inventory.
-     */
     private function page(ShuffleSession $session, string $state, ?ShuffleRewardData $reward = null): Response
     {
         return Inertia::render('rewards/Shuffle', [
             'state' => $state,
-            /* What the promotion is, when it runs and what qualifies for it -
-               and deliberately not how much of it is left. See
-               `ShuffleCampaignData`. */
             'campaign' => ShuffleCampaignData::fromModel($session->campaign),
             'reward' => $reward,
-            /* The faces the table deals, and what the panel beside it lists.
-               Names, kinds, figures and terms: everything a customer is being
-               offered, and no count of any of it. */
+            # Names, kinds, figures and terms only - never a count.
             'cards' => $session->campaign->rewards
                 ->where('is_active', true)
                 ->values()
-                /* Through the attachment to the catalogue: the row on the
-                   campaign knows how many there are, and the card is drawn
-                   entirely from what the reward is. */
                 ->map(fn (CampaignReward $item) => [
                     'name' => $item->reward->readableName(),
                     'type' => $item->reward->type->value,

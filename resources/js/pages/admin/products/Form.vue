@@ -31,19 +31,11 @@ const form = useForm<{
 }>({
     name: props.product?.name ?? '',
     sku: props.product?.sku ?? '',
-    /* A new product is one somebody is putting on the floor, so it starts
-       there. Anything else is a decision, and a decision belongs to whoever
-       makes it rather than to a default. */
     status: props.product?.status ?? 'published',
     image: null,
     remove_image: false,
 });
 
-/**
- * What choosing this status will mean once it is saved. Worth spelling out for
- * one of them: `Inactive` is the only status the website cannot undo, and that
- * is exactly why somebody would reach for it.
- */
 const statusHint = computed(() => {
     switch (form.status) {
         case 'published':
@@ -68,8 +60,8 @@ watch(
     () => form.image,
     (file, previous) => {
         if (chosenPreview.value !== null) {
-            /* Revoked rather than left behind: an object URL holds the file in
-               memory until the document goes away. */
+            /* Must be revoked: an object URL holds the whole file in memory
+               until the document goes away. */
             URL.revokeObjectURL(chosenPreview.value);
             chosenPreview.value = null;
         }
@@ -100,8 +92,8 @@ function choose(event: Event) {
 }
 
 /**
- * Clearing the picture is two different things: dropping a file chosen a
- * moment ago, or asking the server to remove one already saved.
+ * Two different things: dropping a file chosen a moment ago, or asking the
+ * server to delete one already saved - only the second sets `remove_image`.
  */
 function clearImage() {
     form.image = null;
@@ -113,8 +105,8 @@ function clearImage() {
 }
 
 function submit() {
-    /* A file cannot ride on a PATCH body, so both routes take a POST and the
-       server tells them apart by the URL. */
+    /* A file cannot ride on a PATCH body, so the update is a POST too and the
+       server tells the two apart by the URL. */
     if (props.product) {
         form.post(update(props.product.id).url);
 
@@ -135,12 +127,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  Four fields, because that is all the floor needs: the picture to recognise it
-  by, the code to quote it by, the name, and whether it belongs out there at
-  all. Price and specification live on the main website, and two places holding
-  the same price is one place holding the wrong one.
--->
 <template>
     <Head :title="heading" />
 
@@ -287,7 +273,7 @@ defineOptions({
                         <div class="mt-1 flex flex-wrap items-center gap-2.5">
                             <Button
                                 type="button"
-                                variant="quiet"
+                                variant="outline"
                                 size="sm"
                                 data-test="choose-image"
                                 @click="fileInput?.click()"
@@ -324,7 +310,7 @@ defineOptions({
             </Card>
 
             <div class="flex items-center justify-end gap-3">
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="index().url">Cancel</Link>
                 </Button>
                 <Button

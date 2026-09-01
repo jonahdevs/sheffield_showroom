@@ -20,29 +20,13 @@ use Maatwebsite\Excel\Row;
 use PhpOffice\PhpSpreadsheet\Cell\StringValueBinder;
 
 /**
- * A spreadsheet of customers, written into the list.
+ * Rows are matched on the telephone through `Customer::matchingPhone`, never
+ * on the `ID` column the export writes, so sending the same file twice updates
+ * the same people instead of filing them all again.
  *
- * The file this reads is the file `CustomerExport` writes, so the ordinary way
- * to correct three hundred records is to download the list, fix a column of it
- * in a spreadsheet, and send it back.
- *
- * A row the rules refuse is skipped and reported rather than taking the rest of
- * the file down with it. Somebody who mistyped one telephone in four hundred
- * rows should get three hundred and ninety-nine customers and a count of one,
- * not an error page and nothing imported.
- *
- * Rows are matched on the telephone through `Customer::matchingPhone`, which
- * compares the subscriber tail rather than the string: sending the same file
- * twice updates the same people instead of filing every one of them again under
- * a slightly different spelling of their number. The `ID` column the export
- * writes is ignored for the same reason - a row that has been through a
- * spreadsheet has no claim to be the record it was copied from.
- *
- * Every cell is read as text. Left to itself the reader decides `0722000111`
- * is the quantity 722000111 and `00100` is the number 100, and the leading
- * zero that makes one dialable and the other a postcode is gone before any of
- * this sees the row. Binding to strings is the only place that can be stopped:
- * nothing downstream can tell a number that lost a zero from one that never
+ * `StringValueBinder` is load-bearing: left to itself the reader makes
+ * `0722000111` the quantity 722000111 and `00100` the number 100, and nothing
+ * downstream can tell a number that lost its leading zero from one that never
  * had one.
  */
 class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyRows, SkipsOnFailure, WithChunkReading, WithCustomValueBinder, WithHeadingRow, WithValidation
@@ -50,14 +34,9 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
     use SkipsFailures;
 
     /**
-     * What is written even when the cell behind it is empty.
-     *
-     * Everywhere else a blank cell says nothing about the record rather than
-     * saying the record should be blanked - a file listing only names and new
-     * telephones must not wipe every address on the way through. These four
-     * are the exception: three of them are required, and the company name
-     * follows the type, so correcting a row from company to individual has to
-     * be able to clear it.
+     * Written even when the cell is empty. Everywhere else a blank cell says
+     * nothing rather than saying "blank this", or a file of names and new
+     * telephones would wipe every address on the way through.
      *
      * @var array<int, string>
      */
@@ -68,9 +47,8 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
     private int $updated = 0;
 
     /**
-     * @param  int|null  $actorId  Who is importing, stamped on the customers
-     *                             this file adds. Null where nobody is signed
-     *                             in, which only happens in a console run.
+     * @param  int|null  $actorId  Null where nobody is signed in, which only
+     *                             happens in a console run.
      */
     public function __construct(
         private readonly LegacyExtract $extract,
@@ -103,15 +81,10 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
         return [
             'name' => ['required', 'string', 'max:255'],
 
-            /* Nine digits is the shortest thing that can be a subscriber
-               number here, and it is the floor `matchingPhone` needs to have
-               anything to match on at all. Anything shorter is punctuation
-               somebody typed to get past a required field. */
+            # Nine digits is the floor `matchingPhone` needs to match on
+            # anything at all.
             'phone' => ['required', 'string', 'max:60', 'regex:/^(?:\D*\d){9,}\D*$/'],
 
-            /* Blank falls back to individual in the shaper; a value that is
-               neither word is a typo, and letting it through would file a
-               company as a person and drop its company name on the way. */
             'type' => ['nullable', Rule::enum(CustomerType::class)],
 
             'company' => ['nullable', 'string', 'max:255', 'required_if:type,company'],
@@ -136,17 +109,9 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
     }
 
     /**
-     * The file's own headings, tidied into the keys the rules and the shaper
-     * expect.
-     *
-     * `company_name` is accepted alongside `company` because it is the
-     * database's name for the column, and somebody building a file by hand
-     * will reach for that as readily as for the heading the export writes.
-     *
-     * The type is folded to lower case before it is checked. The export prints
-     * it as "Individual" because that is what the screen shows, and a file this
-     * application produced has to be one it can read back - refusing its own
-     * capital letter would make the round trip a lie.
+     * The export prints "Individual" and heads a column "County", so both
+     * spellings are read back here - a file this application produced has to
+     * be one it can read.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
@@ -160,9 +125,8 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
         if (is_scalar($data['type'] ?? null)) {
             $type = mb_strtolower(trim((string) $data['type']));
 
-            /* A blank cell is the file not saying, which the shaper reads as
-               an individual. `nullable` only skips null, so an empty string
-               has to become one or the enum rule would refuse the row. */
+            # `nullable` only skips null, so an empty string has to become
+            # one or the enum rule refuses the row.
             $data['type'] = $type === '' ? null : $type;
         }
 
@@ -182,26 +146,14 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
         return [
             'created' => $this->created,
             'updated' => $this->updated,
-            /* By row rather than by failure: a row that broke three rules is
-               one customer who did not land, not three. */
             'skipped' => $this->failures()->pluck('row')->unique()->count(),
         ];
     }
 
     /**
-     * The row's values as a `customers` row.
-     *
-     * Shaped by `LegacyExtract` rather than by a second set of rules written
-     * here. That class already decides what counts as a usable telephone, when
-     * an email is worth keeping, and that the company columns belong to
-     * companies only - and it decides those things for the migrated records
-     * this list is mostly made of. Two answers to those questions would mean a
-     * customer imported today differing from the identical customer imported
-     * by the seed, which is the kind of drift nobody notices until the
-     * duplicates turn up.
-     *
-     * Null where the shaper cannot use the row at all. Validation catches that
-     * first, so this is a guard rather than a path.
+     * Shaped by `LegacyExtract`, never by a second set of rules here: two
+     * answers would make a customer imported today differ from the identical
+     * customer imported by the seed.
      *
      * @param  array<string, mixed>  $values
      * @return array<string, mixed>|null
@@ -210,8 +162,6 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
     {
         return $this->extract->toSeedRow([
             'customer_type' => $values['type'] ?? null,
-            /* The file gives one name where the old system gave two, so it
-               goes in the first and the shaper's join leaves it whole. */
             'first_name' => $values['name'] ?? null,
             'company_name' => $values['company'] ?? null,
             'industry' => $values['industry'] ?? null,
@@ -221,10 +171,6 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
             'address_line1' => $values['street_address'] ?? null,
             'address_line2' => $values['area'] ?? null,
             'city' => $values['city'] ?? null,
-            /* The export heads this column "County", which is what somebody
-               in Nairobi calls it; the column behind it is `state`. Both
-               spellings are read, or a file this application produced would
-               lose the county on its way back in. */
             'state_province' => $values['state'] ?? $values['county'] ?? null,
             'postal_code' => $values['postal_code'] ?? null,
             'country' => $values['country'] ?? null,
@@ -263,10 +209,8 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
      */
     private function attributes(array $values, array $shaped, bool $creating): array
     {
-        /* The timestamps and the old system's key are the migration's business
-           - they say when and under what reference a record was first written
-           over there - and a file somebody uploaded has no standing to set
-           any of them. */
+        # A file somebody uploaded has no standing to set the timestamps or
+        # the old system's key.
         unset($shaped['created_at'], $shaped['updated_at'], $shaped['legacy_id']);
 
         if ($creating) {
@@ -279,9 +223,9 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
             $attributes[$column] = $shaped[$column];
         }
 
-        /* The shaper defaults a blank country to Kenya, which is right for a
-           new record and wrong for an existing one: a file that never
-           mentioned the country would quietly move everybody home. */
+        # The shaper defaults a blank country to Kenya, right for a new record
+        # and wrong for an existing one - a file that never mentioned the
+        # country would quietly move everybody home.
         if (trim((string) ($values['country'] ?? '')) === '') {
             unset($attributes['country']);
         }

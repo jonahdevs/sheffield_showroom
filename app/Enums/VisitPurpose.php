@@ -6,14 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Why the customer came in.
- *
- * A fixed list rather than free text, because this is the column the floor
- * gets counted by - how many quotations went out last month, how many
- * complaints came back. `purpose_details` beside it carries the sentence a
- * list can never hold.
- */
 #[TypeScript]
 enum VisitPurpose: string
 {

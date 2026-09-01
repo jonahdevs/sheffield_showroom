@@ -1,15 +1,9 @@
 import Swal from 'sweetalert2';
 
 /**
- * The one place the application asks "are you sure?".
- *
- * Default SweetAlert, so every destructive button in the showroom asks the
- * same way and there is nothing to keep in step.
- *
- * `confirmText` exists because not everything guarded this way is a deletion:
- * publishing a reward campaign is just as irreversible, and a button reading
- * "Yes, delete it!" on that dialog would be telling somebody they are about to
- * do the opposite of what they are doing.
+ * The one place the application asks "are you sure?". `confirmText` is for the
+ * guarded actions that are irreversible but not deletions - publishing a
+ * campaign, say - where "Yes, delete it!" would say the opposite.
  */
 export async function confirmDelete(
     text = "You won't be able to revert this!",
@@ -29,9 +23,8 @@ export async function confirmDelete(
 }
 
 /**
- * The same question, with one answer collected before it can go ahead: a role
- * cannot be deleted until its members have somewhere to go. Resolves to the
- * choice, or to null if they backed out.
+ * The same question, with one answer collected first. Resolves to the choice,
+ * or to null if they backed out.
  */
 export async function confirmDeleteChoosing(options: {
     text: string;

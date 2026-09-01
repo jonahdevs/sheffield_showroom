@@ -14,26 +14,11 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * Handing a won reward over, weeks later, at whatever desk the customer walks
- * up to.
- *
- * Found by the code they quote rather than by anything they still hold on a
- * phone - the QR link expired the morning after the shuffle, and is no use in
- * October. The code is the whole interface: type it, read back what it is and
- * who won it, hand the thing over, write it down.
- */
+# Found by the quoted code, never the QR link, which expired the morning after the shuffle.
 class RewardRedemptionController extends Controller
 {
     public function __construct(private readonly RewardRedemptionService $redemptions) {}
 
-    /**
-     * The lookup screen, and what a code resolved to.
-     *
-     * A code that finds nothing comes back as `found: false` rather than as an
-     * error: staff mistype these, and a blank answer with "we cannot find
-     * that" is the right response to a typo.
-     */
     public function index(Request $request): Response
     {
         $this->authorize('viewAny', ShuffleResult::class);
@@ -53,14 +38,9 @@ class RewardRedemptionController extends Controller
         ]);
     }
 
-    /**
-     * Records the reward as handed over.
-     *
-     * The result is resolved from the code again rather than trusted from a
-     * hidden field: what the screen showed a minute ago is not what the
-     * database has to agree to now, and somebody else may have redeemed it in
-     * between.
-     */
+    # Re-resolved from the code, never trusted from a hidden field: somebody else may
+    # have redeemed it since the screen was drawn.
+
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([

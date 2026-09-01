@@ -23,8 +23,7 @@ class VisitFactory extends Factory
     {
         return [
             'customer_id' => Customer::factory(),
-            /* In the past, because `VisitRequest` will not accept anything
-               else and a fixture should not describe a row the form refuses. */
+            # In the past: `VisitRequest` will not accept anything else.
             'visited_at' => fake()->dateTimeBetween('-6 months', 'now'),
             'purpose' => fake()->randomElement(VisitPurpose::cases()),
             'source' => fake()->randomElement(CustomerSource::cases()),
@@ -35,10 +34,7 @@ class VisitFactory extends Factory
         ];
     }
 
-    /**
-     * Logged by a particular salesperson, which is what the `view.own` split
-     * turns on.
-     */
+    /** What the `view.own` split turns on. */
     public function loggedBy(User $user): static
     {
         return $this->state(fn (array $attributes) => [

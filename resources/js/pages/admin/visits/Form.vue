@@ -30,18 +30,16 @@ const props = defineProps<{
     purposes: { value: string; label: string }[];
     sources: { value: string; label: string }[];
     interest_levels: { value: string; label: string }[];
-    /* Whether a correction typed here reaches the customer's own record, or
-       stops at the visit. The form says which, rather than accepting an edit
-       it is going to drop. */
+    /* Whether a correction typed here reaches the customer's own record or
+       stops at the visit. Drives `locked` below. */
     can_update_customer: boolean;
 }>();
 
 /**
- * Today and the hour on the clock, as the two fields want them.
+ * Today and the hour, in the shapes the date and time fields read.
  *
- * Built from the browser's own date rather than the server's: the salesperson
- * is standing in the showroom, and it is their afternoon the visit happened
- * in.
+ * Assembled from the local `get*` parts rather than slicing `toISOString()`,
+ * which is UTC and would file an evening visit under tomorrow's date.
  */
 function nowParts(): { date: string; time: string } {
     const now = new Date();
@@ -67,32 +65,20 @@ const form = useForm({
     visited_on: props.visit?.visited_on ?? now.date,
     visited_time: props.visit?.visited_time ?? now.time,
     purpose: props.visit?.purpose ?? 'new_enquiry',
-    /* Most people who walk into a showroom walked in. Pre-set rather than
-       blank so the common case costs nobody a decision. */
     source: props.visit?.source ?? 'walk_in',
-    /* Blank on a new visit, deliberately.
-   
-       It used to arrive pre-filled with whoever was signed in, on the
-       assumption that the person typing is the person who took the visit. On
-       a showroom floor that is often false - a manager writes up the day's
-       calls at five o'clock - and a pre-filled name is one nobody rereads, so
-       the wrong salesperson ends up credited with the visit. An empty box
-       asks the question. */
+    /* Blank on a new visit, deliberately - do not "fix" this to the signed-in
+       user. A manager often writes up the day's calls, and a pre-filled name
+       nobody rereads credits the wrong salesperson. */
     respondent: props.visit?.respondent ?? '',
     expected_follow_up_on: props.visit?.expected_follow_up_on ?? '',
     notes: props.visit?.notes ?? '',
-    /* The whole row per product rather than a bare id: the table under the
-       box shows a model number and takes an interest level, and both belong
-       to the pick rather than to the catalogue. */
     products: (props.visit?.products ?? []) as App.Data.ProductOptionData[],
 });
 
 /**
- * What the picker holds, proxied onto the rows the table shows.
- *
- * The box speaks in ids and the table in rows, so a pick is turned into a row
- * here - keeping the level already set against anything still chosen, and
- * starting anything new at Medium so adding a product costs no decision.
+ * The picker speaks in ids, `form.products` in rows. The setter must reuse the
+ * existing row for anything still chosen, or re-picking wipes the quantity and
+ * interest level already set against it.
  */
 const pickedIds = computed<number[]>({
     get: () => form.products.map((product) => product.value),
@@ -124,11 +110,8 @@ const pickedIds = computed<number[]>({
 });
 
 /**
- * Whatever went wrong with the picks, wherever it is keyed.
- *
- * A quantity or a level fails against its own row - `products.2.quantity` -
- * and the one message under the box would never see it if it only looked for
- * `products`.
+ * A quantity or level fails against its own row - `products.2.quantity` - so a
+ * lookup of plain `products` would miss it.
  */
 const productError = computed(() => {
     const errors = form.errors as Record<string, string | undefined>;
@@ -137,14 +120,12 @@ const productError = computed(() => {
     return key === undefined ? undefined : errors[key];
 });
 
-/** Taken off the list. The catalogue still has it; this visit does not. */
 function dropProduct(id: number) {
     form.products = form.products.filter((product) => product.value !== id);
 }
 
 const isCompany = computed(() => form.customer_type === 'company');
 
-/** Whoever the form is attached to, or null while it describes somebody new. */
 const linked = computed(
     () =>
         props.customers.find(
@@ -153,22 +134,13 @@ const linked = computed(
 );
 
 /**
- * Shown back read-only: attached to a record this person may not correct.
- *
- * A box you can type into but whose typing is thrown away is worse than one
- * you cannot, so when the edits have nowhere to go the fields say so by not
- * accepting any.
+ * Attached to a customer this person may not correct, so the customer fields
+ * go read-only: an edit typed into them would be silently dropped on save.
  */
 const locked = computed(
     () => linked.value !== null && !props.can_update_customer,
 );
 
-/**
- * Somebody picked off the list.
- *
- * Filled from the record rather than from the label: the label is their name,
- * and it cannot say which company they came in for or what that company does.
- */
 function choose(chosen: App.Data.CustomerOptionData) {
     form.customer_id = chosen.value;
     form.customer_type = chosen.type;
@@ -181,13 +153,7 @@ function choose(chosen: App.Data.CustomerOptionData) {
     form.clearErrors();
 }
 
-/**
- * Nobody on the list. What was being searched for is their name.
- *
- * The typing is what makes this worth a row of its own: somebody who has just
- * typed out a name in the search box should not have to type it again into
- * the field below because the search found nothing.
- */
+/** Nobody on the list: what was being searched for becomes their name. */
 function startNew(name: string) {
     form.customer_id = null;
 
@@ -199,14 +165,9 @@ function startNew(name: string) {
 }
 
 /**
- * Switching kind opens or closes the business half, and lets go of whoever
- * was attached.
- *
- * The person's name, number and ID are asked either way, so none of that is
- * disturbed - only the company they came in for, which is the thing the
- * answer changed. Letting go is because a record on file is one kind or the
- * other: saying otherwise is saying it is not that record. Picking somebody
- * sets this back the other way.
+ * Changing the kind must also clear `customer_id`: a record on file is one
+ * kind or the other, so the attachment can no longer be to that record. The
+ * person's own name, phone and ID stay - only the company half is dropped.
  */
 function changeType(next: App.Enums.CustomerType) {
     form.customer_type = next;
@@ -224,7 +185,6 @@ const heading = computed(() =>
     props.visit ? `Visit by ${props.visit.customer_label}` : 'New visit',
 );
 
-/** A number identifies the customer, so nothing can be filed without one. */
 const canSubmit = computed(() => {
     if (form.processing || form.visited_on === '' || form.visited_time === '') {
         return false;
@@ -258,20 +218,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  Writing up a call at the showroom, in the order it happened: who walked in,
-  then what they came for, with what they were shown alongside.
-
-  The customer half asks what the Customers form asks, in the same order and
-  the same shape: who they are, then the business they came for if there is
-  one. A person is recorded either way - somebody who says "I am Jonah and I
-  have come for the company" is one customer with two facts about them.
-
-  The name box is also the finder: type it, and whoever already answers to it
-  comes up underneath. Most walk-ins are somebody new, and making a
-  salesperson leave the form to add them first is how visits stop being logged
-  at all.
--->
 <template>
     <Head :title="heading" />
 
@@ -285,16 +231,6 @@ defineOptions({
         </div>
 
         <form class="flex flex-col gap-5" @submit.prevent="submit">
-            <!-- One column, in the order the call happened: who walked in,
-                 what they came for, and what they were shown. The list of
-                 products used to sit alongside; it reads better after the
-                 write-up it belongs to than beside it.
-
-                 Its own container, so the field rows measure this column
-                 rather than the page - keyed on the page they would stay
-                 two-across in a column half that wide. They go two across on
-                 `@xl/main` and three on `@4xl/main`; Business stays at two,
-                 having two fields and no use for a third column. -->
             <div class="@container/main flex flex-col gap-5">
                 <Card as="section" class="gap-0 p-0">
                     <div class="border-b border-divider px-5 py-3.5">
@@ -309,13 +245,9 @@ defineOptions({
                         <div
                             class="flex flex-col gap-4 @xl/main:grid @xl/main:grid-cols-2 @xl/main:gap-x-5.5 @xl/main:gap-y-4.5 @4xl/main:grid-cols-3"
                         >
-                            <!-- Leads the section because it decides whether
-                                 a business section follows. It does not narrow
-                                 the box below: whoever is looking somebody up
-                                 has a name or a number, not a classification,
-                                 and a search that hides the match they wanted
-                                 is how one customer gets filed twice. Picking
-                                 answers this instead. -->
+                            <!-- Deliberately does not filter the name search
+                                 below: hiding the match somebody wanted is how
+                                 one customer gets filed twice. -->
                             <div>
                                 <Label for="customer_type">
                                     Customer type
@@ -353,11 +285,6 @@ defineOptions({
                                 />
                             </div>
 
-                            <!-- The name box is the finder too. Type it,
-                                     and whoever already answers to it comes up
-                                     underneath; if nobody does, New customer
-                                     keeps what was typed and they are added on
-                                     save. -->
                             <div>
                                 <Label for="customer_name">
                                     Full name
@@ -385,9 +312,6 @@ defineOptions({
                                         @pick="choose"
                                         @create="startNew"
                                     >
-                                        <!-- The list is every customer, so
-                                             the badge is what tells the two
-                                             kinds apart in it. -->
                                         <template #meta="{ option }">
                                             <span
                                                 class="shrink-0 rounded border px-1.5 py-0.5 text-[0.6875rem] text-faint"
@@ -406,9 +330,6 @@ defineOptions({
                                     :message="form.errors.customer_name"
                                 />
 
-                                <!-- Read-only needs a reason, or the
-                                         fields read as broken rather than as
-                                         somebody else's to change. -->
                                 <p
                                     v-if="locked"
                                     class="mt-2 text-xs text-faint"
@@ -469,10 +390,6 @@ defineOptions({
                                 <InputError :message="form.errors.id_number" />
                             </div>
 
-                            <!-- How they came to be standing here. About
-                                     the visit rather than the person, but it
-                                     is answered while they are still being
-                                     asked about, so it is asked here. -->
                             <div>
                                 <Label for="source">
                                     Source
@@ -502,9 +419,6 @@ defineOptions({
                     </div>
                 </Card>
 
-                <!-- Only for a company, and only the two fields the
-                         company itself has. Everything about the person who
-                         came in from it is already above. -->
                 <Card v-if="isCompany" as="section" class="gap-0 p-0">
                     <div class="border-b border-divider px-5 py-3.5">
                         <h2
@@ -566,13 +480,10 @@ defineOptions({
                         <div
                             class="flex flex-col gap-4 @xl/main:grid @xl/main:grid-cols-2 @xl/main:gap-x-5.5 @xl/main:gap-y-4.5 @4xl/main:grid-cols-3"
                         >
-                            <!-- One control, because it is one answer: a visit
-                                 happened at a moment, not on a date and
-                                 separately at a time. The two form fields
-                                 behind it stay as they are - the column joins
-                                 them back together server-side, and splitting
-                                 them here is what lets each keep its own
-                                 rule. -->
+                            <!-- One control over two form fields: the server
+                                 joins `visited_on` and `visited_time` back
+                                 into one column, and each keeps its own
+                                 validation rule and error. -->
                             <div>
                                 <Label for="visited_at">
                                     Visit date and time
@@ -597,12 +508,10 @@ defineOptions({
                             </div>
 
                             <div>
-                                <!-- The column and the enum behind this are
-                                     still `purpose`; only what the floor is
-                                     asked has changed. Renaming them to match
-                                     would have moved a filter's query string
-                                     key and every saved link built on it, for
-                                     a word nobody sees. -->
+                                <!-- Label and field name diverge on purpose:
+                                     the column, enum and filter query key are
+                                     still `purpose`, and renaming them to
+                                     match would break every saved link. -->
                                 <Label for="purpose">
                                     Nature of visit
                                     <span class="text-primary">*</span>
@@ -689,8 +598,6 @@ defineOptions({
                         <Label for="products" class="sr-only">
                             Interested products
                         </Label>
-                        <!-- No chips under the box: the table below says the
-                             same names and three more things besides. -->
                         <OptionMultiCombobox
                             id="products"
                             v-model="pickedIds"
@@ -705,16 +612,11 @@ defineOptions({
                         <InputError :message="productError" />
                     </div>
 
-                    <!-- What was picked, in rows rather than chips: each one
-                         carries a model number to read back and a level to
-                         set, and neither fits on a chip. -->
+                    <!-- ===================== Picked products ===================== -->
                     <div
                         v-if="form.products.length > 0"
                         class="overflow-x-auto border-t border-divider"
                     >
-                        <!-- Semibold rather than bold: the lead cell of every row below
-                             is itself text-xs font-bold, so a bold header would read as
-                             one more row instead of the label for all of them. -->
                         <div
                             class="grid min-w-[760px] grid-cols-[minmax(0,1fr)_minmax(150px,0.2fr)_96px_minmax(150px,0.2fr)_44px] items-center gap-4 border-b border-divider bg-muted/50 px-5 py-3 text-xs font-semibold"
                         >
@@ -814,7 +716,7 @@ defineOptions({
 
                                 <Button
                                     type="button"
-                                    variant="quiet"
+                                    variant="outline"
                                     size="icon"
                                     :aria-label="`Remove ${product.label}`"
                                     :data-test="`remove-${product.value}`"
@@ -829,7 +731,7 @@ defineOptions({
             </div>
 
             <div class="flex items-center justify-end gap-3">
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="index().url">Cancel</Link>
                 </Button>
                 <Button

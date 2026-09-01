@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Gives a user a role holding exactly the permissions named.
- *
  * @param  array<int, Permission>  $permissions
  */
 function productStaff(array $permissions): User
@@ -117,10 +115,6 @@ it('rejects a file that is not an image', function () {
     expect(Product::query()->count())->toBe(0);
 });
 
-/**
- * An empty box is an uncoded product, not a product coded `''` - left as a
- * string the second one would collide on the unique index.
- */
 it('keeps a blank SKU null so several can coexist', function () {
     $user = productStaff([Permission::ProductsViewAny, Permission::ProductsCreate]);
 
@@ -208,10 +202,6 @@ it('removes the image when asked without a replacement', function () {
     Storage::disk('public')->assertMissing($old);
 });
 
-/**
- * A synced product points at the website's own URL. Deleting that file is not
- * this application's to do, and the string is not a path on our disk.
- */
 it('never deletes a remote image belonging to the website', function () {
     Storage::fake('public');
 
@@ -227,8 +217,7 @@ it('never deletes a remote image belonging to the website', function () {
         'remove_image' => true,
     ]);
 
-    /* The point is that nothing tried to delete a path on our disk: the
-       column held a URL, and the store is untouched either way. */
+    # The column held a URL, so nothing on our disk was ever a candidate.
     expect($product->refresh()->image_path)->toBeNull()
         ->and(Storage::disk('public')->allFiles())->toBeEmpty();
 });
@@ -296,11 +285,8 @@ it('sends a first page of tiles rather than the whole catalogue', function () {
             ->where('products.total', 30));
 });
 
-/**
- * The catalogue holds products that share a name to the letter. Ordered on
- * name alone their order is undefined, so page two could repeat a tile page
- * one already showed - which on an endless grid means a duplicate on screen.
- */
+# Ordered on name alone, identically named rows have undefined order and
+# page two can repeat a tile from page one.
 it('pages through products of identical name without repeating one', function () {
     $user = productStaff([Permission::ProductsViewAny]);
 
@@ -330,9 +316,9 @@ it('pages through products of identical name without repeating one', function ()
         ->and(array_unique([...$first, ...$second]))->toHaveCount(30);
 });
 
-// -----------------------------------------------------------------------------
-// Status, which is set here rather than on the website
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Status, which is set here rather than on the website
+# =========================================================================
 
 it('publishes a product recorded with no status chosen', function () {
     $user = productStaff([Permission::ProductsViewAny, Permission::ProductsCreate]);
@@ -355,11 +341,6 @@ it('records the status chosen on the form', function () {
     expect(Product::query()->sole()->status)->toBe(ProductStatus::Draft);
 });
 
-/**
- * The point of the whole column: somebody standing on the floor decides a
- * product is not worth showing, and no sync may undo it. Setting it has to be
- * possible on a product the website owns, which is where it matters most.
- */
 it('lets somebody mark a synced product Inactive', function () {
     $user = productStaff([Permission::ProductsViewAny, Permission::ProductsUpdate]);
 
@@ -413,10 +394,6 @@ it('filters the catalogue by status and counts each one', function () {
             ->where('counts.draft', 0));
 });
 
-/**
- * A stale bookmark or a hand-edited URL should show the catalogue, not an
- * error. The floor is looking for a product.
- */
 it('ignores a status filter that is not a status', function () {
     $user = productStaff([Permission::ProductsViewAny]);
 

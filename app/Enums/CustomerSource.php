@@ -6,13 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * How the customer came to be standing in the showroom.
- *
- * Recorded per visit rather than on the customer: the same person can find you
- * through an exhibition once and come back on their own the next time, and it
- * is the second visit that tells you the first one worked.
- */
 #[TypeScript]
 enum CustomerSource: string
 {
@@ -20,7 +13,6 @@ enum CustomerSource: string
     case Referral = 'referral';
     case Website = 'website';
     case SocialMedia = 'social_media';
-    case Exhibition = 'exhibition';
     case Repeat = 'repeat';
     case Advertisement = 'advertisement';
     case SalesCall = 'sales_call';
@@ -33,7 +25,6 @@ enum CustomerSource: string
             self::Referral => 'Referral',
             self::Website => 'Website',
             self::SocialMedia => 'Social media',
-            self::Exhibition => 'Exhibition / trade show',
             self::Repeat => 'Existing customer',
             self::Advertisement => 'Advertisement',
             self::SalesCall => 'Sales call',

@@ -21,7 +21,6 @@ const props = withDefaults(
 
 const { withQuery } = useQueryString();
 
-/** Resizing the page is a reload like any other, so it raises the same flag. */
 const reporter = useVisitReporter();
 
 function change(size: unknown): void {

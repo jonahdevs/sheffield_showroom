@@ -53,10 +53,7 @@ class RewardFactory extends Factory
         ]);
     }
 
-    /**
-     * A thing off the floor rather than a discount or a service - the tray
-     * somebody wins with the oven.
-     */
+    /** A thing off the floor - the tray somebody wins with the oven. */
     public function product(?Product $product = null): static
     {
         return $this->state(fn (array $attributes) => [

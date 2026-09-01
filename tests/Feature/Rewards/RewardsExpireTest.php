@@ -14,8 +14,7 @@ it('closes the turns nobody took before the QR ran out', function () {
 
     expect($lapsed->refresh()->status)->toBe(ShuffleSessionStatus::Expired)
         ->and($live->refresh()->status)->toBe(ShuffleSessionStatus::Pending)
-        /* A turn with no deadline never lapses, so the sweep must not invent
-           one for it. */
+        # A turn with no deadline never lapses.
         ->and($open->refresh()->status)->toBe(ShuffleSessionStatus::Pending);
 });
 
@@ -31,11 +30,6 @@ it('closes the rewards won and never redeemed in time', function () {
         ->and($forever->refresh()->status)->toBe(RewardResultStatus::Unredeemed);
 });
 
-/**
- * A reward already handed over keeps saying so. Expiry is about the ones
- * nobody came back for, and rewriting a redemption into an expiry would lose
- * the fact that somebody got what they won.
- */
 it('leaves a redeemed reward alone even once its date has passed', function () {
     $redeemed = ShuffleResult::factory()->redeemed()->lapsed()->create();
 
@@ -62,11 +56,8 @@ it('is safe to run when nothing has lapsed', function () {
         ->assertSuccessful();
 });
 
-/**
- * The status is tidying, not enforcement. Nothing in the application trusts it
- * over the date behind it, so a host whose cron stopped a week ago is a host
- * with a stale list rather than one handing out dead rewards.
- */
+# The status is tidying, not enforcement: everything reads the date, so a
+# host whose cron stopped a week ago still refuses dead rewards.
 it('refuses a lapsed turn and a lapsed reward before anything has swept them', function () {
     $session = ShuffleSession::factory()->expired()->create();
     $result = ShuffleResult::factory()->lapsed()->create();

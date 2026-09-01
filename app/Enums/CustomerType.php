@@ -6,14 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Who walked into the showroom.
- *
- * The two types share their contact and address details and differ in who they
- * name: an individual is a person, a company is an organisation reached
- * through one. One table carries both, with the fields the other type does not
- * use left null - see `CustomerRequest`, which is what actually enforces that.
- */
 #[TypeScript]
 enum CustomerType: string
 {

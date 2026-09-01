@@ -51,11 +51,7 @@ const { filters, hasFilters, processing, clear } = useFilters({
     only: ['purchases', 'filters'],
 });
 
-/**
- * Completed is the ordinary case and every row would wear the same badge, so
- * it goes unsaid. A status worth reading is one that explains why a sale has
- * not earned anything - the same rule the catalogue uses for its tiles.
- */
+/** Null for Completed: a badge every row wears is a badge nobody reads. */
 function statusTone(status: App.Enums.PurchaseStatus): string | null {
     switch (status) {
         case 'pending':
@@ -67,30 +63,18 @@ function statusTone(status: App.Enums.PurchaseStatus): string | null {
     }
 }
 
-/**
- * Which row is mid-request, so its button can say so.
- *
- * A single id rather than a set: minting a turn ends on the QR screen, so
- * there is never a second one in flight worth tracking.
- */
 const giving = ref<number | null>(null);
 
 /**
- * The refusal the server came back with, against the row it refused.
- *
  * `ShuffleSessionController::store` answers an ineligible purchase with
- * `back()->withErrors(['shuffle' => ...])` rather than a toast, and that
- * sentence is the whole point of pressing the button: a member of staff stood
- * in front of a customer needs to read "the sale was two thousand short", not
- * merely watch nothing happen. It is held per row so it appears in the cell
- * that caused it instead of at the top of a table of forty.
+ * `back()->withErrors(['shuffle' => ...])` rather than a toast, so the refusal
+ * is held against the row that caused it and printed in that row's own cell.
  */
 const refused = ref<{ id: number; message: string } | null>(null);
 
 /**
- * Deliberately not `preserveScroll`-only: a successful mint redirects to the
- * QR screen, so the list is left behind either way. The option matters for the
- * refusal, which comes back as this same page.
+ * `preserveScroll` is for the refusal, not the success: a successful mint
+ * redirects away to the QR screen, while a refusal comes back as this page.
  */
 function shuffle(purchase: App.Data.PurchaseRowData) {
     giving.value = purchase.id;
@@ -134,16 +118,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  What people spent, with the reward question answered on every line.
-
-  The last column is why this screen exists. A purchase is only interesting
-  here because it may have earned somebody a turn, so each row says one of
-  three things: it has had one and here it is, it qualifies and here is the
-  button, or it does not and here is the reason. The reason is shown quietly
-  rather than hidden behind a tooltip - a salesperson being asked "why not?"
-  across the counter needs to be able to read the answer aloud.
--->
 <template>
     <Head title="Purchases" />
 
@@ -193,9 +167,6 @@ defineOptions({
                     Clear
                 </Button>
 
-                <!-- `ml-auto` rather than a spacer, so the status sits at the
-                     far right on a wide bar and simply wraps under the search
-                     on a narrow one. -->
                 <Select v-model="filters.status">
                     <SelectTrigger
                         class="w-52 sm:ml-auto"
@@ -217,9 +188,7 @@ defineOptions({
                 </Select>
             </div>
 
-            <!-- Ahead of the empty branch on purpose: mid-reload nobody knows
-                 what is coming back, and flashing "no purchases" over rows
-                 that are about to land reads as broken. -->
+            <!-- Ahead of the empty branch on purpose: mid-reload this must not flash "no purchases". -->
             <TableSkeleton
                 v-if="processing"
                 class="px-5 py-2"
@@ -242,7 +211,7 @@ defineOptions({
                 <Button
                     v-if="!hasFilters && props.can.create"
                     as-child
-                    variant="quiet"
+                    variant="outline"
                     size="sm"
                     class="mt-3.5"
                 >
@@ -255,19 +224,11 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
-                    <!-- Semibold rather than bold: the lead cell of every row
-                         below is itself text-xs font-bold, so a bold header
-                         would read as one more row instead of the label for
-                         all of them. -->
                     <div
                         class="grid min-w-[1000px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,1.5fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
                         <span>Customer</span>
                         <span>Reference</span>
-                        <!-- Right-aligned so the figures line up on the
-                             decimal point down the column, which is the only
-                             way a reader spots the one that is an order of
-                             magnitude out. -->
                         <span class="text-right">Amount</span>
                         <span>Status</span>
                         <span>Purchased</span>
@@ -289,23 +250,31 @@ defineOptions({
                                 {{ purchase.customer_name }}
                             </span>
 
-                            <!-- Monospaced, because a reference is compared
-                                 character by character against a receipt
-                                 rather than read as a word. -->
-                            <span
-                                class="truncate font-mono text-xs"
-                                :class="purchase.reference ? '' : 'text-faint'"
-                                :title="purchase.reference ?? undefined"
-                            >
-                                {{ purchase.reference ?? '--' }}
-                            </span>
+                            <div class="min-w-0">
+                                <p
+                                    class="truncate font-mono text-xs"
+                                    :class="
+                                        purchase.reference ? '' : 'text-faint'
+                                    "
+                                    :title="purchase.reference ?? undefined"
+                                >
+                                    {{ purchase.reference ?? '--' }}
+                                </p>
+
+                                <p
+                                    v-if="purchase.product_names.length > 0"
+                                    class="mt-0.5 truncate text-xs text-faint"
+                                    :title="purchase.product_names.join(', ')"
+                                    :data-test="`products-${purchase.id}`"
+                                >
+                                    {{ purchase.product_names.join(', ') }}
+                                </p>
+                            </div>
 
                             <span class="text-right text-xs tabular-nums">
                                 {{ purchase.amount }}
                             </span>
 
-                            <!-- Only when it says something. A Completed badge
-                                 on every row is a badge nobody reads. -->
                             <span>
                                 <span
                                     v-if="statusTone(purchase.status)"
@@ -326,14 +295,11 @@ defineOptions({
                                 {{ purchase.purchased_on }}
                             </span>
 
-                            <!-- The three answers, in the order they are worth
-                                 reading: what happened, what can happen, and
-                                 why nothing can. -->
                             <div class="min-w-0">
                                 <Button
                                     v-if="purchase.shuffle_id"
                                     as-child
-                                    variant="quiet"
+                                    variant="outline"
                                     size="sm"
                                     class="max-w-full"
                                     :data-test="`shuffle-${purchase.id}`"
@@ -355,7 +321,7 @@ defineOptions({
                                         purchase.refusal === null &&
                                         props.can.shuffle
                                     "
-                                    variant="quiet"
+                                    variant="outline"
                                     size="sm"
                                     :disabled="giving === purchase.id"
                                     :data-test="`give-shuffle-${purchase.id}`"
@@ -369,10 +335,6 @@ defineOptions({
                                     }}
                                 </Button>
 
-                                <!-- Wrapped rather than truncated: a refusal
-                                     cut off at the column edge is a sentence
-                                     nobody can act on, and these rows are
-                                     tall enough to carry two lines. -->
                                 <p
                                     v-else-if="purchase.refusal"
                                     class="text-xs text-muted-foreground"
@@ -381,10 +343,7 @@ defineOptions({
                                     {{ purchase.refusal }}
                                 </p>
 
-                                <!-- Shown under whichever of the three the row
-                                     drew, because a purchase that looked
-                                     eligible a minute ago and was refused just
-                                     now still shows its button. -->
+                                <!-- `v-if`, not part of the chain above: a row refused just now still shows its button. -->
                                 <p
                                     v-if="refused?.id === purchase.id"
                                     class="mt-1.5 text-xs text-destructive"
@@ -409,11 +368,9 @@ defineOptions({
                                     </Link>
                                 </Button>
 
-                                <!-- Per row rather than per page: whether a
-                                     sale can be removed depends on the sale.
-                                     One that has already earned somebody a
-                                     turn cannot be, whatever the viewer
-                                     holds - see `PurchasePolicy::delete`. -->
+                                <!-- Per row, not per page: a sale that has already earned a
+                                     turn cannot be removed whatever the viewer holds - see
+                                     `PurchasePolicy::delete`. -->
                                 <Button
                                     v-if="purchase.can_delete"
                                     variant="ghost"

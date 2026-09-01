@@ -40,15 +40,10 @@ it('loads each pile in the proportion the promotion promises', function () {
         'Free installation' => 15,
         'Baking tray set' => 10,
     ])
-        /* The attachment's own number and the rows behind it have to agree, or
-           the campaign is promising something the drawer cannot hand over. */
+        # The attachment quantities and the pool rows behind them must agree.
         ->and($loaded->sum())->toBe(110);
 });
 
-/**
- * The demo database has to show the pairing off, or nobody opening it would
- * know the feature is there.
- */
 it('pairs the tray to the oven and leaves every other pile open', function () {
     $this->seed(RewardCampaignSeeder::class);
 
@@ -59,9 +54,8 @@ it('pairs the tray to the oven and leaves every other pile open', function () {
         ->sole();
 
     expect($tray->reward->type)->toBe(RewardType::Product)
-        /* What is won is the tray... */
+        # Won: the tray. Wins it: the oven. Two different products.
         ->and($tray->reward->product->sku)->toBe('SHF-TRAY-SET')
-        /* ...and what wins it is the oven. Two different products. */
         ->and($tray->qualifyingProducts->pluck('sku')->all())->toBe(['SHF-OVEN-60']);
 
     $open = $campaign->rewards()
@@ -73,11 +67,6 @@ it('pairs the tray to the oven and leaves every other pile open', function () {
         ->toBeTrue();
 });
 
-/**
- * The trap a seeder like this has to avoid: re-running it while a promotion is
- * live would quietly load a second hundred rewards against a campaign
- * customers are already playing.
- */
 it('leaves an existing clearance sale exactly as it is', function () {
     $this->seed(RewardCampaignSeeder::class);
 
@@ -94,11 +83,6 @@ it('leaves an existing clearance sale exactly as it is', function () {
         ->and($campaign->poolEntries()->where('status', PoolEntryStatus::Claimed)->count())->toBe(1);
 });
 
-/**
- * Only one campaign runs at a time. Seeding into a database that already has
- * one has to land as a draft rather than throwing, or a routine `db:seed`
- * fails on a showroom mid-promotion.
- */
 it('lands as a draft when another campaign is already running', function () {
     $running = campaignHolding(['Audit' => 5]);
 
@@ -108,7 +92,6 @@ it('lands as a draft when another campaign is already running', function () {
 
     expect($clearance->status)->toBe(CampaignStatus::Draft)
         ->and($clearance->rewards()->count())->toBe(6)
-        /* Defined but not loaded: the pool is written at publication. */
         ->and($clearance->poolEntries()->count())->toBe(0)
         ->and($running->refresh()->status)->toBe(CampaignStatus::Active);
 });

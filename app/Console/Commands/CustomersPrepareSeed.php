@@ -10,18 +10,6 @@ use RuntimeException;
 
 use function Laravel\Prompts\table;
 
-/**
- * Turns the raw customer extract into the file `CustomersSeeder` reads.
- *
- * The seed file is committed, so the import is reviewable in a diff rather
- * than being whatever a script happened to produce on somebody's machine.
- * This command is committed with it so the file has a visible origin: change a
- * mapping rule in `LegacyExtract`, run this again, and the diff shows exactly
- * which customers the change moved.
- *
- * Reads and writes nothing else. `database/data/customers.json` is the record
- * of what was handed over and stays as it arrived.
- */
 class CustomersPrepareSeed extends Command
 {
     protected $signature = 'customers:prepare-seed
@@ -49,9 +37,6 @@ class CustomersPrepareSeed extends Command
             return self::FAILURE;
         }
 
-        /* Pretty printed with slashes and unicode left alone: this file is
-           read by people reviewing what the import will do, and an escaped
-           blob is not reviewable. */
         file_put_contents($output, json_encode(
             $result['rows'],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
@@ -84,9 +69,6 @@ class CustomersPrepareSeed extends Command
         );
 
         if ($result['skipped'] !== []) {
-            /* Listed rather than counted, because the only way one of these
-               comes back is somebody looking up the old record by its id and
-               finding a number for it. */
             $this->warn('Left out (id => what the phone column held):');
 
             foreach ($result['skipped'] as $skipped) {

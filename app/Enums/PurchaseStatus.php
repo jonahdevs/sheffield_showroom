@@ -6,15 +6,6 @@ namespace App\Enums;
 
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * Whether a sale counts yet.
- *
- * Only `Completed` earns a shuffle. A purchase recorded on the floor is
- * normally complete the moment it is typed in - somebody has paid and walked
- * out with something - so that is the default. `Pending` is for a sale still
- * being settled, and is deliberately not eligible: a reward handed out against
- * a payment that later falls through cannot be taken back.
- */
 #[TypeScript]
 enum PurchaseStatus: string
 {
@@ -31,7 +22,8 @@ enum PurchaseStatus: string
         };
     }
 
-    /** Whether a purchase in this state can earn a shuffle. */
+    # `Pending` is deliberately not eligible: a reward handed out against a
+    # payment that later falls through cannot be taken back.
     public function isQualifying(): bool
     {
         return $this === self::Completed;

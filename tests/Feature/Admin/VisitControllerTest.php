@@ -16,8 +16,6 @@ use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Gives a user a role holding exactly the permissions named.
- *
  * @param  array<int, Permission>  $permissions
  */
 function visitStaff(array $permissions): User
@@ -39,11 +37,6 @@ function visitStaff(array $permissions): User
     return User::factory()->create()->assignRole($role);
 }
 
-/**
- * Somebody who runs the floor: every visit, not only their own, and the
- * customer records behind them - a correction typed on the visit form reaches
- * the customer only for whoever may edit customers.
- */
 function visitManager(): User
 {
     return visitStaff([
@@ -56,7 +49,6 @@ function visitManager(): User
     ]);
 }
 
-/** A salesperson: their own visits, and no reach past them. */
 function visitSalesperson(): User
 {
     return visitStaff([
@@ -77,8 +69,8 @@ function visitPayload(array $overrides = []): array
 
     return [
         'customer_id' => $customer->id,
-        /* The form shows a picked customer's own details back and posts them
-           with the rest, so the payload carries them too. */
+        # The form posts a picked customer's own details back with the rest,
+        # so the payload has to carry them too.
         'customer_type' => $customer->type->value,
         'customer_name' => $customer->name,
         'company_name' => $customer->company_name,
@@ -90,9 +82,8 @@ function visitPayload(array $overrides = []): array
 }
 
 /**
- * The other half of the form: a customer nobody has met before, typed in
- * rather than picked off the list. No `customer_id`, and - unlike
- * `visitPayload` - no customer row created behind it either.
+ * Unlike `visitPayload`, creates no customer row behind it and posts no
+ * `customer_id`.
  *
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -110,8 +101,6 @@ function newCustomerPayload(array $overrides = []): array
 }
 
 /**
- * Everything on the form that is about the visit rather than the customer.
- *
  * @return array<string, mixed>
  */
 function visitFields(): array
@@ -128,8 +117,6 @@ function visitFields(): array
 }
 
 /**
- * Products as the form posts them: an id, how many, and how keen they were.
- *
  * @param  array<int, int>  $ids
  * @return array<int, array{id: int, quantity: int, interest_level: string}>
  */
@@ -168,21 +155,11 @@ it('lists every visit to somebody who may see the floor', function () {
             ->where('scoped_to_own', false));
 });
 
-/**
- * The whole point of the `view.own` half: a salesperson's list is their own
- * work, not the showroom's.
- */
-/**
- * The three figures above the list, all of them over the window the page is
- * being read under. The row used to hold four fixed windows - a total, today,
- * this week, this month - which said nothing about a reader who had asked for
- * February; those readings now come off the picker's presets instead.
- */
 it('measures the figures over the window the page is read under', function () {
     $regular = Customer::factory()->create();
 
-    /* Two visits from one customer and one from another, all inside February,
-       so the count and the head count cannot be mistaken for each other. */
+    # Two visits from one customer and one from another, so the visit count
+    # and the head count cannot be mistaken for each other.
     Visit::factory()->count(2)->create([
         'customer_id' => $regular->id,
         'visited_at' => '2026-02-14 11:00',
@@ -193,8 +170,8 @@ it('measures the figures over the window the page is read under', function () {
         'expected_follow_up_on' => '2026-03-02',
     ]);
 
-    /* Outside the window on both sides, and one of them carrying a follow-up
-       so the third tile is proved to be windowed rather than counting the log. */
+    # Outside the window on both sides, one of them carrying a follow-up so
+    # the third tile is proved windowed rather than counting the whole log.
     Visit::factory()->create([
         'visited_at' => '2026-01-20 09:00',
         'expected_follow_up_on' => '2026-02-01',
@@ -214,23 +191,16 @@ it('measures the figures over the window the page is read under', function () {
             ->where('stats.1.value', 2)
             ->where('stats.2.key', 'follow_ups')
             ->where('stats.2.value', 1)
-            /* The caption's arithmetic, so the tiles can say what the delta is
-               measured against. February 2026 is a 28-day month. */
             ->where('window_days', 28));
 });
 
-/**
- * Every figure is held up against the equally long stretch of log immediately
- * before the window, which is the one comparison that composes with a window
- * somebody drew themselves. The dashboard measures its own row the same way.
- */
 it('compares the window against the equally long one before it', function () {
-    /* A fortnight, 15 to 28 February, so the window before it is 1 to 14. */
+    # A fortnight, 15 to 28 February, so the window before it is 1 to 14.
     Visit::factory()->count(4)->create(['visited_at' => '2026-02-20 11:00']);
     Visit::factory()->count(2)->create(['visited_at' => '2026-02-10 11:00']);
 
-    /* A day earlier than the preceding window reaches, so a comparison that
-       quietly counted everything before the window would come out at three. */
+    # Earlier than the preceding window reaches: a comparison that quietly
+    # counted everything before the window would come out at three.
     Visit::factory()->create(['visited_at' => '2026-01-31 11:00']);
 
     $this->actingAs(visitManager())
@@ -243,10 +213,6 @@ it('compares the window against the equally long one before it', function () {
             ->where('stats.0.change', 100));
 });
 
-/**
- * The whole log has nothing of equal length before it, so the tiles say so
- * rather than holding the figure up against some earlier stretch nobody chose.
- */
 it('leaves the figures nothing to compare against where no window is set', function () {
     Visit::factory()->count(2)->create();
 
@@ -260,12 +226,6 @@ it('leaves the figures nothing to compare against where no window is set', funct
             ->where('stats.0.change', null));
 });
 
-/**
- * The presets are what keeps today, this week and this month one click away now
- * that the tiles no longer hold them. A named window resolves on the server, so
- * a bookmark still means the same words next month rather than the days they
- * happened to cover when it was saved.
- */
 it('reads a named window off the query string', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-19 10:00:00'));
 
@@ -278,18 +238,15 @@ it('reads a named window off the query string', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('visits.total', 3)
-            /* Echoed back so the picker knows to read by name rather than by
-               the dates it resolved to. */
             ->where('filters.range', 'today')
             ->where('filters.from', '2026-08-19')
             ->where('filters.to', '2026-08-19')
             ->where('window_days', 1)
-            /* Yesterday is the window before a window one day long. */
+            # Yesterday is the window before a window one day long.
             ->where('stats.0.value', 3)
             ->where('stats.0.previous', 1));
 });
 
-/** A window with no name is no window, not the week the dashboard falls back on. */
 it('reads a window name it does not recognise as no window at all', function () {
     Visit::factory()->count(3)->create(['visited_at' => '2026-02-14 11:00']);
 
@@ -303,7 +260,6 @@ it('reads a window name it does not recognise as no window at all', function () 
             ->where('date_label', 'All dates'));
 });
 
-/** A salesperson's figures are their own log, not the floor's. */
 it('counts only a salesperson\'s own visits in the figures', function () {
     $salesperson = visitSalesperson();
 
@@ -319,11 +275,6 @@ it('counts only a salesperson\'s own visits in the figures', function () {
             ->where('stats.1.value', 2));
 });
 
-/**
- * The figures answer how busy the floor has been, which is a question about
- * the log rather than about whatever is typed in the search box. The pager
- * already says how many rows a filter matched.
- */
 it('leaves the figures alone when the list is filtered', function () {
     $wanted = Customer::factory()->create(['name' => 'Achieng Odhiambo']);
 
@@ -338,7 +289,6 @@ it('leaves the figures alone when the list is filtered', function () {
             ->where('stats.0.value', 4));
 });
 
-/** A removed visit is not one the floor took. */
 it('leaves a removed visit out of the figures', function () {
     Visit::factory()->create(['visited_at' => now()]);
     Visit::factory()->create(['visited_at' => now()])->delete();
@@ -393,10 +343,6 @@ it('attaches the products the customer was shown', function () {
     expect(Visit::query()->sole()->products)->toHaveCount(3);
 });
 
-/**
- * The pivot is unique on the pair, so a repeated id would fail on the way in
- * rather than being quietly stored twice.
- */
 it('records a product shown twice on one visit only once', function () {
     $product = Product::factory()->create();
 
@@ -440,11 +386,6 @@ it('records how keen they were on each product', function () {
         ->and($products[$glanced->id]->pivot->interest_level)->toBe('low');
 });
 
-/**
- * A customer asks after twenty sheets rather than one, and a write-up that
- * records only which product they looked at cannot tell a roofing job from a
- * repair.
- */
 it('records how many of each product they were after', function () {
     $sheets = Product::factory()->create();
     $nails = Product::factory()->create();
@@ -474,7 +415,6 @@ it('refuses a product nobody wanted any of', function () {
         ->assertSessionHasErrors('products.0.quantity');
 });
 
-/** Past a few thousand it is a typo, not an order the floor took. */
 it('refuses a quantity that is a slipped keystroke', function () {
     $product = Product::factory()->create();
 
@@ -519,10 +459,8 @@ it('refuses a visit dated in the future', function () {
     expect(Visit::query()->count())->toBe(0);
 });
 
-/**
- * Today plus a later hour passes both field rules on its own and is still a
- * visit that has not happened.
- */
+# Today plus a later hour passes both field rules on its own and is still a
+# visit that has not happened.
 it('pulls a visit logged later today back to now', function () {
     $this->travelTo(now()->setTime(10, 0));
 
@@ -552,10 +490,6 @@ it('lets a salesperson correct the visit they logged', function () {
         ->assertOk();
 });
 
-/**
- * `visits.update` is the permission to correct a write-up, not a way past the
- * boundary `view.own` draws.
- */
 it('refuses a salesperson somebody else\'s visit', function () {
     $salesperson = visitSalesperson();
     $other = Visit::factory()->create();
@@ -625,14 +559,11 @@ it('narrows the list to a window of dates', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('visits.total', 2)
-            /* Echoed back so the calendar redraws from what the server
-               settled on rather than from the click. */
             ->where('filters.from', '2026-02-10')
             ->where('filters.to', '2026-02-28')
             ->where('date_label', '2026-02-10 to 2026-02-28'));
 });
 
-/** Half a window is still a question: everything since a date, or up to one. */
 it('leaves the far end open where only the near one was picked', function () {
     Visit::factory()->create(['visited_at' => '2026-02-09 16:00']);
     Visit::factory()->count(2)->create(['visited_at' => '2026-02-14 11:00']);
@@ -646,12 +577,8 @@ it('leaves the far end open where only the near one was picked', function () {
             ->where('date_label', 'From 2026-02-10'));
 });
 
-/**
- * The end of the window is a date and `visited_at` is a datetime, so the
- * closing day is the trap: read as a bare midnight it would hold nothing that
- * happened during that day, which is the opposite of what somebody picking it
- * on a calendar meant.
- */
+# The `to` end is a date and `visited_at` a datetime: read as a bare midnight
+# the closing day would hold nothing that happened during it.
 it('counts the whole of the closing day, not the midnight that opens it', function () {
     Visit::factory()->create(['visited_at' => '2026-02-28 23:59:00']);
     Visit::factory()->create(['visited_at' => '2026-03-01 00:01:00']);
@@ -662,7 +589,6 @@ it('counts the whole of the closing day, not the midnight that opens it', functi
         ->assertInertia(fn ($page) => $page->where('visits.total', 1));
 });
 
-/** Two ends of one window, whichever order they arrived in. */
 it('reads a window handed over back to front as the same window', function () {
     Visit::factory()->create(['visited_at' => '2026-02-14 11:00']);
     Visit::factory()->create(['visited_at' => '2026-03-20 11:00']);
@@ -676,11 +602,6 @@ it('reads a window handed over back to front as the same window', function () {
             ->where('filters.to', '2026-02-28'));
 });
 
-/**
- * A mangled URL is a mistake, not an attack, and the screen it lands on has no
- * form to show a validation error against - so the log comes back unfiltered
- * rather than as a 500 or a redirect.
- */
 it('reads a window it cannot make sense of as no window at all', function () {
     Visit::factory()->count(3)->create(['visited_at' => '2026-02-14 11:00']);
 
@@ -694,11 +615,6 @@ it('reads a window it cannot make sense of as no window at all', function () {
             ->where('date_label', 'All dates'));
 });
 
-/**
- * The download is meant to be the screen the reader was looking at, so the
- * window has to reach it too - a file wider than the list it was taken off is
- * the sort of thing nobody notices until it has been circulated.
- */
 it('carries the window into the download', function () {
     Excel::fake();
 
@@ -745,13 +661,8 @@ it('refuses to log a visit without visits.create', function () {
         ->assertForbidden();
 });
 
-/**
- * The time on the form is the time on the wall.
- *
- * Under UTC every visit typed in a Kenyan afternoon read as hours into the
- * future and was pulled back to the moment it was entered, so the salesperson
- * got a time they had not chosen. This is the guard on that.
- */
+# Guards a regression: under UTC an afternoon time read as the future and was
+# pulled back to the moment of entry. Pairs with the timezone test below.
 it('stores the time that was typed, to the minute', function () {
     $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
         'visited_on' => now()->subDay()->format('Y-m-d'),
@@ -765,10 +676,6 @@ it('keeps the application on the showroom floor\'s clock', function () {
     expect(config('app.timezone'))->toBe('Africa/Nairobi');
 });
 
-/**
- * Who took the visit is not always who typed it up: a manager writing up the
- * floor at the end of the day is the logger, not the respondent.
- */
 it('records who attended the visit apart from who logged it', function () {
     $manager = visitManager();
 
@@ -793,10 +700,6 @@ it('refuses a visit with nobody against it', function () {
     expect(Visit::query()->count())->toBe(0);
 });
 
-/**
- * The list names who took the visit; a row from before the field existed
- * falls back to whoever logged it rather than showing a dash.
- */
 it('falls back to the logger when no respondent was recorded', function () {
     $manager = visitManager();
 
@@ -809,9 +712,9 @@ it('falls back to the logger when no respondent was recorded', function () {
             ->where('visits.data.0.attended_by', $manager->name));
 });
 
-// =============================================================================
-// Finding or typing the customer
-// =============================================================================
+# =========================================================================
+# Finding or typing the customer
+# =========================================================================
 
 it('adds a customer nobody has met before along with the visit', function () {
     $this->actingAs(visitManager())
@@ -826,10 +729,6 @@ it('adds a customer nobody has met before along with the visit', function () {
         ->and(Visit::query()->sole()->customer_id)->toBe($customer->id);
 });
 
-/**
- * The whole reason the number is required: a walk-in who came last month must
- * not be filed a second time because nobody thought to search first.
- */
 it('attaches the visit to an existing customer on a matching number', function () {
     $existing = Customer::factory()->create([
         'name' => 'Achieng Odhiambo',
@@ -856,11 +755,6 @@ it('files a different number as a different customer', function () {
     expect(Customer::query()->count())->toBe(2);
 });
 
-/**
- * A company customer is a person and a company, not a company instead of a
- * person. Whoever walked in is who the counter dealt with, and the visit form
- * records them alongside the business they came for.
- */
 it('records both the person and the company for a company visit', function () {
     $this->actingAs(visitManager())->post(route('admin.visits.store'), newCustomerPayload([
         'customer_type' => CustomerType::Company->value,
@@ -915,11 +809,6 @@ it('refuses a typed-in company with no company name', function () {
         ->assertSessionHasErrors('company_name');
 });
 
-/**
- * The fields stay editable behind a picked customer, so what comes back is the
- * record as it now stands - a number corrected at the counter is corrected
- * where it was noticed.
- */
 it('saves a correction typed over a picked customer back to their record', function () {
     $existing = Customer::factory()->create([
         'type' => CustomerType::Individual,
@@ -941,10 +830,6 @@ it('saves a correction typed over a picked customer back to their record', funct
         ->and(Visit::query()->sole()->customer_id)->toBe($existing->id);
 });
 
-/**
- * Shown the details read-only, whoever may not edit customers has no edit to
- * send - and one that arrives anyway is not one the form offered them.
- */
 it('leaves a picked customer alone for somebody who may not edit customers', function () {
     $existing = Customer::factory()->create([
         'type' => CustomerType::Individual,
@@ -966,11 +851,6 @@ it('leaves a picked customer alone for somebody who may not edit customers', fun
         ->and(Visit::query()->sole()->customer_id)->toBe($existing->id);
 });
 
-/**
- * The business half is only on screen for a company, so an individual's visit
- * write-up never showed the field and has no business clearing it. The
- * employer stays as it was entered under Customers.
- */
 it('leaves the company an individual is recorded against alone', function () {
     $existing = Customer::factory()->create([
         'type' => CustomerType::Individual,
@@ -990,9 +870,9 @@ it('leaves the company an individual is recorded against alone', function () {
     expect($existing->fresh()->company_name)->toBe('Mwangi Builders Ltd');
 });
 
-// =============================================================================
-// Follow-up
-// =============================================================================
+# =========================================================================
+# Follow-up
+# =========================================================================
 
 it('records an expected follow-up date', function () {
     $follow = now()->addWeek()->format('Y-m-d');

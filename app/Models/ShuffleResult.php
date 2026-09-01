@@ -17,7 +17,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * What was won. Permanent, and never deleted.
+ * Never deleted. `expires_at` is stamped at win time from `campaign_rewards.validity_days`
+ * and never recomputed, so editing a definition cannot move a deadline
+ * somebody already has.
  *
  * @property int $id
  * @property int $shuffle_session_id
@@ -81,12 +83,8 @@ class ShuffleResult extends Model
     }
 
     /**
-     * Whether staff may hand this over.
-     *
-     * Two questions, not one: the status has to allow it and the calendar has
-     * to agree. A reward whose date has passed but which nothing has swept yet
-     * is expired in every sense that matters, and reading only the status
-     * would hand it over anyway.
+     * Reads the date as well as the status: a lapsed reward nothing has swept
+     * yet is expired, and checking only the status would hand it over.
      */
     public function isRedeemable(?CarbonImmutable $at = null): bool
     {
@@ -99,15 +97,9 @@ class ShuffleResult extends Model
     }
 
     /**
-     * Rewards matching what somebody typed into the search box.
-     *
-     * Two questions in one field, because they are asked at the same desk with
-     * the same keystrokes: the code off a customer's phone, and the person who
-     * won it. The customer half is delegated to `Customer::search()` rather
-     * than written again here - that scope already knows to strip the spaces
-     * and the country code out of a phone number before comparing it, so
-     * typing 0712 finds a customer stored as +254712, and a second
-     * hand-rolled `like` on `phone` would quietly fail to.
+     * Delegates the customer half to `Customer::search()`: a hand-rolled
+     * `like` on `phone` would not strip the country code, so typing 0712
+     * would quietly fail to find a customer stored as +254712.
      *
      * @param  Builder<ShuffleResult>  $query
      */
@@ -127,9 +119,6 @@ class ShuffleResult extends Model
     }
 
     /**
-     * The rewards whose date has passed but which are still marked unredeemed,
-     * which is what `rewards:expire` sweeps.
-     *
      * @param  Builder<ShuffleResult>  $query
      */
     #[Scope]

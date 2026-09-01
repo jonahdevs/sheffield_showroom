@@ -8,11 +8,7 @@ use Illuminate\Database\Seeder;
 
 class UsersSeeder extends Seeder
 {
-    /**
-     * Somebody has to be able to open the Roles screen and hand the first
-     * role out. Depends on RolesSeeder having run first, which is the order
-     * DatabaseSeeder calls them in.
-     */
+    /** Depends on `RolesSeeder` having run first. */
     public function run(): void
     {
         $admin = User::query()->firstOrCreate(

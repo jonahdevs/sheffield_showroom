@@ -17,8 +17,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * One customer's single turn.
- *
  * Addressed publicly by `token` and never by id, so the QR code carries
  * nothing anybody could count upwards from.
  *
@@ -40,11 +38,9 @@ class ShuffleSession extends Model
     /** @use HasFactory<ShuffleSessionFactory> */
     use HasFactory;
 
-    /**
-     * The token is not fillable. It is minted once by
-     * `ShuffleSessionService` from a cryptographic source, and a token that
-     * could arrive on a request is a token somebody could choose.
-     */
+    # `token` is deliberately not fillable: minted once by
+    # `ShuffleSessionService`, and one that could arrive on a request is one
+    # somebody could choose.
     protected $fillable = [
         'campaign_id',
         'customer_id',
@@ -55,10 +51,8 @@ class ShuffleSession extends Model
     ];
 
     /**
-     * Never serialised. The whole security of the public flow is that this
-     * string is known only to the person holding the QR code, and a page prop
-     * carrying it would put every session's token in the browser of anybody
-     * who could see the list.
+     * `token` is hidden: a page prop carrying it would put every session's
+     * token in the browser of anybody who could see the list.
      *
      * @var list<string>
      */
@@ -123,29 +117,20 @@ class ShuffleSession extends Model
         return $this->hasOne(ShuffleResult::class);
     }
 
-    /** Whether the calendar has run out on this turn. */
     public function hasExpired(?CarbonImmutable $at = null): bool
     {
         return $this->expires_at !== null
             && ($at ?? CarbonImmutable::now())->greaterThan($this->expires_at);
     }
 
-    /**
-     * Whether this turn can still be taken.
-     *
-     * Read rather than trusted at the point of use: the authoritative version
-     * of this question is asked again inside the claiming transaction, where
-     * the row is locked. This one is for deciding what to draw on the screen.
-     */
+    # For drawing the screen only. The authoritative check is made again
+    # inside the claiming transaction, under the row lock.
     public function isShuffleable(?CarbonImmutable $at = null): bool
     {
         return $this->status === ShuffleSessionStatus::Pending && ! $this->hasExpired($at);
     }
 
     /**
-     * The turns that have run out but are still marked pending, which is what
-     * `rewards:expire` sweeps.
-     *
      * @param  Builder<ShuffleSession>  $query
      */
     #[Scope]

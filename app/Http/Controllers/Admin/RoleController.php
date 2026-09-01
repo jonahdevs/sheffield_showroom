@@ -25,12 +25,8 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * Roles, the people holding them, and the permissions behind them.
- */
 class RoleController extends Controller
 {
-    /** The role filter's value for an account holding none. */
     private const UNASSIGNED = 'none';
 
     public function index(Request $request): Response
@@ -46,9 +42,7 @@ class RoleController extends Controller
             ->orderBy('name')
             ->get();
 
-        /* The people panel is behind its own permission now that there is more
-           to do from it than read a name. Somebody trusted to shape roles is
-           not automatically trusted to open the accounts holding them. */
+        # Its own permission: shaping roles does not imply opening the accounts holding them.
         $canViewUsers = $viewer->can('viewAny', User::class);
 
         return Inertia::render('admin/roles/Index', [
@@ -63,9 +57,8 @@ class RoleController extends Controller
                 'assign' => $viewer->can(Permission::RolesAssign->value),
                 'view_users' => $canViewUsers,
                 'create_users' => $viewer->can('create', User::class),
-                /* Per-row rather than blanket: whether this viewer may touch
-                   a given account also depends on what that account can do,
-                   so the row carries its own `is_manageable`. */
+                # Not the whole answer: reach also depends on what the target account can
+                # do, so each row carries its own `is_manageable`.
                 'update_users' => $viewer->can(Permission::UsersUpdate->value),
             ],
         ]);
@@ -82,12 +75,6 @@ class RoleController extends Controller
         ]);
     }
 
-    /**
-     * The same screen serves reading and writing. A role the application ships
-     * with opens read-only rather than being hidden: the checks it gates are
-     * written into the code, so its permissions are worth seeing and not worth
-     * reshaping — which is what the policy would refuse anyway.
-     */
     public function edit(Request $request, Role $role): Response
     {
         $this->authorize('viewAny', Role::class);
@@ -121,8 +108,6 @@ class RoleController extends Controller
             'message' => __('The :role role has been created.', ['role' => $role->name]),
         ]);
 
-        /* The form is a page of its own, so `back()` would land on the form
-           that was just submitted. */
         return to_route('admin.roles.index');
     }
 
@@ -145,11 +130,8 @@ class RoleController extends Controller
         return to_route('admin.roles.index');
     }
 
-    /**
-     * Holders are moved rather than stranded. A user left with no role at all
-     * would keep their account and lose every ability on it, which reads as a
-     * broken account rather than a deleted role.
-     */
+    # Holders are moved, never stranded: an account left with no role keeps its login and
+    # loses every ability.
     public function destroy(Request $request, Role $role): RedirectResponse
     {
         $this->authorize('delete', $role);
@@ -189,13 +171,9 @@ class RoleController extends Controller
     }
 
     /**
-     * Setting the roles one user holds, from the Roles screen's Users panel.
-     *
-     * The direct grants are trimmed against the new roles afterwards, so the
-     * two sets never overlap. A capability held twice - once through the job
-     * and once pinned to the person - is the failure mode this whole area has
-     * to avoid: taking the role away would leave the ability behind, and
-     * nothing on this screen would say why.
+     * Trims the direct grants against the new roles so the two sets never overlap. A
+     * capability held twice survives the role being revoked, and nothing on this screen
+     * would say why.
      */
     public function assign(UserRolesRequest $request, User $user): RedirectResponse
     {
@@ -225,11 +203,7 @@ class RoleController extends Controller
         return back();
     }
 
-    /**
-     * The capabilities themselves, read-only: they are declared in code and
-     * synced by `permissions:sync`, so the list is the enum rather than a query.
-     * Paginated in memory for the same reason — there is no table to page over.
-     */
+    # The list is the enum, not a query, so this pages in memory.
     public function permissions(Request $request): Response
     {
         $this->authorize('viewAny', Role::class);
@@ -239,9 +213,6 @@ class RoleController extends Controller
 
         $rows = collect(PermissionRowData::forRoles(
             Role::query()->with('permissions:id,name')->orderBy('name')->get(),
-            /* Only the accounts carrying a grant of their own. Everybody else
-               holds what their role holds, and that half of the answer is
-               already in the column beside it. */
             User::query()
                 ->has('permissions')
                 ->with('permissions:id,name')
@@ -280,8 +251,7 @@ class RoleController extends Controller
     }
 
     /**
-     * What this person may hand out, mirroring `RoleRequest::grantable()`: the
-     * form only offers what the request would accept.
+     * Mirrors `RoleRequest::grantable()` - the form only offers what the request accepts.
      *
      * @return array<int, string>
      */
@@ -294,9 +264,6 @@ class RoleController extends Controller
     }
 
     /**
-     * The accounts these roles are handed to. A user who has not been given
-     * one yet is listed precisely so they can be.
-     *
      * @return LengthAwarePaginator<int, RoleHolderData>
      */
     private function holders(Request $request): LengthAwarePaginator
@@ -305,10 +272,8 @@ class RoleController extends Controller
         $viewer = $request->user();
 
         return User::query()
-            /* The permissions come with the rows because every row is asked
-               whether this viewer's reach covers it, and that question reads
-               what the account can do. Loading them here turns what would be
-               three queries per row into three for the page. */
+            # The permissions must come with the rows: `RoleHolderData` asks whether the
+            # viewer's reach covers each account, which reads what that account can do.
             ->with(['roles:id,name', 'roles.permissions:id,name', 'permissions:id,name'])
             ->when($filters['search'] !== '', fn (Builder $query) => $query->where(
                 fn (Builder $inner) => $inner

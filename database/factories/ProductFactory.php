@@ -28,9 +28,7 @@ class ProductFactory extends Factory
         ];
     }
 
-    /**
-     * A row the website put here, which a sync owns and may replace.
-     */
+    /** A row the website put here, which a sync owns and may replace. */
     public function fromWebsite(?int $externalId = null): static
     {
         return $this->state(fn (array $attributes) => [
@@ -40,10 +38,7 @@ class ProductFactory extends Factory
         ]);
     }
 
-    /**
-     * A status somebody set here by hand. `Inactive` is the interesting one:
-     * no sync may move it.
-     */
+    /** `Inactive` is the interesting one: no sync may move it. */
     public function status(ProductStatus $status): static
     {
         return $this->state(fn (array $attributes) => ['status' => $status]);

@@ -1,9 +1,5 @@
 /**
- * The countries a number can be given in, East Africa first and the rest
- * alphabetically — the order the storefront uses, because a reader here is
- * looking for the same handful at the top.
- *
- * The flag is not stored: it is fetched by ISO code, since the emoji a list
+ * No flag is stored: it is fetched by ISO code, because the flag emoji a list
  * like this usually carries renders as two bare letters on Windows.
  */
 export type DialCode = {
@@ -100,15 +96,13 @@ export const DIAL_CODES: DialCode[] = [
     { iso: 'ID', name: 'Indonesia', dial: '+62' },
 ];
 
-/** Where a country's flag is drawn from, keyed by its ISO code. */
 export function flagUrl(iso: string): string {
     return `https://flagcdn.com/${iso.toLowerCase()}.svg`;
 }
 
 /**
- * Splits a stored number into the code it starts with and the rest. The longest
- * code wins, or `+1` would claim every `+1…` number before `+1` itself is
- * reached — and an unrecognised number keeps its digits rather than being
+ * Longest code wins, or `+1` claims every `+1…` number before the longer codes
+ * are reached. An unrecognised number keeps its digits rather than being
  * silently re-coded.
  */
 export function splitDial(value: string): { dial: string; number: string } {

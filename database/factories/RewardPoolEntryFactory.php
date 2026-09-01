@@ -23,10 +23,8 @@ class RewardPoolEntryFactory extends Factory
 
         return [
             'campaign_reward_id' => $reward,
-            /* The campaign is carried on the entry as well as on the reward
-               above it - see the migration. Resolved from the reward so a
-               fixture cannot describe a unit filed under one campaign and
-               defined in another. */
+            # Resolved from the reward, so a fixture cannot describe a unit
+            # filed under one campaign and defined in another.
             'campaign_id' => fn (array $attributes) => CampaignReward::query()
                 ->whereKey($attributes['campaign_reward_id'])
                 ->value('campaign_id'),

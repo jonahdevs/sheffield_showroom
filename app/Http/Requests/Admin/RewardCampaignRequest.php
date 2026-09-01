@@ -10,24 +10,6 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
-/**
- * A campaign and the rewards inside it, on one form.
- *
- * They arrive together because they are one decision: a promotion is its dates
- * and its drawer, and asking somebody to save a campaign and then go and fill
- * it would let them publish an empty one by forgetting.
- *
- * What arrives under `rewards` is a list of attachments, not descriptions. A
- * reward is written once in the catalogue and chosen here by its id, so this
- * form decides only how many, for how long, and what somebody must have bought
- * to be in the running - never what the thing is.
- *
- * The important rule here is what happens after publication. A published
- * campaign's quantities are controlled inventory - people have been told there
- * are twenty discounts - so the rewards are only accepted while the campaign
- * is still a draft. Everything else about it stays editable: a name, a
- * description and an end date are administration, not odds.
- */
 class RewardCampaignRequest extends FormRequest
 {
     public function authorize(): bool
@@ -39,21 +21,9 @@ class RewardCampaignRequest extends FormRequest
             : $this->user()->can('update', $subject);
     }
 
-    /**
-     * Closes the end date at the end of its day.
-     *
-     * The form asks for a day, because a promotion runs over days rather than
-     * to a minute. Taken literally that day arrives as midnight, which is the
-     * *start* of it - so a campaign set to end on the 28th would stop the
-     * moment the 28th began, and the showroom would spend that day turning
-     * people away from a promotion its own poster says is running.
-     *
-     * The start needs no such help: midnight on the first day is exactly when
-     * it should open.
-     *
-     * Only a bare date is touched. A value that already carries a clock came
-     * from somewhere that meant it, and is left alone.
-     */
+    # A bare end date arrives as midnight, which is the *start* of that day - a
+    # campaign ending on the 28th would stop as the 28th began. The start needs
+    # no such help. A value already carrying a clock meant it, so it is left.
     protected function prepareForValidation(): void
     {
         $ends = $this->input('ends_at');
@@ -74,8 +44,6 @@ class RewardCampaignRequest extends FormRequest
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
 
-            /* At least one. A campaign that hands out nothing per customer is
-               a campaign nobody can win. */
             'max_shuffles_per_customer' => ['required', 'integer', 'min:1', 'max:100'],
 
             'minimum_purchase_amount' => ['nullable', 'decimal:0,2', 'min:0', 'max:99999999.99'],
@@ -84,25 +52,18 @@ class RewardCampaignRequest extends FormRequest
         if ($this->editsRewards()) {
             $rules['rewards'] = ['present', 'array', 'max:20'];
 
-            /* The catalogue row being attached. What the reward *is* is no
-               longer typed on this form - it is chosen, and everything
-               describing it is read from `rewards`. */
             $rules['rewards.*.reward_id'] = [
                 'required',
                 'integer',
                 Rule::exists('rewards', 'id'),
             ];
 
-            /* A quantity of zero is a reward that exists on the form and not
-               in the drawer, which is the shape of a promotion that quietly
-               promises something it cannot hand over. */
             $rules['rewards.*.quantity'] = ['required', 'integer', 'min:1', 'max:100000'];
 
             $rules['rewards.*.validity_days'] = ['nullable', 'integer', 'min:1', 'max:3650'];
 
-            /* What somebody must have bought to be in the running. Absent or
-               empty is the common case and means any purchase qualifies - see
-               `campaign_reward_product`. */
+            # Absent or empty is the common case: the reward qualifies against
+            # any purchase.
             $rules['rewards.*.qualifying_product_ids'] = ['sometimes', 'array', 'max:50'];
             $rules['rewards.*.qualifying_product_ids.*'] = [
                 'integer',
@@ -139,14 +100,8 @@ class RewardCampaignRequest extends FormRequest
         ];
     }
 
-    /**
-     * One row per reward.
-     *
-     * `campaign_rewards` holds a unique index on `(campaign_id, reward_id)`,
-     * so a form naming the same reward twice would reach the database and
-     * throw. Caught here instead, where it can be said in words and pointed at
-     * the row that repeated it.
-     */
+    # `campaign_rewards` is unique on `(campaign_id, reward_id)`; caught here so
+    # the repeated row can be named instead of throwing.
     private function refuseRepeatedRewards(Validator $validator): void
     {
         $seen = [];
@@ -171,15 +126,8 @@ class RewardCampaignRequest extends FormRequest
         }
     }
 
-    /**
-     * A retired reward may stay where it already is and go into nothing new.
-     *
-     * Checked against what the campaign already holds rather than refused
-     * outright: `rewards.is_active` is switched off to stop a reward being
-     * offered again, and a draft that has held it since before that must still
-     * be saveable - otherwise retiring a reward would quietly lock every
-     * campaign carrying it.
-     */
+    # Only rewards being *added* are refused. Refusing every retired reward
+    # would lock every draft already holding one.
     private function refuseRetiredRewards(Validator $validator): void
     {
         $held = $this->subject()?->rewards()->pluck('reward_id')->all() ?? [];
@@ -212,14 +160,8 @@ class RewardCampaignRequest extends FormRequest
         }
     }
 
-    /**
-     * Whether the reward definitions on this request are to be read at all.
-     *
-     * Only while the campaign is a draft. Afterwards the pool has been written
-     * and the quantities are inventory, so anything arriving under `rewards`
-     * is a stale form rather than an instruction - it is dropped rather than
-     * refused, the same way the profile screen drops an email.
-     */
+    # Drafts only. Once published the pool is written and the quantities are
+    # inventory, so a `rewards` key is a stale form - dropped, not refused.
     public function editsRewards(): bool
     {
         return ! ($this->subject()?->status->isPublished() ?? false);

@@ -14,23 +14,14 @@ interface Paginated<T> extends Paginator {
     data: T[];
 }
 
-/*
- * `RewardCampaignController::index` passes `withRewards: false`, so every row
- * here carries an empty `rewards` array rather than the drawer's contents -
- * only the totals counted off the pool, which is all a list needs.
- */
+/* `index` passes `withRewards: false`: every row's `rewards` array is empty
+   here and only the totals counted off the pool arrive. */
 const props = defineProps<{
     campaigns: Paginated<App.Data.RewardCampaignData>;
     page_sizes: number[];
     can: { create: boolean; update: boolean; delete: boolean };
 }>();
 
-/**
- * Every state gets a colour here, unlike the products grid where the ordinary
- * case goes unsaid. There is no ordinary case for a campaign: a reader
- * scanning this list is asking which one is running and which one is still
- * being written, and that question is the whole reason to open the page.
- */
 function statusTone(status: string): string {
     switch (status) {
         case 'draft':
@@ -55,17 +46,8 @@ const dayFormatter = new Intl.DateTimeFormat('en-GB', {
 });
 
 /**
- * The column stores a moment and the list shows a day.
- *
- * The clock is dropped on purpose: a campaign that opens at nine in the
- * morning and one that opens at midnight are the same campaign to somebody
- * scanning for which promotion covers March, and two timestamps per row would
- * crowd out the drawer figures that are the point of the table. The form
- * along shows the hour, which is where it matters.
- *
- * The space is swapped for a `T` before parsing: `Y-m-d H:i:s` is not a
- * format every engine reads, and the ones that guess treat it as UTC, which
- * would slide an evening campaign onto the following day.
+ * The space is swapped for a `T` before parsing: engines that guess at
+ * `Y-m-d H:i:s` treat it as UTC, sliding an evening campaign onto the next day.
  */
 function readableDay(value: string | null): string | null {
     if (value === null) {
@@ -77,7 +59,6 @@ function readableDay(value: string | null): string | null {
     return Number.isNaN(parsed.getTime()) ? null : dayFormatter.format(parsed);
 }
 
-/** When the promotion runs, in the shape the dates it was given allow. */
 function readableRun(campaign: App.Data.RewardCampaignData): string {
     const from = readableDay(campaign.starts_at);
     const to = readableDay(campaign.ends_at);
@@ -98,13 +79,8 @@ function readableRun(campaign: App.Data.RewardCampaignData): string {
 }
 
 /**
- * Why a campaign marked active is not actually handing anything out.
- *
- * `is_running` is the model's three-part answer and the status is only the
- * first part of it, so the two disagree whenever the calendar has moved past
- * a campaign nobody has got round to completing. A row that said "Active" and
- * nothing else would be lying to the person wondering why the showroom's
- * tablet refuses to shuffle.
+ * `is_running` is the model's three-part answer and `status` only the first
+ * part, so the two disagree once the calendar passes a campaign nobody closed.
  */
 function dormantReason(campaign: App.Data.RewardCampaignData): string | null {
     if (campaign.status !== 'active' || campaign.is_running) {
@@ -123,12 +99,8 @@ function dormantReason(campaign: App.Data.RewardCampaignData): string | null {
     return 'Past its end date';
 }
 
-/**
- * Only ever a draft: `RewardCampaignPolicy::delete` refuses a published
- * campaign, because a pool that has been written is history. The row asks the
- * same question the policy would answer, so the button is never offered where
- * pressing it would come back refused.
- */
+/* Drafts only: the row's `!campaign.is_published` guard mirrors
+   `RewardCampaignPolicy::delete`, which refuses a published campaign. */
 async function removeCampaign(campaign: App.Data.RewardCampaignData) {
     if (!(await confirmDelete())) {
         return;
@@ -147,15 +119,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  Every promotion the showroom has run, newest first.
-
-  A table rather than the tile grid the catalogue uses: nothing here is
-  recognised by sight, and the four drawer figures beside each name are the
-  reason to look. `loaded = available + claimed + void` always reconciles, so
-  a row that does not add up is a reporting fault worth seeing rather than a
-  rounding.
--->
 <template>
     <Head title="Reward campaigns" />
 
@@ -190,7 +153,7 @@ defineOptions({
                 <Button
                     v-if="props.can.create"
                     as-child
-                    variant="quiet"
+                    variant="outline"
                     size="sm"
                     class="mt-3.5"
                 >
@@ -203,10 +166,6 @@ defineOptions({
 
             <template v-else>
                 <div class="overflow-x-auto">
-                    <!-- Semibold rather than bold: the campaign name in every
-                         row below is itself text-xs font-bold, so a bold
-                         header would read as one more row instead of the
-                         label for all of them. -->
                     <div
                         class="grid min-w-[940px] grid-cols-[minmax(0,1.5fr)_120px_minmax(0,180px)_minmax(0,1.3fr)_80px_88px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
@@ -270,10 +229,8 @@ defineOptions({
                                 {{ readableRun(campaign) }}
                             </p>
 
-                            <!-- A draft has no pool yet, so all four read
-                                 zero. That is the honest answer rather than a
-                                 gap: the quantities on the form are still a
-                                 promise until publication writes them. -->
+                            <!-- A draft has no pool yet, so all four read zero:
+                                 quantities are a promise until publication. -->
                             <div
                                 class="min-w-0"
                                 :data-test="`drawer-${campaign.id}`"
@@ -301,11 +258,9 @@ defineOptions({
                             </p>
 
                             <div class="flex items-center justify-end gap-1">
-                                <!-- Always a link, never hidden: reading a
-                                     campaign needs only `rewards.view`, and
-                                     the form itself is what locks its fields
-                                     for somebody who may not write. The label
-                                     says which of the two they are getting. -->
+                                <!-- Never gated on `can.update`: reading a
+                                     campaign needs only `rewards.view`, and the
+                                     form locks its own fields. -->
                                 <Button
                                     as-child
                                     variant="ghost"

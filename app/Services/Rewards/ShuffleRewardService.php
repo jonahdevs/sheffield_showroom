@@ -15,35 +15,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Claiming one reward, once.
- *
- * This is the only place in the application that decides what somebody wins,
- * and the only one that may. The customer's browser is told the answer after
- * the fact and animates towards it; nothing it sends can influence it, because
- * nothing it sends is read here beyond the token that got it this far.
- *
- * The whole method is one transaction, and the order inside it matters:
- *
- *  1. Lock the session row. Whoever holds this lock owns the turn, so a
- *     refreshed page and a second phone queue behind each other rather than
- *     both proceeding.
- *  2. Re-check the state under that lock. The screen checked it too, but that
- *     was a moment ago and a moment is enough.
- *  3. Work out what this purchase is even in the running for. Rewards may be
- *     paired to a product - buy the oven, win the tray - and that is resolved
- *     here, before anything is locked, so the statement below stays narrow.
- *  4. Pick and lock an available pool entry in one statement - see `claim()`.
- *  5. Mark it claimed, write the result, mark the session shuffled.
- *
- * The architecture document describes this as "lock an available entry, then
- * randomly choose one". That order is wrong: locking first and choosing second
- * lets two transactions pick the same row out of the set they both locked.
- * Selection and locking have to be the same statement.
- *
- * Under all of it sit two unique indexes - one result per session, one result
- * per pool entry. If the locking above is ever broken by a later change, the
- * second writer gets an integrity error and nobody wins the same reward twice.
- * That is the correct failure, and there is a test that provokes it.
+ * The only place in the application that decides what somebody wins.
  */
 class ShuffleRewardService
 {
@@ -52,23 +24,15 @@ class ShuffleRewardService
         private readonly RewardEligibilityService $eligibility,
     ) {}
 
-    /**
-     * Runs the shuffle and returns what was won.
-     *
-     * The same method serves the customer's phone and the staff screen. There
-     * is deliberately no second implementation for the fallback: two ways of
-     * choosing a reward is two ways of choosing it wrongly.
-     */
     public function claim(ShuffleSession $session, ?CarbonImmutable $at = null): ShuffleResult
     {
         $at ??= CarbonImmutable::now();
 
         return DB::transaction(function () use ($session, $at): ShuffleResult {
-            /* The turn itself, locked. Everything below happens while this row
-               is held, which is what makes the whole operation one-at-a-time
-               per session. */
+            # Locking the session row is what makes a turn one-at-a-time: a refreshed
+            # page and a second phone queue behind each other rather than both proceeding.
             $session = ShuffleSession::query()
-                ->with(['campaign', 'purchase'])
+                ->with(['campaign', 'purchase.products'])
                 ->lockForUpdate()
                 ->find($session->id);
 
@@ -76,17 +40,15 @@ class ShuffleRewardService
                 throw ShuffleUnavailableException::unknown();
             }
 
-            /* Authoritative. The copy of this check that drew the screen was
-               true when it ran and may not be now. */
+            # Re-checked under the lock; the copy of this check that drew the screen
+            # was true when it ran and may not be now.
             $this->sessions->assertShuffleable($session, $at);
 
-            /* Resolved before the lock is taken, never during it. This is the
-               one thing standing between a paired reward and the wrong
-               customer, and it costs a single query - see
-               `RewardEligibilityService::qualifyingRewardIds()`. */
+            # Product pairing is resolved before the lock is taken, never joined into
+            # the locking statement below.
             $rewardIds = $this->eligibility->qualifyingRewardIds(
                 $session->campaign,
-                $session->purchase?->product_id,
+                $this->eligibility->productIdsOn($session->purchase),
             );
 
             $entry = $rewardIds === []
@@ -94,9 +56,8 @@ class ShuffleRewardService
                 : $this->lockAvailableEntry($session->campaign_id, $rewardIds);
 
             if ($entry === null) {
-                /* Nothing is spent. The turn stays pending because the
-                   customer did nothing wrong, and a showroom that adds stock
-                   back should find them still holding it. */
+                # Deliberately leaves the turn pending rather than failing it, so a
+                # showroom that adds stock back finds the customer still holding it.
                 throw ShuffleUnavailableException::poolEmpty();
             }
 
@@ -110,9 +71,8 @@ class ShuffleRewardService
                 'reward_pool_entry_id' => $entry->id,
                 'code' => $this->code(),
                 'won_at' => $at,
-                /* Stamped from the definition now, never recomputed later, so
-                   an administrator editing `validity_days` afterwards cannot
-                   move a deadline somebody already has. */
+                # Stamped from the definition now, never recomputed, so editing
+                # `validity_days` afterwards cannot move a deadline somebody already has.
                 'expires_at' => $entry->reward->expiryFrom($at),
                 'status' => RewardResultStatus::Unredeemed,
             ]);
@@ -124,23 +84,16 @@ class ShuffleRewardService
     }
 
     /**
-     * One available unit of this campaign that this customer may win, locked
-     * for the caller.
+     * One available unit of this campaign that this customer may win, locked for the caller.
      *
-     * Selection and locking in a single statement, which is the point. The
-     * random order is what makes it a shuffle; `lockForUpdate` is what makes
-     * it safe. A second transaction running this at the same moment blocks
-     * here rather than picking the same row, and when it is let through the
-     * row it was about to take is no longer `available`, so it takes another.
+     * Selection and locking must stay in a single statement. Locking an available entry
+     * first and randomly choosing second - the order the architecture document gives -
+     * lets two concurrent transactions pick the same row out of the set they both locked.
+     * Shuffling in PHP has the same fault: it would choose from rows it never locked.
      *
-     * Ordering by a random expression rather than shuffling in PHP, because
-     * PHP would have to read the whole pool to shuffle it and would then be
-     * choosing from rows it never locked.
-     *
-     * `$rewardIds` narrows the draw to what the purchase qualifies for, as a
-     * literal `IN` rather than a join to `campaign_reward_product`. The ids
-     * were resolved above, before the transaction took any lock, precisely so
-     * this statement still reads one table through one index.
+     * Two unique indexes sit under this - one result per session, one result per pool
+     * entry - so a later change that breaks the locking fails with an integrity error
+     * rather than handing the same reward out twice.
      *
      * @param  array<int, int>  $rewardIds
      */
@@ -156,15 +109,6 @@ class ShuffleRewardService
             ->first();
     }
 
-    /**
-     * What the customer quotes when they come back for the reward weeks later.
-     *
-     * Read aloud across a counter and typed in by somebody else, so the
-     * alphabet leaves out the characters that get misread: no O or 0, no I, 1
-     * or L. Collisions are refused by the unique index rather than guarded
-     * against here - at showroom volumes a repeat is vanishingly unlikely, and
-     * the retry below costs nothing on the occasion it happens.
-     */
     private function code(): string
     {
         do {
@@ -175,9 +119,9 @@ class ShuffleRewardService
     }
 
     /**
-     * Six characters nobody will misread over a counter: no O or 0, no I, 1
-     * or L. `random_int` rather than `rand`, because a reward code somebody
-     * can predict is a reward code somebody can claim.
+     * Six characters nobody will misread over a counter: no O or 0, no I, 1 or L.
+     * `random_int` rather than `rand` - a reward code somebody can predict is a
+     * reward code somebody can claim.
      */
     private function readableSuffix(): string
     {

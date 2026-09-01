@@ -10,12 +10,9 @@ use App\Models\RewardCampaign;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * One catalogue reward attached to one campaign.
- *
  * The descriptive states - `discount()`, `ofType()`, `product()` - build the
  * catalogue row behind the attachment rather than setting columns here, so a
- * test still reads `CampaignReward::factory()->discount()` and does not have
- * to know the reward moved out into its own table.
+ * test does not have to know the reward moved out into its own table.
  *
  * @extends Factory<CampaignReward>
  */
@@ -45,7 +42,6 @@ class CampaignRewardFactory extends Factory
         ]);
     }
 
-    /** A reward carrying a figure, which most of them do not. */
     public function discount(float $percentage = 10): static
     {
         return $this->state(fn (array $attributes) => [
@@ -60,7 +56,6 @@ class CampaignRewardFactory extends Factory
         ]);
     }
 
-    /** A thing off the floor - the tray somebody wins with the oven. */
     public function product(?Product $product = null): static
     {
         return $this->state(fn (array $attributes) => [
@@ -75,7 +70,7 @@ class CampaignRewardFactory extends Factory
         ]);
     }
 
-    /** Never lapses, which is a legitimate promise for an installation. */
+    /** Never lapses, which is legitimate for an installation. */
     public function neverExpiring(): static
     {
         return $this->state(fn (array $attributes) => [
@@ -85,9 +80,8 @@ class CampaignRewardFactory extends Factory
 
     /**
      * Paired: only a purchase of one of these products is in the running.
-     *
-     * Attaching none leaves the reward open to any purchase, which is what an
-     * attachment does by default - so this is only ever called with products.
+     * Attaching none leaves the reward open to any purchase, which is the
+     * default - so this is only ever called with products.
      */
     public function qualifyingFor(Product ...$products): static
     {

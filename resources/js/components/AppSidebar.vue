@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import {
     ClipboardList,
+    Gauge,
     Gift,
     KeyRound,
     LayoutGrid,
@@ -10,6 +11,7 @@ import {
     Receipt,
     Shield,
     TicketCheck,
+    Trophy,
     Users,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -30,6 +32,8 @@ import { index as permissionsIndex } from '@/routes/admin/permissions';
 import { index as productsIndex } from '@/routes/admin/products';
 import { index as purchasesIndex } from '@/routes/admin/purchases';
 import { index as rewardsIndex } from '@/routes/admin/rewards';
+import { index as catalogueIndex } from '@/routes/admin/rewards/catalogue';
+import { index as overviewIndex } from '@/routes/admin/rewards/overview';
 import { index as redeemIndex } from '@/routes/admin/rewards/redeem';
 import { index as winnersIndex } from '@/routes/admin/rewards/winners';
 import { index as rolesIndex } from '@/routes/admin/roles';
@@ -38,19 +42,12 @@ import type { NavItem } from '@/types';
 
 const { can, canAny } = usePermissions();
 
-/*
-  The operational rail. Each row past the dashboard is behind the permission
-  its own screen checks, so somebody who cannot open it is not offered a door
-  the route would refuse anyway.
-*/
 const mainNavItems = computed<NavItem[]>(() => [
     {
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
     },
-    /* Either half of the visits split opens the list - a salesperson sees
-       their own, a manager sees the floor. */
     ...(canAny('visits.view.any', 'visits.view.own')
         ? [
               {
@@ -78,8 +75,6 @@ const mainNavItems = computed<NavItem[]>(() => [
               },
           ]
         : []),
-    /* What was bought, which is also what earns a reward shuffle - the list
-       carries that question in a column rather than hiding it a screen away. */
     ...(can('purchases.view.any')
         ? [
               {
@@ -91,11 +86,6 @@ const mainNavItems = computed<NavItem[]>(() => [
         : []),
 ]);
 
-/*
-  Both screens sit behind `roles.view`, so the whole section drops away for
-  somebody who cannot open either. The routes refuse them regardless; this is
-  so the sidebar does not advertise a door that is locked.
-*/
 const adminNavItems = computed<NavItem[]>(() =>
     can('roles.view')
         ? [
@@ -103,11 +93,9 @@ const adminNavItems = computed<NavItem[]>(() =>
                   title: 'Roles',
                   href: rolesIndex(),
                   icon: Shield,
-                  /* The accounts are filed under `/admin/users` but reached
-                     from here, so this row stays lit while one is open. A
-                     literal path rather than a route function because there
-                     is no users index to name - the list of people is a panel
-                     on the Roles screen, not a page of its own. */
+                  /* Accounts are filed under `/admin/users` but reached from
+                     here. A literal path because there is no users index to
+                     name - the list of people is a panel on this screen. */
                   activeFor: ['/admin/users'],
               },
               {
@@ -120,37 +108,37 @@ const adminNavItems = computed<NavItem[]>(() =>
 );
 
 /*
-  The promotions rail. Its own group rather than a row under Administration,
-  because a campaign is operational work - somebody runs it from the floor -
-  and it owns three screens that are used at different desks.
-
-  The group is "Promotions" rather than "Rewards", which is what it was called
-  until the middle row below existed. "Rewards" is the better name for the
-  things people have won, and a group and one of its own rows cannot both
-  carry it - a rail reading Rewards > Campaigns, Rewards, Redeem makes the
-  reader work out which of the two they clicked.
-
-  The three read as the life of a promotion in order: it is set up, somebody
-  wins something, somebody comes back for it. All three open on `rewards.view`.
-  Redeeming needs more, and the screen says so rather than the rail hiding a
-  door somebody is allowed to look through.
+  The row labels do not match their route names, and the mismatch is deliberate:
+  "Rewards" is the catalogue, "Redeemed" is the searchable record of what has
+  been won (`winners`), and "Redeem" is the counter, reachable only by the code
+  off a customer's phone. Renaming any of the three to match its route puts two
+  rows under one name.
 */
 const rewardNavItems = computed<NavItem[]>(() =>
     can('rewards.view')
         ? [
               {
+                  title: 'Overview',
+                  href: overviewIndex(),
+                  icon: Gauge,
+              },
+              {
                   title: 'Campaigns',
                   href: rewardsIndex(),
                   icon: Megaphone,
-                  /* The QR screen is filed under `/admin/shuffles`, but it is
-                     reached from here, so this row stays lit while one is
-                     open. */
+                  /* The QR screen is filed under `/admin/shuffles` but reached
+                     from here, so this row stays lit while one is open. */
                   activeFor: ['/admin/shuffles'],
               },
               {
                   title: 'Rewards',
-                  href: winnersIndex(),
+                  href: catalogueIndex(),
                   icon: Gift,
+              },
+              {
+                  title: 'Redeemed',
+                  href: winnersIndex(),
+                  icon: Trophy,
               },
               {
                   title: 'Redeem',

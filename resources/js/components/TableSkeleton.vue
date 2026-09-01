@@ -1,7 +1,6 @@
 <script setup lang="ts">
 withDefaults(
     defineProps<{
-        /** How many body rows to draw under the header. */
         rows?: number;
 
         /** Cells per row. The first is drawn wider, as the label column. */
@@ -11,11 +10,6 @@ withDefaults(
 );
 </script>
 
-<!--
-  What a list shows while its rows are in flight. Header, rules and cells
-  rather than one filled block, so the panel keeps the height and the column
-  rhythm it is about to have.
--->
 <template>
     <div class="animate-pulse" aria-hidden="true">
         <div class="flex items-center gap-3 border-b border-border pb-2">

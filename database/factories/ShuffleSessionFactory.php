@@ -26,9 +26,8 @@ class ShuffleSessionFactory extends Factory
             'campaign_id' => RewardCampaign::factory()->active(),
             'customer_id' => Customer::factory(),
             'visit_id' => null,
-            /* No purchase by default. The column is uniquely indexed, so two
-               fixtures sharing one would collide - a test that cares about
-               the purchase says so. */
+            # The column is uniquely indexed, so two fixtures sharing a
+            # purchase would collide. A test that cares about it says so.
             'purchase_id' => null,
             'token' => Str::random(64),
             'expires_at' => now()->addDay(),
@@ -60,7 +59,7 @@ class ShuffleSessionFactory extends Factory
         ]);
     }
 
-    /** No deadline at all, for a test that is not about expiry. */
+    /** No deadline at all. */
     public function neverExpiring(): static
     {
         return $this->state(fn (array $attributes) => [

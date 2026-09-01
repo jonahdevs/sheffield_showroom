@@ -10,25 +10,11 @@ use App\Models\Visit;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * A visit as the list shows it. The write-up itself - details and notes -
- * stays on the record; a table row carries who, why and when.
- *
- * `attended_by` falls back to whoever logged it, so a row recorded before the
- * respondent was asked for still names somebody rather than a dash.
- */
 #[TypeScript(location: ['App', 'Data'])]
 class VisitRowData extends Data
 {
     /**
-     * What `fromModel` reaches for, so whoever builds a list of visits can
-     * eager-load it.
-     *
-     * Named here rather than at each call site because a caller that forgets
-     * one of them gets a working page and three extra queries per row - the
-     * kind of fault that only shows up once the log is a few thousand visits
-     * long. `products` by name only: the row says what they were shown, not
-     * the catalogue behind it.
+     * Eager-load these or the page costs three extra queries per row.
      *
      * @var array<int, string>
      */
@@ -39,9 +25,6 @@ class VisitRowData extends Data
      */
     public function __construct(
         public int $id,
-        /* The person, as the customers list names them: a company customer is
-           somebody who came in for a business, and the business is the line
-           under them rather than the line itself. */
         public string $customer_name,
         public CustomerType $customer_type,
         public ?string $customer_company,
@@ -50,14 +33,9 @@ class VisitRowData extends Data
         public string $purpose_label,
         public string $visited_on,
         public string $visited_time,
-        /**
-         * What they were shown, by name.
-         *
-         * @var array<int, string>
-         */
+        /** @var array<int, string> */
         public array $products,
         public ?string $attended_by,
-        /** Whether anything was written up beyond the required fields. */
         public bool $has_notes,
     ) {}
 

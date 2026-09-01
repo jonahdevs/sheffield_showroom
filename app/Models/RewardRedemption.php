@@ -11,9 +11,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * The reward actually being handed over: when, by whom, and anything worth
- * writing down about it.
- *
  * @property int $id
  * @property int $shuffle_result_id
  * @property int|null $redeemed_by

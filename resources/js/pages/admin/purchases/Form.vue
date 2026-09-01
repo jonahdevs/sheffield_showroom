@@ -3,6 +3,7 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import InputError from '@/components/InputError.vue';
 import OptionCombobox from '@/components/OptionCombobox.vue';
+import OptionMultiCombobox from '@/components/OptionMultiCombobox.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,18 +18,12 @@ import {
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/purchases';
 
-/**
- * A purchase as `PurchaseController::edit` sends it.
- *
- * Spelled out here rather than imported from `App.Data`, because the
- * controller assembles this shape inline rather than through a Data object, so
- * nothing is generated for it. `visit_id` is carried in the type even though
- * the form has no control for it - see the note on the form below.
- */
+/** Spelled out here because `PurchaseController::edit` assembles this shape inline, so no `App.Data` type is generated for it. */
 interface PurchaseForm {
     id: number;
     customer_id: number;
     visit_id: number | null;
+    product_ids: number[];
     reference: string | null;
     amount: string;
     status: App.Enums.PurchaseStatus;
@@ -40,20 +35,30 @@ const props = defineProps<{
     purchase: PurchaseForm | null;
     statuses: { value: string; label: string }[];
     customers: App.Data.OptionData[];
+    /** The floor as it stands today - see `PurchaseController::productOptions`. */
+    products: App.Data.OptionData[];
+    /**
+     * What this sale already names, including products since withdrawn from the
+     * floor and therefore missing from `products`. Without it a withdrawn
+     * product's chip has no name to draw and the next save posts the selection
+     * back with a hole in it.
+     */
+    selected_products: App.Data.OptionData[];
 }>();
 
 /*
-  `visit_id` is deliberately absent from the payload rather than sent as null.
+  `visit_id` is deliberately absent from the payload rather than sent as null:
+  the tie to a visit is made elsewhere, and leaving the key out means
+  `validated()` never carries it, so an edit keeps the visit the sale already
+  had. Sending null would cut the sale loose on every unrelated correction.
 
-  A purchase can be filed against the call it happened on, but that tie is made
-  where the visit is - this screen has no visit picker and no business guessing
-  one. Leaving the key out entirely means `validated()` never carries it, so an
-  edit keeps whatever visit the sale was already attached to. Sending null
-  instead would quietly cut a sale loose from its visit every time somebody
-  corrected a typo in the reference.
+  `product_ids` is the opposite and must not be "fixed" to match - it is always
+  sent, including empty, because emptying the picker is a real correction.
+  `PurchaseController::syncProducts` reads absent and empty differently.
 */
 const form = useForm({
     customer_id: props.purchase?.customer_id ?? (null as number | null),
+    product_ids: props.purchase?.product_ids ?? ([] as number[]),
     reference: props.purchase?.reference ?? '',
     amount: props.purchase?.amount ?? '',
     status: props.purchase?.status ?? 'completed',
@@ -63,10 +68,9 @@ const form = useForm({
 /**
  * The current local moment in the shape a datetime-local input reads.
  *
- * `toISOString()` would be UTC, which east of Greenwich hands back a time
- * three hours ago and west of it one in the future - and "in the future" is
- * exactly what the server refuses. Subtracting the offset first keeps the
- * value in the clock the person at the counter is looking at.
+ * The offset is subtracted before `toISOString()` because that returns UTC,
+ * which west of Greenwich yields a future time - exactly what the server
+ * refuses.
  */
 function nowForInput(): string {
     const now = new Date();
@@ -75,12 +79,6 @@ function nowForInput(): string {
     return local.toISOString().slice(0, 16);
 }
 
-/**
- * A ceiling on the picker, because `purchased_at` is refused if it is in the
- * future. Read once at setup rather than kept ticking: a form open for an hour
- * that silently changes its own limits is stranger than one whose ceiling is
- * an hour stale, and the server has the real say either way.
- */
 const latestMoment = nowForInput();
 
 const heading = computed(() => {
@@ -94,15 +92,9 @@ const heading = computed(() => {
 });
 
 /**
- * Grouping separators and stray spaces are stripped, and nothing else.
- *
- * A figure typed as "1,500.00" is what somebody reading a receipt writes, and
- * `decimal:0,2` would refuse it over a comma rather than over the amount. A
- * third decimal place is left exactly as typed on purpose: the server refuses
- * those rather than rounding them, because a purchase landing the wrong side
- * of a campaign threshold by a rounding error is a customer told they did not
- * qualify when they did, and silently correcting it here would hide the typo
- * instead of showing it.
+ * Strips grouping separators and stray spaces, and nothing else. A third
+ * decimal place is deliberately left as typed so the server rejects it rather
+ * than this rounding a purchase across a campaign threshold silently.
  */
 function tidyAmount() {
     form.amount = form.amount.replace(/[\s,]/g, '');
@@ -126,11 +118,7 @@ function submit() {
     form.post(store().url);
 }
 
-/*
- * A layout callback rather than a static object: the same component serves
- * both routes, and only the page's own props know which one this is. Returning
- * props alone is enough - the default layout is already configured in app.ts.
- */
+/** A callback rather than a static object: the same component serves both routes. */
 defineOptions({
     layout: (page: { purchase: PurchaseForm | null }) => ({
         breadcrumbs: [
@@ -142,19 +130,6 @@ defineOptions({
 });
 </script>
 
-<!--
-  One form for recording a sale, and the same one for correcting it.
-
-  It is a short form because a purchase here is an eligibility record rather
-  than a ledger: who bought, for how much, when, and whether it counts yet.
-  Line items live on the receipt, not in this table.
-
-  The customer leads, and the amount sits directly under the status it depends
-  on - those two together are what a reward campaign reads, so they are the two
-  worth checking before saving. The rows go two across on `@2xl/page` and three
-  on `@4xl/page`: the page's own width rather than the window's, because behind
-  the rail a viewport breakpoint promises room the form does not have.
--->
 <template>
     <Head :title="heading" />
 
@@ -181,11 +156,6 @@ defineOptions({
                     <div
                         class="flex flex-col gap-4 @2xl/page:grid @2xl/page:grid-cols-2 @2xl/page:gap-x-5.5 @2xl/page:gap-y-4.5 @4xl/page:grid-cols-3"
                     >
-                        <!-- Leads the form, and takes the full first row on a
-                             wide page: a name and a phone number need the
-                             width, and choosing the wrong person here files
-                             the sale - and any reward won on it - against a
-                             stranger. -->
                         <div class="@2xl/page:col-span-2 @4xl/page:col-span-1">
                             <Label for="customer_id">
                                 Customer <span class="text-primary">*</span>
@@ -206,9 +176,6 @@ defineOptions({
 
                         <div>
                             <Label for="reference">Reference</Label>
-                            <!-- Monospaced, because this is copied off a
-                                 receipt character by character and read back
-                                 the same way. -->
                             <Input
                                 id="reference"
                                 v-model="form.reference"
@@ -219,14 +186,9 @@ defineOptions({
                             <InputError :message="form.errors.reference" />
                         </div>
 
-                        <!-- Text with a numeric keypad rather than
-                             `type="number"`: a number input hands back
-                             whatever its own locale made of the keystrokes,
-                             will happily produce "1e3", and lets a scroll
-                             wheel over a focused field change an amount
-                             somebody has already typed. The value has to reach
-                             the server as plain decimal digits, so it is held
-                             as the string it will be posted as. -->
+                        <!-- Text with a numeric keypad rather than `type="number"`: a
+                             number input is locale-dependent, accepts "1e3", and lets a
+                             scroll wheel silently change a typed amount. -->
                         <div>
                             <Label for="amount">
                                 Amount <span class="text-primary">*</span>
@@ -282,12 +244,6 @@ defineOptions({
                             <InputError :message="form.errors.status" />
                         </div>
 
-                        <!-- One control, because it is one answer: a sale
-                             happened at a moment, not on a date and separately
-                             at a time. `max` is the browser saying what the
-                             server would say anyway - a sale that has not
-                             happened yet cannot have earned anything, and a
-                             mistyped year is the usual way one arrives. -->
                         <div>
                             <Label for="purchased_at">
                                 Purchased <span class="text-primary">*</span>
@@ -302,12 +258,36 @@ defineOptions({
                             />
                             <InputError :message="form.errors.purchased_at" />
                         </div>
+
+                        <div class="@2xl/page:col-span-2 @4xl/page:col-span-3">
+                            <Label for="product_ids">What was bought</Label>
+                            <div class="mt-2.25">
+                                <OptionMultiCombobox
+                                    id="product_ids"
+                                    v-model="form.product_ids"
+                                    :options="props.products"
+                                    :selected="props.selected_products"
+                                    placeholder="Nothing recorded"
+                                    search-placeholder="Product name or SKU"
+                                    empty-text="No product matches that."
+                                    data-test="field-products"
+                                />
+                            </div>
+                            <p class="mt-1.5 text-xs text-faint">
+                                Most sales leave this empty. It is read only by
+                                a reward paired to a product - buy the oven, win
+                                the tray - and it decides which of those this
+                                customer is in the running for when they
+                                shuffle.
+                            </p>
+                            <InputError :message="form.errors.product_ids" />
+                        </div>
                     </div>
                 </div>
             </Card>
 
             <div class="flex items-center justify-end gap-3">
-                <Button as-child variant="quiet">
+                <Button as-child variant="outline">
                     <Link :href="index().url">Cancel</Link>
                 </Button>
                 <Button

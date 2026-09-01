@@ -6,19 +6,8 @@ namespace App\Exceptions;
 
 use RuntimeException;
 
-/**
- * A shuffle that cannot go ahead, and the reason phrased for the person
- * holding the phone.
- *
- * Every one of these is a refusal rather than a fault: the turn was already
- * taken, the QR has run out, the campaign is over, or the drawer is empty.
- * None of them is worth a stack trace, and none should be reported - which is
- * why the reason is a case on this class rather than free text, so the screen
- * can choose a state to draw from it and the log can stay quiet.
- *
- * The messages are deliberately incurious. A customer does not need to be told
- * which of their friends already used the code.
- */
+# Every one of these is a refusal, not a fault: none should be reported, and the
+# messages stay incurious — a customer is not told who already used the code.
 class ShuffleUnavailableException extends RuntimeException
 {
     private function __construct(
@@ -28,7 +17,6 @@ class ShuffleUnavailableException extends RuntimeException
         parent::__construct($message);
     }
 
-    /** The token names nothing, or names something that is not a turn. */
     public static function unknown(): self
     {
         return new self(
@@ -37,7 +25,6 @@ class ShuffleUnavailableException extends RuntimeException
         );
     }
 
-    /** Somebody already shuffled it - usually this same person, refreshing. */
     public static function alreadyUsed(): self
     {
         return new self(
@@ -62,7 +49,6 @@ class ShuffleUnavailableException extends RuntimeException
         );
     }
 
-    /** The campaign is paused, finished, or outside its dates. */
     public static function campaignClosed(): self
     {
         return new self(
@@ -71,12 +57,8 @@ class ShuffleUnavailableException extends RuntimeException
         );
     }
 
-    /**
-     * Every unit is gone.
-     *
-     * Nothing is spent when this happens - the turn stays pending, because the
-     * customer did nothing wrong and should keep it if stock is added back.
-     */
+    # Nothing is spent: the turn stays pending, so the customer keeps it if
+    # stock is added back.
     public static function poolEmpty(): self
     {
         return new self(

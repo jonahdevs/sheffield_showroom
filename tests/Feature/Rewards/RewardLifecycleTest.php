@@ -21,9 +21,9 @@ use App\Services\Rewards\ShuffleRewardService;
 use App\Services\Rewards\ShuffleSessionService;
 use Carbon\CarbonImmutable;
 
-// -----------------------------------------------------------------------------
-// Publishing a campaign
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Publishing a campaign
+# =========================================================================
 
 it('writes exactly the pool the quantities describe', function () {
     $campaign = campaignHolding(['Discount' => 20, 'Audit' => 25, 'Installation' => 15]);
@@ -46,10 +46,6 @@ it('refuses to publish a campaign with nothing in it', function () {
     expect($campaign->refresh()->status)->toBe(CampaignStatus::Draft);
 });
 
-/**
- * Publishing is one-way. A second run would write the pool twice and hand out
- * double what the promotion promised.
- */
 it('refuses to publish the same campaign twice', function () {
     $campaign = campaignHolding(['Audit' => 5]);
 
@@ -69,15 +65,10 @@ it('holds a campaign back until its start date', function () {
     app(CampaignService::class)->publish($campaign);
 
     expect($campaign->refresh()->status)->toBe(CampaignStatus::Scheduled)
-        /* The pool is written all the same - the drawer is loaded before the
-           doors open. */
+        # Loaded all the same: the drawer fills before the doors open.
         ->and($campaign->poolEntries()->count())->toBe(5);
 });
 
-/**
- * Two running promotions would leave eligibility guessing which one a purchase
- * was measured against, and a customer holding a reward from the wrong one.
- */
 it('refuses to run two campaigns at once', function () {
     campaignHolding(['Audit' => 5]);
 
@@ -110,10 +101,7 @@ it('will not reopen a campaign that is over', function () {
         ->toThrow(CampaignStateException::class);
 });
 
-/**
- * Voiding takes unwon units off the table without pretending they were never
- * loaded, which is what keeps loaded = available + claimed + void.
- */
+# Void keeps `loaded = available + claimed + void` reconciling.
 it('voids only the units nobody has won', function () {
     $campaign = campaignHolding(['Audit' => 10]);
     $reward = $campaign->rewards()->sole();
@@ -128,9 +116,9 @@ it('voids only the units nobody has won', function () {
         ->and($campaign->poolEntries()->count())->toBe(10);
 });
 
-// -----------------------------------------------------------------------------
-// Earning a turn
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Earning a turn
+# =========================================================================
 
 it('gives a qualifying purchase exactly one turn', function () {
     $campaign = campaignHolding(['Audit' => 5], minimum: 100_000);
@@ -173,12 +161,8 @@ it('turns down every purchase when no campaign is running', function () {
         ->and(app(ShuffleSessionService::class)->mintFor($purchase))->toBeNull();
 });
 
-/**
- * The rule the entitlement model rests on. Minting is attempted twice on
- * purpose: the second call must return the turn the first one wrote rather
- * than a second turn or an error, which is what two staff pressing the button
- * together produces.
- */
+# Minted twice on purpose: two staff pressing the button together must get
+# the same turn back, not a second one and not an error.
 it('gives one sale one turn however many times it is asked', function () {
     campaignHolding(['Audit' => 5]);
     $purchase = Purchase::factory()->create();
@@ -211,9 +195,9 @@ it('stops a customer past the campaign ceiling', function () {
         ->and($service->mintFor($third))->toBeNull();
 });
 
-// -----------------------------------------------------------------------------
-// The public token
-// -----------------------------------------------------------------------------
+# =========================================================================
+# The public token
+# =========================================================================
 
 it('finds a live turn by its token and refuses everything else', function () {
     $campaign = campaignHolding(['Audit' => 5]);
@@ -249,9 +233,9 @@ it('cancels a turn before it is used but not after', function () {
         ->toThrow(ShuffleUnavailableException::class);
 });
 
-// -----------------------------------------------------------------------------
-// Handing the reward over
-// -----------------------------------------------------------------------------
+# =========================================================================
+# Handing the reward over
+# =========================================================================
 
 it('redeems a reward by the code the customer quotes', function () {
     $campaign = campaignHolding(['Audit' => 5]);
@@ -260,8 +244,6 @@ it('redeems a reward by the code the customer quotes', function () {
 
     $service = app(RewardRedemptionService::class);
 
-    /* Typed in lower case with a stray space, the way somebody reads one off
-       a phone screen. */
     $found = $service->find('  '.strtolower($result->code).' ');
 
     expect($found?->id)->toBe($result->id);
@@ -286,10 +268,7 @@ it('refuses to redeem the same reward twice', function () {
     expect($result->refresh()->redemption()->count())->toBe(1);
 });
 
-/**
- * Reads the date rather than the status, so a reward whose window closed
- * before anything swept it is still refused.
- */
+# The unswept row: still `Unredeemed`, and refused on the date alone.
 it('refuses to redeem a reward whose date has passed', function () {
     $result = ShuffleResult::factory()->lapsed()->create();
 
@@ -302,16 +281,10 @@ it('says nothing found for a code that is not one', function () {
     expect(app(RewardRedemptionService::class)->find('SHF-ZZZZZZ'))->toBeNull();
 });
 
-// -----------------------------------------------------------------------------
-// The whole way through
-// -----------------------------------------------------------------------------
+# =========================================================================
+# The whole way through
+# =========================================================================
 
-/**
- * The scenario the architecture document ends on, start to finish: a campaign
- * of 100, a qualifying purchase, a turn, a reward, and a redemption weeks
- * later that stays tied to the customer, the visit and the sale that earned
- * it.
- */
 it('carries one customer from purchase to redemption', function () {
     $campaign = campaignHolding([
         '10% discount' => 20,

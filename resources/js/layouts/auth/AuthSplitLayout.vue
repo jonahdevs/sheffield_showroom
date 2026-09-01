@@ -24,8 +24,7 @@ defineProps<{
                 :href="home()"
                 class="relative z-20 flex items-center text-lg font-medium"
             >
-                <!-- This panel is a solid zinc-900 wash, so the flame needs its own
-                     light chip to sit on or its navy half disappears into the panel. -->
+                <!-- White chip: the flame's navy half would disappear into this zinc-900 panel. -->
                 <span
                     class="mr-2 flex size-8 items-center justify-center rounded-md bg-white"
                 >

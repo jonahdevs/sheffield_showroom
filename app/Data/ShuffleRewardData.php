@@ -10,25 +10,17 @@ use App\Models\ShuffleResult;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * A won reward, as both the customer's reveal and the redemption desk read it.
- *
- * Deliberately says nothing about the pool it came from - not which unit, not
- * how many are left, not what the odds were. The customer is being shown what
- * they won; the rest is the showroom's business, and a page that carried it
- * would be a page somebody could read the inventory out of.
- */
+# Must say nothing about the pool - not which unit, not how many are left. The
+# reveal is a public page and would otherwise leak the inventory.
 #[TypeScript(location: ['App', 'Data'])]
 class ShuffleRewardData extends Data
 {
     public function __construct(
-        /** What the customer quotes when they come back for it. */
         public string $code,
         public string $name,
         public ?string $description,
         public RewardType $type,
         public string $type_label,
-        /** "10%" or "KSh 5,000.00", or null when the reward carries no figure. */
         public ?string $value,
         public ?string $terms,
         public RewardResultStatus $status,
@@ -41,17 +33,11 @@ class ShuffleRewardData extends Data
         public ?string $redeemed_by = null,
     ) {}
 
-    /**
-     * The reward alone, for the customer's reveal.
-     *
-     * `$withCustomer` is off by default on purpose: the public page is reached
-     * with nothing but a token, and a name on it would turn a photographed QR
-     * code into somebody else's personal information.
-     */
+    # `$withCustomer` stays off by default: the reveal is reached with nothing
+    # but a token, and a name on it turns a photographed QR code into somebody
+    # else's personal information.
     public static function fromModel(ShuffleResult $result, bool $withCustomer = false): self
     {
-        /* The pool entry names the attachment - how many, for how long - and
-           what was actually won is the catalogue row behind it. */
         $reward = $result->poolEntry->reward->reward;
         $redemption = $result->relationLoaded('redemption') ? $result->redemption : null;
 

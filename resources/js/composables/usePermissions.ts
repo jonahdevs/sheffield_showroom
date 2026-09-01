@@ -1,12 +1,8 @@
 import { usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
-/**
- * What the signed-in user may do, as the server computed it.
- *
- * For hiding controls only. Every one of these is checked again on the way in,
- * so a stale list costs a wrong-looking menu and never an unauthorised write.
- */
+/* For hiding controls only: every one of these is checked again server-side,
+   so a stale list costs a wrong-looking menu, never an unauthorised write. */
 export function usePermissions() {
     const page = usePage();
 

@@ -46,8 +46,8 @@ function toggleGroup(group: App.Data.PermissionGroupData, checked: boolean) {
 }
 
 /**
- * Only the grantable ones count towards the group box. A group where the rest
- * is out of reach would otherwise never read as fully ticked.
+ * Only grantable permissions count: a group holding one the viewer cannot
+ * hand out would otherwise never read as fully ticked.
  */
 function groupState(
     group: App.Data.PermissionGroupData,
@@ -76,11 +76,7 @@ function submit() {
     form.post(store().url);
 }
 
-/*
- * A layout callback rather than a static object: the same component serves
- * creating, editing and reading a shipped role, and only the page's own props
- * know which one this is.
- */
+/** A callback rather than a static object: one component serves all three routes. */
 defineOptions({
     layout: (page: { role: App.Data.RoleData | null; read_only: boolean }) => ({
         breadcrumbs: [
@@ -99,19 +95,11 @@ defineOptions({
 });
 </script>
 
-<!--
-  One screen for reading a role and for writing one. The permission matrix is
-  the whole point of the page and it is long, so it gets the width a page has
-  and a dialog does not.
--->
 <template>
     <Head :title="props.role ? heading : 'New role'" />
 
     <div class="flex flex-col gap-5">
         <div>
-            <!-- No back link: the crumb trail sits directly above this now
-                 that it lives on the page surface, and "Roles" twice in two
-                 rows reads as a mistake rather than a convenience. -->
             <div class="flex flex-wrap items-center gap-3">
                 <h1 class="text-2xl leading-tight">{{ heading }}</h1>
                 <Badge v-if="props.role?.is_system" variant="secondary">

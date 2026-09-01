@@ -39,7 +39,6 @@ class Product extends Model
     /** @use HasFactory<ProductFactory> */
     use HasFactory, SoftDeletes;
 
-    /** Where an uploaded image lands on the public disk. */
     public const IMAGE_DIRECTORY = 'products';
 
     protected $fillable = [
@@ -67,13 +66,7 @@ class Product extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /**
-     * A URL the browser can load, or null when there is no picture.
-     *
-     * A synced row keeps the website's absolute URL rather than a copy of the
-     * file, so the two never drift; a row added here holds a path on the
-     * public disk.
-     */
+    # A synced row holds the website's absolute URL, not a copy of the file.
     public function imageUrl(): ?string
     {
         if ($this->image_path === null) {

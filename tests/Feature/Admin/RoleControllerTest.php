@@ -6,8 +6,6 @@ use App\Models\User;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Gives a user a role holding exactly the permissions named.
- *
  * @param  array<int, Permission>  $permissions
  */
 function userHolding(array $permissions, string $role = 'tester'): User
@@ -75,10 +73,6 @@ it('creates a role with the permissions ticked', function () {
         ]);
 });
 
-/**
- * The rule the whole screen exists to hold: a role is not a way to hand
- * yourself something your own account was never given.
- */
 it('refuses to grant a permission the creator does not hold', function () {
     $user = userHolding([Permission::RolesView, Permission::RolesCreate]);
 
@@ -218,10 +212,6 @@ it('assigns roles to a user', function () {
     expect($target->refresh()->hasRole('sales'))->toBeTrue();
 });
 
-/**
- * The same ceiling as creating a role, read one level up. Otherwise assigning
- * becomes the way around the grant check.
- */
 it('refuses to assign a role holding permissions the assigner lacks', function () {
     $user = userHolding([Permission::RolesView, Permission::RolesAssign]);
 

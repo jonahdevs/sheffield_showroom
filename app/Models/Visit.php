@@ -76,9 +76,6 @@ class Visit extends Model
     }
 
     /**
-     * What was shown on the floor: how many of each they were after, and how
-     * keen they were on it.
-     *
      * @return BelongsToMany<Product, $this>
      */
     public function products(): BelongsToMany
@@ -88,7 +85,7 @@ class Visit extends Model
     }
 
     /**
-     * Visits logged by one person, which is what `visits.view.own` allows.
+     * The boundary `visits.view.own` draws.
      *
      * @param  Builder<static>  $query
      */
@@ -99,12 +96,6 @@ class Visit extends Model
     }
 
     /**
-     * Search the customer behind the visit and the prose written on it.
-     *
-     * A salesperson looking a visit up remembers who came, not the reference
-     * of the row, so the customer's own search scope is reused rather than
-     * reimplemented against a join.
-     *
      * @param  Builder<static>  $query
      */
     #[Scope]

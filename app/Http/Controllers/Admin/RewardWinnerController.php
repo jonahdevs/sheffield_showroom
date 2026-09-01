@@ -20,22 +20,6 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * Every reward anybody has won, newest first.
- *
- * This is the screen the rest of the reward feature was missing. The campaigns
- * list says what was loaded into the drawer and how much of it is left;
- * Redeem answers "is this one code good" for a customer standing at the
- * counter. Neither of them could answer the question an administrator actually
- * asks - what has this customer won, what is still uncollected, and is anybody
- * coming back for it - because Redeem cannot be searched by anything but a
- * code somebody read off their phone, and a code is exactly what the person
- * asking the question does not have.
- *
- * Read-only. Handing a reward over is Redeem's job and is a different
- * permission; this screen deliberately has no button that changes anything, so
- * `rewards.view` is the whole of its authorisation.
- */
 class RewardWinnerController extends Controller
 {
     public function index(Request $request): Response
@@ -46,9 +30,7 @@ class RewardWinnerController extends Controller
 
         $rewards = $this->filtered($filters)
             ->with(RewardWinnerRowData::RELATIONS)
-            /* Newest first, and the id to break a tie - a busy Saturday puts
-               several wins on the same second, and without it the pager
-               repeats rows across pages. */
+            # The id breaks ties; wins land on the same second and the pager repeats rows.
             ->orderByDesc('won_at')
             ->orderByDesc('id')
             ->paginate(PageSize::from($request))
@@ -62,9 +44,6 @@ class RewardWinnerController extends Controller
             'presets' => DashboardRangeData::options(),
             'window_days' => DateWindow::preceding($filters['from'], $filters['to'])['days'] ?? null,
             'stats' => $this->stats($filters),
-            /* Only campaigns that have actually handed something out. A draft
-               nobody has played is a filter that can only ever return nothing,
-               and a select full of them buries the two that matter. */
             'campaigns' => RewardCampaign::query()
                 ->whereHas('sessions.result')
                 ->orderBy('name')
@@ -81,22 +60,11 @@ class RewardWinnerController extends Controller
     }
 
     /**
-     * The three figures above the list, for the window the page is read under
-     * and against the equally long window before it.
+     * All three count by `won_at`, never by when anything happened afterwards — that is
+     * what makes the first two readable as a cohort redemption rate.
      *
-     * All three count by when the reward was **won**, not by when anything
-     * happened to it afterwards. That is what makes the first two readable
-     * side by side as a redemption rate: "of the rewards won in February, this
-     * many have since been collected" is a question about a cohort, and
-     * counting redemptions by their own date instead would put a January
-     * reward collected in February into February's numerator and nobody's
-     * denominator.
-     *
-     * Deliberately not narrowed by the search, the campaign or the status
-     * filter - those ask "which of these rows did I mean", where the window
-     * asks "which stretch am I reading". Filtering the tiles by status would
-     * be worse than redundant: it would make "Redeemed" and "Rewards won" show
-     * the same figure whenever somebody clicked Redeemed.
+     * Deliberately not narrowed by search, campaign or status: filtering the tiles by
+     * status would make "Redeemed" and "Rewards won" equal whenever Redeemed was clicked.
      *
      * @param  array{search: string, campaign: string, type: string, status: string, range: string, from: string, to: string}  $filters
      * @return array<int, DashboardStatData>
@@ -113,9 +81,6 @@ class RewardWinnerController extends Controller
         return [
             DashboardStatData::compare('won', 'Rewards won', $now['won'], $before['won']),
             DashboardStatData::compare('redeemed', 'Collected', $now['redeemed'], $before['redeemed']),
-            /* The only figure here that is work outstanding rather than work
-               done, and the reason somebody scrolls this page: these are
-               people with a promise still open. */
             DashboardStatData::compare(
                 'outstanding',
                 'Still to collect',
@@ -126,12 +91,8 @@ class RewardWinnerController extends Controller
     }
 
     /**
-     * The three figures for one window, in a single round trip.
-     *
-     * `toBase()` because the aliases would otherwise be read off a hydrated
-     * `ShuffleResult`, where a name matching a relation or an accessor
-     * resolves to that instead of to the column. A plain row has no such
-     * opinions.
+     * `toBase()`: off a hydrated `ShuffleResult` an alias matching a relation or accessor
+     * resolves to that instead of to the column.
      *
      * @return array{won: int, redeemed: int, outstanding: int}
      */
@@ -175,9 +136,8 @@ class RewardWinnerController extends Controller
             )
             ->when(
                 $filters['type'] !== '',
-                /* Through the attachment to the catalogue: what kind of thing
-                   a reward is belongs to the reward, not to the campaign's
-                   copy of how many there were. */
+                # Through the attachment to the catalogue: the type belongs to the reward,
+                # not to the campaign's copy of it.
                 fn (Builder $query) => $query->whereHas(
                     'poolEntry.reward.reward',
                     fn (Builder $reward) => $reward->where('type', $filters['type']),
@@ -192,8 +152,7 @@ class RewardWinnerController extends Controller
     }
 
     /**
-     * The window, closed at the start of the day after `to` so that a reward
-     * won at four in the afternoon on the last day is inside it.
+     * Closed at the start of the day *after* `to`, so a win during the last day is inside it.
      *
      * @param  Builder<ShuffleResult>  $query
      * @return Builder<ShuffleResult>
@@ -220,14 +179,6 @@ class RewardWinnerController extends Controller
     }
 
     /**
-     * What the page is being read under, all of it corrected rather than
-     * refused - see `DateWindow` for why a list answers a mangled query string
-     * with the list.
-     *
-     * The campaign is checked for being a number and nothing more; an id that
-     * matches no campaign returns an empty list, which is the honest answer to
-     * "show me campaign 900".
-     *
      * @return array{search: string, campaign: string, type: string, status: string, range: string, from: string, to: string}
      */
     private function filters(Request $request): array

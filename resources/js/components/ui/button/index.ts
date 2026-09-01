@@ -4,29 +4,21 @@ import { cva } from "class-variance-authority"
 export { default as Button } from "./Button.vue"
 
 export const buttonVariants = cva(
-  // text-sm/600 for every button. text-base reads as a different, heavier
-  // control than the rest of the interface.
   "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm leading-normal font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
         // The solid variants carry a transparent border so they stand exactly
         // as tall as the outlined ones beside them.
+        // Removed variants: `quiet` and `brand` - use `outline` and `default`.
+        // Do not add a seventh; one-off variants are how two buttons doing the
+        // same job end up looking different.
         default:
           "border border-transparent bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
           "border border-transparent bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
-        // A brand edge over the page with a brand label, and a hover that
-        // fills solid rather than tinting.
-        brand:
-          "border border-brand-50 bg-background text-primary hover:border-primary hover:bg-primary hover:text-primary-foreground dark:border-brand-950",
-        // The card-header action. `outline` is the wrong neighbour: its Cancel
-        // hovers grey, where this one warms to brand on the edge, the label
-        // and the fill.
-        quiet:
-          "border border-border bg-background text-neutral-800 hover:border-brand-50 hover:bg-brand-50 hover:text-primary dark:text-neutral-200 dark:hover:border-brand-950 dark:hover:bg-brand-950",
         secondary:
           "border border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
@@ -34,9 +26,6 @@ export const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        // Padding-driven, not height-driven: a fixed height has to be
-        // re-guessed every time the type size moves, and it clips a button
-        // whose label wraps.
         "default": "px-[22px] py-3 has-[>svg]:px-4",
         "xs": "gap-1.5 rounded-sm px-3.5 py-1.75 text-xs leading-normal has-[>svg]:px-3 [&_svg:not([class*='size-'])]:size-3.5",
         "sm": "rounded-[9px] gap-1.5 px-3.5 py-[9px] text-xs has-[>svg]:px-3",

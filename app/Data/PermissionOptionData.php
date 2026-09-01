@@ -13,7 +13,7 @@ class PermissionOptionData extends Data
     public function __construct(
         public string $value,
         public string $label,
-        /** False when the person editing does not hold it themselves. */
+        # False when the person editing does not hold it themselves.
         public bool $grantable,
     ) {}
 }

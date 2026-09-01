@@ -9,15 +9,8 @@ use App\Models\ShuffleSession;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
-/**
- * A turn, as the staff screen showing the QR code reads it.
- *
- * This is the one place the token is deliberately let out, because it is the
- * one place it has to be: the QR code is drawn from `url`, on a screen only an
- * authenticated member of staff can open, and the customer photographs it off
- * that screen. The model hides `token` from serialisation precisely so that
- * every *other* page has to make this decision on purpose.
- */
+# The one place the token is let out, on a staff-only screen. The model hides
+# `token` from serialisation so every other page has to decide on purpose.
 #[TypeScript(location: ['App', 'Data'])]
 class ShuffleSessionData extends Data
 {
@@ -26,7 +19,6 @@ class ShuffleSessionData extends Data
         public string $customer_name,
         public ShuffleSessionStatus $status,
         public string $status_label,
-        /** The address the QR code carries. Nothing else in it identifies anybody. */
         public string $url,
         public ?string $expires_at,
         public bool $is_shuffleable,

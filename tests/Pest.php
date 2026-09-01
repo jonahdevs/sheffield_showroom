@@ -11,53 +11,31 @@ use App\Services\Rewards\CampaignService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-/*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind different classes or traits.
-|
-*/
+# =========================================================================
+# Test Case
+# =========================================================================
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
-/*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
-*/
+# =========================================================================
+# Expectations
+# =========================================================================
 
 expect()->extend('toBeOne', function () {
     return $this->toBe(1);
 });
 
-/*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
+# =========================================================================
+# Functions
+# =========================================================================
 
 /**
- * A published reward campaign holding exactly the pool it says it does.
+ * A published campaign holding exactly the pool it says it does.
  *
- * Shared rather than declared in one test file, because more than one of them
- * needs a campaign with a known drawer and Pest gives no guarantee about which
- * file loads first.
+ * Declared here rather than in one test file: several need it, and a helper
+ * declared twice across files is a fatal redeclaration.
  *
  * @param  array<string, int>  $quantities  reward name to how many units
  */
@@ -69,9 +47,8 @@ function campaignHolding(array $quantities, ?float $minimum = null): RewardCampa
     ]);
 
     foreach ($quantities as $name => $quantity) {
-        /* The name is the catalogue's now, so it is set through `ofType()`
-           rather than on the attachment - the attachment only knows how many
-           there are. */
+        # The name belongs to the catalogue reward, so it goes through
+        # `ofType()`; the attachment only knows how many there are.
         CampaignReward::factory()
             ->quantity($quantity)
             ->ofType(RewardType::KitchenAudit, $name)
@@ -84,11 +61,8 @@ function campaignHolding(array $quantities, ?float $minimum = null): RewardCampa
 }
 
 /**
- * A published campaign whose rewards are paired to products.
- *
- * Same shape as `campaignHolding`, except each pile names the product somebody
- * must have bought to be in the running for it. A pile mapped to `null` is
- * left unpaired, which is what most rewards are.
+ * Same shape as `campaignHolding`, except each pile names the product that
+ * qualifies for it. A pile mapped to `null` is left unpaired.
  *
  * @param  array<string, array{0: int, 1: ?Product}>  $piles  reward name to [quantity, qualifying product]
  */
@@ -123,17 +97,17 @@ function sessionOn(RewardCampaign $campaign): ShuffleSession
 }
 
 /**
- * A pending turn earned by a purchase of this product.
- *
- * The purchase is what carries the product, and the product is what decides
- * which paired rewards the turn can reach - so a test about pairing needs the
- * whole chain rather than a bare session.
+ * A pending turn earned by a purchase of these products. Passing none is the
+ * sale that recorded nothing, which is the common case.
  */
-function sessionForPurchaseOf(RewardCampaign $campaign, ?Product $product): ShuffleSession
+function sessionForPurchaseOf(RewardCampaign $campaign, Product ...$products): ShuffleSession
 {
-    $purchase = Purchase::factory()->create([
-        'product_id' => $product?->id,
-    ]);
+    $purchase = Purchase::factory()->create();
+
+    $purchase->products()->sync(array_map(
+        fn (Product $product): int => $product->id,
+        $products,
+    ));
 
     return ShuffleSession::factory()->create([
         'campaign_id' => $campaign->id,

@@ -19,15 +19,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
 
-/**
- * The catalogue as the showroom floor needs it: a picture, a code and a name.
- */
 class ProductController extends Controller
 {
-    /**
-     * Tiles fetched per scroll. Enough to fill the widest grid several rows
-     * deep, so the next page is already on its way before the last row shows.
-     */
     private const TILES_PER_PAGE = 24;
 
     public function index(Request $request): Response
@@ -42,18 +35,13 @@ class ProductController extends Controller
             ->when($search !== '', fn (Builder $query) => $query->search($search))
             ->when($status !== null, fn (Builder $query) => $query->ofStatus($status))
             ->orderBy('name')
-            /* The catalogue holds products that share a name to the letter, so
-               a sort on name alone puts them in no fixed order. Page two would
-               then repeat a tile page one already showed, or skip it. */
+            # Names are not unique, so name alone is an unstable sort and the pager repeats tiles.
             ->orderBy('id')
             ->paginate(self::TILES_PER_PAGE)
             ->withQueryString()
             ->through(ProductData::fromModel(...));
 
         return Inertia::render('admin/products/Index', [
-            /* Appended to what the page already holds as the floor scrolls,
-               rather than replacing it. `reset` on the client is what turns a
-               new search back into a fresh list. */
             'products' => Inertia::scroll($products),
             'filters' => [
                 'search' => $search,
@@ -72,28 +60,14 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * The status the tab strip is asking for, or null for all of them.
-     *
-     * A value that is not a status at all - a stale bookmark, somebody editing
-     * the query string - reads as no filter rather than as an error page. The
-     * floor is looking for a product, not for a lecture about a URL.
-     */
     private function status(Request $request): ?ProductStatus
     {
         return ProductStatus::tryFrom($request->string('status')->trim()->toString());
     }
 
     /**
-     * How many products sit under each tab.
-     *
-     * Grouped in one query rather than counted case by case: there are four
-     * statuses and this runs on every keystroke in the search box.
-     *
-     * These deliberately count what the list can actually show, which excludes
-     * soft-deleted rows. Most `archived` products are also soft-deleted, so
-     * that tab is usually near-empty - it holds the ones somebody archived here
-     * without removing them.
+     * Counts what the list can actually show, so soft-deleted rows are excluded. Most
+     * `archived` products are also soft-deleted, which is why that tab reads near-empty.
      *
      * @return array<string, int>
      */
@@ -136,8 +110,6 @@ class ProductController extends Controller
     public function store(ProductRequest $request): RedirectResponse
     {
         $product = new Product($request->safe()->only(['name', 'sku']));
-        /* Nothing chosen means a product somebody is putting on the floor
-           now - which is the only reason they are on this form. */
         $product->status = $this->chosenStatus($request) ?? ProductStatus::Published;
         $product->created_by = $request->user()->id;
 
@@ -162,9 +134,8 @@ class ProductController extends Controller
 
         $product->fill($request->safe()->only(['name', 'sku']));
 
-        /* Absent means the form did not ask, not that the product should be
-           reset. A sync could not clobber a status; neither may a partial
-           form post. */
+        # Absent means the form did not ask, never that the status should be reset - a
+        # sync cannot clobber a status and neither may a partial form post.
         $product->status = $this->chosenStatus($request) ?? $product->status;
 
         if ($request->hasFile('image')) {
@@ -176,9 +147,7 @@ class ProductController extends Controller
 
         $product->save();
 
-        /* Only after the row is saved, and only a file this application put
-           there: a synced product points at the website's own URL, which is
-           not ours to delete. */
+        # Only a file this application stored: a synced product points at the website's own URL.
         if ($previousImage !== null
             && $previousImage !== $product->image_path
             && ! str_starts_with($previousImage, 'http')) {
@@ -193,9 +162,6 @@ class ProductController extends Controller
         return to_route('admin.products.index');
     }
 
-    /**
-     * The status the form sent, or null when it sent none.
-     */
     private function chosenStatus(ProductRequest $request): ?ProductStatus
     {
         $status = $request->validated('status');
@@ -203,13 +169,6 @@ class ProductController extends Controller
         return is_string($status) ? ProductStatus::from($status) : null;
     }
 
-    /**
-     * Pulls the catalogue from the main website.
-     *
-     * Runs inline rather than on a queue: somebody pressed a button and is
-     * waiting to see what changed, and a few hundred rows over a local
-     * connection is a second or two.
-     */
     public function sync(Request $request, CatalogueSync $sync): RedirectResponse
     {
         $this->authorize('create', Product::class);
@@ -218,9 +177,6 @@ class ProductController extends Controller
         try {
             $summary = $sync->run($request->boolean('include_unpublished'));
         } catch (RuntimeException $exception) {
-            /* The message is written for whoever pressed the button, so it is
-               shown as it stands; the trace goes to the log for whoever has
-               to fix it. */
             Log::warning('Catalogue sync failed.', ['message' => $exception->getMessage()]);
 
             Inertia::flash('toast', [
@@ -239,8 +195,6 @@ class ProductController extends Controller
                 'unchanged' => $summary['unchanged'],
             ]);
 
-        /* Only mentioned when it happened. A count of nothing removed on every
-           successful sync is noise that trains people to stop reading. */
         if ($summary['removed'] > 0) {
             $message .= ' '.trans_choice(
                 '{1} :count product is no longer on the website and has been removed.'
@@ -258,10 +212,6 @@ class ProductController extends Controller
         return back();
     }
 
-    /**
-     * Soft deleted, and the image is left alone. A product will be attached to
-     * the visits it was shown in, and those still want a picture.
-     */
     public function destroy(Product $product): RedirectResponse
     {
         $this->authorize('delete', $product);

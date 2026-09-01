@@ -16,17 +16,10 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithTitle;
 
 /**
- * The dashboard as a file: every panel on it, in the order it is read on
- * screen.
- *
  * Handed the figures the page was rendered from rather than re-running the
- * queries. A download taken from a screen has to say what the screen said, and
- * a second pass at the database an instant later is how a total in a
- * spreadsheet ends up disagreeing with the tile it was taken from.
- *
- * One long table rather than a sheet per panel, because this is the shape all
- * three formats can carry: a CSV has no second sheet, and the PDF is typeset
- * from the CSV.
+ * queries, or a total here would disagree with the tile it was taken from.
+ * One long table rather than a sheet per panel: a CSV has no second sheet,
+ * and the PDF is typeset from the CSV.
  */
 class DashboardSummaryExport implements FromArray, ShouldAutoSize, WithHeadings, WithTitle
 {

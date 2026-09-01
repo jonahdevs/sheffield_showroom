@@ -36,12 +36,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-/**
- * Calls at the showroom: who came, why, and what they were shown.
- *
- * Every query here runs through `visible()`, which is what keeps a
- * salesperson's list to their own visits and a manager's to the whole floor.
- */
+# Every query here runs through `visible()` — that is the whole of the own-vs-floor split.
 class VisitController extends Controller
 {
     public function index(Request $request): Response
@@ -52,13 +47,8 @@ class VisitController extends Controller
         $filters = $this->filters($request);
 
         $visits = $this->filtered($viewer, $filters)
-            /* `products` by name only, and eager: the row names what they
-               were shown, and eager-loading it is one extra read for the whole
-               page rather than one per row. */
             ->with(VisitRowData::RELATIONS)
-            /* Newest visit first, and the id to break a tie - several visits
-               land on the same round hour, and without it the pager repeats
-               rows across pages. */
+            # The id breaks ties; visits land on the same round hour and the pager repeats rows.
             ->orderByDesc('visited_at')
             ->orderByDesc('id')
             ->paginate(PageSize::from($request))
@@ -68,31 +58,13 @@ class VisitController extends Controller
         return Inertia::render('admin/visits/Index', [
             'visits' => $visits,
             'filters' => $filters,
-            /* The window in words, resolved here rather than on the page. The
-               server is what settles a pair the wrong way round or a date that
-               would not parse, so the calendar has to read its label off the
-               answer instead of off the click - and it is the same sentence the
-               printed export carries, so a sheet and the screen it came from
-               cannot describe their window differently. */
             'date_label' => $this->windowLabel($filters),
-            /* The named windows the picker offers as one click each. Borrowed
-               from the dashboard's list rather than written again here, so
-               "this month" means the same days on both screens. */
             'presets' => DashboardRangeData::options(),
-            /* How long the chosen window is, which is the only thing the tiles'
-               "vs previous N days" caption needs and is null where the window
-               has no length to speak of - see `precedingWindow()`. The sentence
-               itself is built on the page, because how a figure is captioned is
-               presentation and a controller has no business writing it. */
             'window_days' => $this->precedingWindow($filters)['days'] ?? null,
             'purposes' => VisitPurpose::options(),
             'page_sizes' => PageSize::OPTIONS,
-            /* Only the formats this host can actually produce - see
-               `ExportResponse::available()`. */
             'formats' => ExportResponse::available(),
             'stats' => $this->stats($viewer, $filters),
-            /* A salesperson sees their own visits; saying so stops the list
-               reading as though the showroom had a quiet week. */
             'scoped_to_own' => ! $viewer->can(Permission::VisitsViewAny->value),
             'can' => [
                 'create' => $viewer->can('create', Visit::class),
@@ -104,36 +76,8 @@ class VisitController extends Controller
     }
 
     /**
-     * The three figures above the list, each for the window the page is being
-     * read under and each against the equally long window immediately before
-     * it.
-     *
-     * This row used to hold four fixed windows - a running total, today, this
-     * week, this month - counted in one pass with conditional aggregates. That
-     * set could not survive the date picker moving to the top of the page: a
-     * reader who asks for February and is answered with "today" and "this
-     * month" is being shown a row that has nothing to do with the list under
-     * it, and there is no honest way to compose a fixed window with an
-     * arbitrary one. The named windows themselves are not lost - the picker
-     * offers today, this week and this month as presets, so those readings are
-     * still one click away and now bring the list with them.
-     *
-     * Still deliberately NOT narrowed by the search or the purpose filter.
-     * Those two ask "which of these rows did I mean", where the window asks
-     * "which stretch of the log am I reading" - and the pager already says how
-     * many rows a search matched, so repeating that here would be a second
-     * answer to a question nobody asked twice.
-     *
-     * Which three: the count, because it is the shape of the window; the people
-     * behind it, because forty visits from twenty-five customers is a different
-     * fortnight from forty visits from thirty-nine and the list itself cannot
-     * show that without being read end to end; and the follow-ups promised,
-     * because it is the only figure here that is work outstanding rather than
-     * work done, which is what somebody scanning a visits list is usually about
-     * to go and do something about. Products named and new customers were the
-     * other candidates and were left to the dashboard - this screen is the log,
-     * not the analysis of it, and a row of tiles that duplicates the dashboard
-     * gives a reader no reason to have come here.
+     * Narrowed by the date window only — deliberately NOT by search or purpose, which ask
+     * "which of these rows did I mean" rather than "which stretch of the log am I reading".
      *
      * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      * @return array<int, DashboardStatData>
@@ -143,12 +87,6 @@ class VisitController extends Controller
         $now = $this->totals($viewer, $filters['from'], $filters['to']);
         $preceding = $this->precedingWindow($filters);
 
-        /* No window, or one open at the back, has nothing of equal length
-           before it, so every figure is compared against zero. `compare()`
-           reads that as "nothing to measure against" and the tile prints so,
-           which is the truthful answer for a reader looking at the whole log -
-           the alternative, inventing some earlier stretch to hold up beside it,
-           would be a percentage about a period nobody chose. */
         $before = $preceding === null
             ? ['visits' => 0, 'customers' => 0, 'follow_ups' => 0]
             : $this->totals($viewer, $preceding['from'], $preceding['to']);
@@ -156,8 +94,6 @@ class VisitController extends Controller
         return [
             DashboardStatData::compare(
                 'visits',
-                /* Claiming a floor-wide count while showing a personal one
-                   would be a quiet lie, so the label says which it is. */
                 $viewer->can(Permission::VisitsViewAny->value) ? 'Total visits' : 'Visits you logged',
                 $now['visits'],
                 $before['visits'],
@@ -168,17 +104,8 @@ class VisitController extends Controller
     }
 
     /**
-     * The three figures for one window, in a single round trip.
-     *
-     * One query rather than three: they read the same rows behind the same
-     * visibility split and the same two bounds on `visited_at`, which is
-     * indexed, so the database can answer all three off one pass rather than
-     * being asked to find the same rows again twice.
-     *
-     * `toBase()` because the aliases here - `visits`, `customers` - would
-     * otherwise be read off a hydrated `Visit`, where a name that happens to
-     * match a relation or an accessor resolves to that instead of to the
-     * column. A plain row has no such opinions.
+     * `toBase()`: off a hydrated `Visit` an alias matching a relation or accessor resolves
+     * to that instead of to the column.
      *
      * @return array{visits: int, customers: int, follow_ups: int}
      */
@@ -187,8 +114,6 @@ class VisitController extends Controller
         $counted = $this->betweenDates($this->visible($viewer), $from, $to)
             ->selectRaw('COUNT(*) AS visits')
             ->selectRaw('COUNT(DISTINCT visits.customer_id) AS customers')
-            /* `COUNT` over a nullable column counts the rows that have one,
-               which is exactly what a pencilled-in follow-up is. */
             ->selectRaw('COUNT(visits.expected_follow_up_on) AS follow_ups')
             ->toBase()
             ->first();
@@ -201,9 +126,6 @@ class VisitController extends Controller
     }
 
     /**
-     * The equally long stretch of log immediately before the chosen window,
-     * and how many days that is.
-     *
      * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      * @return array{days: int, from: string, to: string}|null
      */
@@ -212,15 +134,7 @@ class VisitController extends Controller
         return DateWindow::preceding($filters['from'], $filters['to']);
     }
 
-    /**
-     * The log the viewer is looking at, as a file.
-     *
-     * Through `filtered()` like the list is, so the download carries the same
-     * split: a manager gets the floor, a salesperson gets what they logged.
-     * Exporting is not a way around the visibility rule, and building the file
-     * off the same query is what makes that true by construction rather than
-     * by somebody remembering to add the scope here too.
-     */
+    # Built off `filtered()` so exporting cannot widen past the viewer's visibility split.
     public function export(Request $request): BinaryFileResponse|HttpResponse|RedirectResponse
     {
         $this->authorize('export', Visit::class);
@@ -233,11 +147,7 @@ class VisitController extends Controller
             ->orderByDesc('visited_at')
             ->orderByDesc('id');
 
-        /* Which columns, decided by the desk rather than asked for. Reception
-           presses the same button as everybody else and is handed the sheet
-           its job needs - see `VisitReport::forViewer()`. The rows are the
-           same either way: this query was filtered and authorised above, and a
-           report only ever narrows what is printed off it. */
+        # Chooses columns only; the rows were already filtered and authorised above.
         $report = VisitReport::forViewer($viewer);
 
         return ExportResponse::make(
@@ -274,8 +184,6 @@ class VisitController extends Controller
     public function store(VisitRequest $request): RedirectResponse
     {
         $visit = DB::transaction(function () use ($request) {
-            /* The customer first: they may be new, and the visit cannot be
-               filed until there is somebody to file it against. */
             $customer = $request->resolveCustomer();
 
             $visit = new Visit($request->visitAttributes());
@@ -307,9 +215,6 @@ class VisitController extends Controller
             $visit->visited_at = $request->visitedAt();
             $visit->save();
 
-            /* `sync` rather than `attach`: what was shown is the list the form
-               came back with, not that list added to the old one - and the
-               interest against each comes back with it. */
             $visit->products()->sync($request->productSync());
         });
 
@@ -323,10 +228,6 @@ class VisitController extends Controller
         return to_route('admin.visits.index');
     }
 
-    /**
-     * Soft deleted. A visit is what the floor is measured by, and a month that
-     * quietly loses a row is a month nobody can reconcile.
-     */
     public function destroy(Visit $visit): RedirectResponse
     {
         $this->authorize('delete', $visit);
@@ -344,11 +245,8 @@ class VisitController extends Controller
     }
 
     /**
-     * The visits this user is allowed to see at all.
-     *
-     * `visits.view.any` is the whole floor; anything less is what they logged
-     * themselves. The policy says the same thing for one record - this is the
-     * query that says it for a list.
+     * `visits.view.any` is the whole floor; anything less is what they logged themselves.
+     * The list-shaped counterpart of what the policy says for one record.
      *
      * @return Builder<Visit>
      */
@@ -361,11 +259,7 @@ class VisitController extends Controller
     }
 
     /**
-     * The visits this user may see, under a set of filters.
-     *
-     * One definition, shared by the screen and the download, so an export
-     * cannot quietly widen past either the filters the viewer set or the
-     * visibility split they sit behind.
+     * One definition shared by the screen and the download — keep it that way.
      *
      * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      * @return Builder<Visit>
@@ -386,23 +280,9 @@ class VisitController extends Controller
     }
 
     /**
-     * A query narrowed to a window, either end of which may be blank for an
-     * open one.
-     *
-     * Its own method because the list, the download and the figures above them
-     * all have to draw the window the same way. They did not, briefly - the
-     * tiles counted fixed windows of their own - and a screen whose figures
-     * describe a different fortnight from the rows beneath them is the sort of
-     * disagreement nobody notices until a number is quoted in a meeting.
-     *
-     * Both ends are dates, `visited_at` is a datetime, and the two ends
-     * therefore need opposite treatment. The near end is the opening midnight,
-     * which is the first instant of that day. The far end is written as `< the
-     * following midnight` rather than `<= 23:59:59`: a window closing on the
-     * 28th is meant to hold everything logged during the 28th, and the
-     * second-precision reading quietly drops a visit stamped in the last second
-     * of the day - and would drop rather more of them on any host storing
-     * fractional seconds.
+     * The ends are dates, `visited_at` is a datetime. The far end is `< the following
+     * midnight`, never `<= 23:59:59` — the second-precision reading drops a visit stamped
+     * in the last second of the day, and more on a host storing fractional seconds.
      *
      * @param  Builder<Visit>  $query
      * @return Builder<Visit>
@@ -429,13 +309,6 @@ class VisitController extends Controller
     }
 
     /**
-     * The line under the title on a printed export: which slice of the log
-     * this is.
-     *
-     * Whose visits it holds is named first. A salesperson's printed log is not
-     * a short month on the floor, and a sheet that does not say so is one
-     * somebody will read as the whole showroom's.
-     *
      * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      */
     private function exportSubtitle(User $viewer, array $filters): string
@@ -444,10 +317,6 @@ class VisitController extends Controller
             $viewer->can(Permission::VisitsViewAny->value)
                 ? 'Every visit'
                 : 'Visits logged by '.$viewer->name,
-            /* The window is printed even when none was picked, where it reads
-               "All dates": a sheet has nothing else on it to say how far back
-               it reaches, and a full history and a fortnight somebody happened
-               to pull are otherwise the same piece of paper. */
             $this->windowLabel($filters),
         ];
 
@@ -463,13 +332,6 @@ class VisitController extends Controller
     }
 
     /**
-     * What the name box suggests and the product box chooses between, plus the
-     * fixed lists.
-     *
-     * The lists are sent whole rather than searched over the wire: the boxes
-     * narrow as you type, and a round trip per keystroke is a worse trade at
-     * this size than a few hundred rows in the payload.
-     *
      * @return array<string, mixed>
      */
     private function formOptions(User $viewer): array
@@ -483,8 +345,8 @@ class VisitController extends Controller
                 ->values(),
             'products' => Product::query()
                 ->orderBy('name')
-                /* `image_path` among them, or `imageUrl()` has nothing to
-                   build the thumbnail from and every tile comes back blank. */
+                # `image_path` must stay in the list: `imageUrl()` builds the thumbnail
+                # from it, and without it every tile comes back blank.
                 ->get(['id', 'name', 'sku', 'model_number', 'image_path'])
                 ->map(ProductOptionData::fromModel(...))
                 ->values(),
@@ -492,9 +354,8 @@ class VisitController extends Controller
             'purposes' => VisitPurpose::options(),
             'sources' => CustomerSource::options(),
             'interest_levels' => InterestLevel::options(),
-            /* The form corrects a customer it is attached to. Whoever may not
-               edit customers gets the details read-only instead of an edit
-               that is silently dropped on the way in. */
+            # Without `customers.update` the details render read-only, rather than offering an
+            # edit that is silently dropped on the way in.
             'can_update_customer' => $viewer->can('update', new Customer),
         ];
     }
@@ -510,12 +371,8 @@ class VisitController extends Controller
         return [
             'search' => $request->string('search')->trim()->toString(),
             'purpose' => in_array($purpose, VisitPurpose::values(), true) ? $purpose : '',
-            /* The name of the window where one was named, blank where it was
-               drawn on the calendar or not chosen at all. Only the picker cares
-               which of the two it was - everything downstream reads the
-               resolved dates - but it has to know, or a preset would come back
-               from the server as a pair of dates and the button that produced
-               it would stop reading "This month" the moment it was clicked. */
+            # Carried alongside the resolved dates purely so the picker can keep showing
+            # "This month" — everything downstream reads `from`/`to`.
             'range' => $range,
             'from' => $from,
             'to' => $to,
@@ -523,10 +380,6 @@ class VisitController extends Controller
     }
 
     /**
-     * The date window the log is being read under: the name of the window
-     * where one was named, and the pair of `Y-m-d` ends it resolves to, either
-     * of which may be blank for an open end.
-     *
      * @return array{0: string, 1: string, 2: string}
      */
     private function window(Request $request): array
@@ -535,9 +388,6 @@ class VisitController extends Controller
     }
 
     /**
-     * The window as a sentence, for the calendar's closed button and for the
-     * line under a printed export's title.
-     *
      * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
      */
     private function windowLabel(array $filters): string

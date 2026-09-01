@@ -9,8 +9,6 @@ use App\Models\Visit;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Gives a user a role holding exactly the permissions named.
- *
  * @param  array<int, Permission>  $permissions
  */
 function staffWith(array $permissions): User
@@ -60,7 +58,7 @@ function companyPayload(array $overrides = []): array
 {
     return array_merge([
         'type' => CustomerType::Company->value,
-        /* A company customer is still a person: whoever came in from it. */
+        # A company customer is still a person: whoever came in from it.
         'name' => 'Peter Mwangi',
         'phone' => '020 271 1000',
         'email' => 'procurement@mwangi.co.ke',
@@ -85,10 +83,6 @@ it('refuses the customers list without customers.view.any', function () {
         ->assertForbidden();
 });
 
-/**
- * Both come off aggregates on the list query rather than from loading the
- * visits, so this is what says the aggregates are wired to the right relation.
- */
 it('counts each customer\'s visits and dates the last one', function () {
     $user = staffWith([Permission::CustomersViewAny]);
 
@@ -111,7 +105,6 @@ it('counts each customer\'s visits and dates the last one', function () {
             ->where('customers.data.0.last_visit', now()->subDays(3)->format('j M Y')));
 });
 
-/** Nobody yet is nothing to date, not a visit that happened at no time. */
 it('leaves the last visit empty for a customer nobody has logged', function () {
     $user = staffWith([Permission::CustomersViewAny]);
 
@@ -125,7 +118,6 @@ it('leaves the last visit empty for a customer nobody has logged', function () {
             ->where('customers.data.0.last_visit', null));
 });
 
-/** A removed visit is not one they made: the relation soft deletes. */
 it('leaves a removed visit out of the count', function () {
     $user = staffWith([Permission::CustomersViewAny]);
 
@@ -184,16 +176,10 @@ it('records a company', function () {
 
     expect($customer->type)->toBe(CustomerType::Company)
         ->and($customer->company_name)->toBe('Mwangi Builders Ltd')
-        /* The person, kept alongside the company rather than instead of it. */
         ->and($customer->name)->toBe('Peter Mwangi')
         ->and($customer->displayName())->toBe('Mwangi Builders Ltd');
 });
 
-/**
- * The name is asked of both. Somebody who came in for a company still gave
- * their own name at the counter, and a record without one names nobody to ask
- * for next time.
- */
 it('requires a name from both types, and a company name from a company', function () {
     $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
 
@@ -212,10 +198,6 @@ it('requires a name from both types, and a company name from a company', functio
     expect(Customer::query()->count())->toBe(0);
 });
 
-/**
- * The business section is the only half that turns on the type, so it is the
- * only one a switched toggle can leave something behind in.
- */
 it('clears the business fields when the type is individual', function () {
     $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
 
@@ -228,7 +210,7 @@ it('clears the business fields when the type is individual', function () {
 
     expect($customer->company_name)->toBeNull()
         ->and($customer->industry)->toBeNull()
-        /* Not the name - that one belongs to both types. */
+        # Not the name - that one belongs to both types.
         ->and($customer->name)->toBe('Achieng Odhiambo');
 });
 
@@ -284,8 +266,6 @@ it('converts an individual into a company on update', function () {
 
     expect($customer->type)->toBe(CustomerType::Company)
         ->and($customer->company_name)->toBe('Mwangi Builders Ltd')
-        /* Their own name survives the conversion; it was never the individual
-           half of the record. */
         ->and($customer->name)->toBe('Peter Mwangi');
 });
 
@@ -339,10 +319,6 @@ it('finds a customer by name, company, email or contact person', function () {
     }
 });
 
-/**
- * People write a number down however they please, so the record keeps the
- * shape it was given and the search compares the subscriber tail.
- */
 it('finds a customer by phone however it was spaced', function () {
     $user = staffWith([Permission::CustomersViewAny]);
 
@@ -356,11 +332,6 @@ it('finds a customer by phone however it was spaced', function () {
     }
 });
 
-/**
- * The phone input writes `+254...`, and staff search by the `07...` they read
- * off a business card. Both have to find the same person, whichever way round
- * the record happens to be stored.
- */
 it('finds a customer across the local and international forms', function () {
     $user = staffWith([Permission::CustomersViewAny]);
 

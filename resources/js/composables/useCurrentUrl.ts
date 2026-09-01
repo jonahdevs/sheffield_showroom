@@ -34,14 +34,8 @@ const currentUrlReactive = computed(
 );
 
 export function useCurrentUrl(): UseCurrentUrlReturn {
-    /**
-     * Whether a link points at the page being looked at.
-     *
-     * `startsWith` widens that to the section rather than the page: a nav item
-     * for the list is still the item you are under while you are three pages
-     * deep in it, and a sidebar that goes dark the moment somebody opens a
-     * create form has stopped saying where they are.
-     */
+    /* `startsWith` widens the match to the whole section, so a nav item stays
+       lit three pages deep. */
     function isCurrentUrl(
         urlToCheck: NonNullable<InertiaLinkProps['href']>,
         currentUrl?: string,
@@ -50,12 +44,8 @@ export function useCurrentUrl(): UseCurrentUrlReturn {
         const urlToCompare = currentUrl ?? currentUrlReactive.value;
         const urlString = toUrl(urlToCheck);
 
-        /*
-          A prefix match is on whole segments, not on characters. Plain
-          `startsWith` would light `/admin/product` up on `/admin/products`,
-          which is the kind of thing that only shows itself once two sections
-          are named similarly and then reads as two links being active at once.
-        */
+        /* A prefix match is on whole segments, not characters: plain
+           `startsWith` lights `/admin/product` up on `/admin/products`. */
         const comparePath = (path: string): boolean => {
             if (path === urlToCompare) {
                 return true;
@@ -87,13 +77,6 @@ export function useCurrentUrl(): UseCurrentUrlReturn {
         return isCurrentUrl(urlToCheck, currentUrl, true);
     }
 
-    /**
-     * One of two values, by whether the link owns the page.
-     *
-     * Section-wide for the same reason the nav items are: its only caller is a
-     * navigation highlight, and a highlight that only holds on the index is a
-     * highlight that is wrong on every page below it.
-     */
     function whenCurrentUrl(
         urlToCheck: NonNullable<InertiaLinkProps['href']>,
         ifTrue: any,
