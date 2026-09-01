@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, watchEffect } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
 import InputError from '@/components/InputError.vue';
 import PhoneInput from '@/components/PhoneInput.vue';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { chosenOption, openOnStored } from '@/lib/options';
+import { chosenOption, focusIf, openOnStored } from '@/lib/options';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/customers';
 
@@ -53,6 +53,12 @@ const { choice: segmentChoice, other: segmentOther } = openOnStored(
     props.customer?.segment,
     '',
 );
+
+const segmentOtherBox = ref<HTMLElement | null>(null);
+
+function focusSegmentOther(chosen: unknown) {
+    focusIf(chosen === 'other', segmentOtherBox);
+}
 
 watchEffect(() => {
     form.segment = chosenOption(segmentChoice.value, segmentOther.value);
@@ -258,7 +264,10 @@ defineOptions({
 
                         <div>
                             <Label for="segment">Segment</Label>
-                            <Select v-model="segmentChoice">
+                            <Select
+                                v-model="segmentChoice"
+                                @update:model-value="focusSegmentOther"
+                            >
                                 <SelectTrigger
                                     id="segment"
                                     class="mt-2.25 w-full"
@@ -290,6 +299,7 @@ defineOptions({
                                 maxlength="120"
                                 placeholder="Name their trade"
                                 aria-label="Name the segment they are in"
+                                ref="segmentOtherBox"
                                 data-test="field-segment-other"
                             />
 

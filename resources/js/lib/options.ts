@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import type { Ref } from 'vue';
 
 /**
@@ -45,6 +45,36 @@ export function openOnStored(
     const opened = storedChoice(options, stored, fallback);
 
     return { choice: ref(opened.choice), other: ref(opened.other) };
+}
+
+/** A template ref on `Input`, which is a component wrapping a bare `<input>`. */
+type FocusTarget = HTMLElement | { $el?: unknown } | null;
+
+function elementOf(target: FocusTarget): HTMLElement | null {
+    if (target instanceof HTMLElement) {
+        return target;
+    }
+
+    const root = target?.$el;
+
+    return root instanceof HTMLElement ? root : null;
+}
+
+/**
+ * Puts the cursor in a box that has just been revealed.
+ *
+ * Called from the select's own change handler rather than watched, and that
+ * matters: `openSegment()` rewrites the segment pair whenever a customer is
+ * picked, so a watcher cannot tell somebody choosing Other from the form
+ * reopening itself, and would steal the cursor mid-way through picking a
+ * customer. An event only fires for the person who clicked.
+ */
+export function focusIf(condition: boolean, box: Ref<FocusTarget>): void {
+    if (!condition) {
+        return;
+    }
+
+    void nextTick(() => elementOf(box.value)?.focus());
 }
 
 /** What a menu-and-Other pair posts. */

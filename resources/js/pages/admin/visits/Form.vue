@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ImageOff, Trash2 } from '@lucide/vue';
-import { computed, watch, watchEffect } from 'vue';
+import { computed, ref, watch, watchEffect } from 'vue';
+import { toast } from 'vue-sonner';
 import DatePicker from '@/components/DatePicker.vue';
 import InputError from '@/components/InputError.vue';
 import OptionMultiCombobox from '@/components/OptionMultiCombobox.vue';
@@ -19,7 +20,12 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { chosenOption, openOnStored, storedChoice } from '@/lib/options';
+import {
+    chosenOption,
+    focusIf,
+    openOnStored,
+    storedChoice,
+} from '@/lib/options';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/visits';
 
@@ -237,6 +243,32 @@ watchEffect(() => {
 
 const isReferral = computed(() => form.source === 'referral');
 
+/* Each Other box, and the Referred-by beside it, take the cursor as they
+   appear. */
+const purposeOtherBox = ref<HTMLElement | null>(null);
+const departmentOtherBox = ref<HTMLElement | null>(null);
+const sourceOtherBox = ref<HTMLElement | null>(null);
+const segmentOtherBox = ref<HTMLElement | null>(null);
+const referredByBox = ref<HTMLElement | null>(null);
+
+function onPurposeChosen(chosen: unknown) {
+    focusIf(chosen === 'other', purposeOtherBox);
+}
+
+function onDepartmentChosen(chosen: unknown) {
+    focusIf(chosen === 'other', departmentOtherBox);
+}
+
+function onSegmentChosen(chosen: unknown) {
+    focusIf(chosen === 'other', segmentOtherBox);
+}
+
+/* Referral reveals a box of its own, so the source select has two to place. */
+function onSourceChosen(chosen: unknown) {
+    focusIf(chosen === 'other', sourceOtherBox);
+    focusIf(chosen === 'referral', referredByBox);
+}
+
 /* `referred_by` is refused for every other source, so it has to leave with the
    choice rather than linger from an earlier save. */
 watch(isReferral, (referral) => {
@@ -245,17 +277,18 @@ watch(isReferral, (referral) => {
     }
 });
 
-const canSubmit = computed(() => {
-    if (form.processing || form.visited_on === '' || form.visited_time === '') {
-        return false;
-    }
+/*
+  Only ever guards against a second submission of the same form. What is
+  missing is the server's answer, not this button's: a disabled Save leaves
+  somebody staring at a form with no idea which field is holding it shut.
+*/
+const canSubmit = computed(() => !form.processing);
 
-    if (form.customer_name.trim() === '' || form.phone.trim() === '') {
-        return false;
-    }
-
-    return !isCompany.value || form.company_name.trim() !== '';
-});
+/* The fields carry their own messages; this is so the answer is not offscreen
+   when the page is longer than the window. */
+function reportInvalid() {
+    toast.error('Some details are missing. Check the highlighted fields.');
+}
 
 function submit() {
     /*
@@ -275,12 +308,12 @@ function submit() {
     }));
 
     if (props.visit) {
-        form.patch(update(props.visit.id).url);
+        form.patch(update(props.visit.id).url, { onError: reportInvalid });
 
         return;
     }
 
-    form.post(store().url);
+    form.post(store().url, { onError: reportInvalid });
 }
 
 defineOptions({
@@ -471,7 +504,10 @@ defineOptions({
                                     Source
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select v-model="sourceChoice">
+                                <Select
+                                    v-model="sourceChoice"
+                                    @update:model-value="onSourceChosen"
+                                >
                                     <SelectTrigger
                                         id="source"
                                         class="mt-2.25 w-full"
@@ -493,6 +529,7 @@ defineOptions({
                                 <Input
                                     v-if="sourceChoice === 'other'"
                                     id="source-other"
+                                    ref="sourceOtherBox"
                                     v-model="sourceOther"
                                     class="mt-2.25"
                                     maxlength="120"
@@ -513,6 +550,7 @@ defineOptions({
                                 </Label>
                                 <Input
                                     id="referred_by"
+                                    ref="referredByBox"
                                     v-model="form.referred_by"
                                     class="mt-2.25"
                                     maxlength="120"
@@ -564,6 +602,7 @@ defineOptions({
                                 <Select
                                     v-model="segmentChoice"
                                     :disabled="locked"
+                                    @update:model-value="onSegmentChosen"
                                 >
                                     <SelectTrigger
                                         id="segment"
@@ -594,6 +633,7 @@ defineOptions({
                                     :readonly="locked"
                                     placeholder="Name their trade"
                                     aria-label="Name the segment they are in"
+                                    ref="segmentOtherBox"
                                     data-test="field-segment-other"
                                 />
 
@@ -652,7 +692,10 @@ defineOptions({
                                     Nature of visit
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select v-model="purposeChoice">
+                                <Select
+                                    v-model="purposeChoice"
+                                    @update:model-value="onPurposeChosen"
+                                >
                                     <SelectTrigger
                                         id="purpose"
                                         class="mt-2.25 w-full"
@@ -677,6 +720,7 @@ defineOptions({
                                 <Input
                                     v-if="purposeChoice === 'other'"
                                     id="purpose-other"
+                                    ref="purposeOtherBox"
                                     v-model="purposeOther"
                                     class="mt-2.25"
                                     maxlength="120"
@@ -693,7 +737,10 @@ defineOptions({
                                     Department
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select v-model="departmentChoice">
+                                <Select
+                                    v-model="departmentChoice"
+                                    @update:model-value="onDepartmentChosen"
+                                >
                                     <SelectTrigger
                                         id="department"
                                         class="mt-2.25 w-full"
@@ -715,6 +762,7 @@ defineOptions({
                                 <Input
                                     v-if="departmentChoice === 'other'"
                                     id="department-other"
+                                    ref="departmentOtherBox"
                                     v-model="departmentOther"
                                     class="mt-2.25"
                                     maxlength="120"
