@@ -29,6 +29,14 @@ return new class extends Migration
             $table->string('purpose')->index();
             $table->string('source')->index();
 
+            # Who made the referral, alongside the source rather than inside
+            # it: `VisitRequest` requires one for a referral and refuses one
+            # for every other source.
+            $table->string('referred_by')->nullable();
+
+            # Nullable because the legacy log names no desk on every note.
+            $table->string('department')->nullable()->index();
+
             $table->date('expected_follow_up_on')->nullable()->index();
 
             $table->text('notes')->nullable();

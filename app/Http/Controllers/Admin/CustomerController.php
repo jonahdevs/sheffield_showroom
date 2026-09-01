@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Data\CustomerFormData;
 use App\Data\CustomerRowData;
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerType;
 use App\Exports\CustomerExport;
 use App\Http\Controllers\Controller;
@@ -67,10 +68,12 @@ class CustomerController extends Controller
         $filters = $this->filters($request);
         $query = $this->filtered($filters)->orderBy('id');
 
+        $format = ExportResponse::format($request->query('format'));
+
         return ExportResponse::make(
-            new CustomerExport($query),
+            new CustomerExport($query, $format),
             'customers-'.CarbonImmutable::today()->toDateString(),
-            ExportResponse::format($request->query('format')),
+            $format,
             'Customers',
             $this->exportSubtitle($filters),
         );
@@ -108,6 +111,7 @@ class CustomerController extends Controller
         return Inertia::render('admin/customers/Form', [
             'customer' => null,
             'types' => CustomerType::options(),
+            'segments' => CustomerSegment::options(),
             'default_country' => 'Kenya',
         ]);
     }
@@ -119,6 +123,7 @@ class CustomerController extends Controller
         return Inertia::render('admin/customers/Form', [
             'customer' => CustomerFormData::fromModel($customer),
             'types' => CustomerType::options(),
+            'segments' => CustomerSegment::options(),
             'default_country' => 'Kenya',
         ]);
     }

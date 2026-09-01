@@ -88,7 +88,7 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
             'type' => ['nullable', Rule::enum(CustomerType::class)],
 
             'company' => ['nullable', 'string', 'max:255', 'required_if:type,company'],
-            'industry' => ['nullable', 'string', 'max:255'],
+            'segment' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'id_number' => ['nullable', 'string', 'max:60'],
         ];
@@ -164,7 +164,8 @@ class CustomerImport extends StringValueBinder implements OnEachRow, SkipsEmptyR
             'customer_type' => $values['type'] ?? null,
             'first_name' => $values['name'] ?? null,
             'company_name' => $values['company'] ?? null,
-            'industry' => $values['industry'] ?? null,
+            # The extract column `LegacyExtract` reads is still `industry`.
+            'industry' => $values['segment'] ?? null,
             'phone_primary' => $values['phone'] ?? null,
             'email' => $values['email'] ?? null,
             'id_number' => $values['id_number'] ?? null,

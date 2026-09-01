@@ -418,7 +418,7 @@ defineOptions({
                     <span class="text-faint">
                         Name and Phone are required. Type is
                         <em>individual</em> or <em>company</em>, and a company
-                        row needs a Company. Industry, Email, ID number, Street
+                        row needs a Company. Segment, Email, ID number, Street
                         address, Area, City, County, Postal code and Country are
                         optional, and a blank cell leaves what is on record
                         alone.

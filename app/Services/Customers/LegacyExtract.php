@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Customers;
 
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerType;
 use RuntimeException;
 
@@ -73,7 +74,9 @@ class LegacyExtract
             # The form never shows these for a person, so anything set here on an
             # individual is uncorrectable.
             'company_name' => $isCompany ? $this->named($source['company_name'] ?? null) : null,
-            'industry' => $isCompany ? $this->named($source['industry'] ?? null) : null,
+            # The extract's column is still called `industry`: `customers.json` is
+            # the record of what was handed over and is never rewritten.
+            'segment' => $isCompany ? $this->segment($source['industry'] ?? null) : null,
 
             'phone' => $phone,
             'email' => $this->email($source['email'] ?? null),
@@ -148,6 +151,24 @@ class LegacyExtract
             : $type;
     }
 
+    /**
+     * `customers.segment` is free text and `CustomerSegment` is only the menu the
+     * form suggests, so a trade the list does not name is kept as it was typed.
+     * Two things are not: the spellings `CustomerSegment::match` folds in, and the
+     * customer *type*, which the old book's typists put in this column - a person
+     * buying in their own name is not in the "Individual" trade.
+     */
+    private function segment(mixed $value): ?string
+    {
+        $text = $this->named($value);
+
+        if ($text === null || CustomerType::tryFrom(mb_strtolower($text)) !== null) {
+            return null;
+        }
+
+        return CustomerSegment::match($text)?->value ?? $text;
+    }
+
     # The old system's fields were required, so "N/A" and its cousins mean "empty" -
     # stored as they stand they read off a customer list as a business of that name.
     private function named(mixed $value): ?string
@@ -171,7 +192,7 @@ class LegacyExtract
     # and a value with no code to find opens on the wrong country with the zero still in.
     private function phone(mixed $value): ?string
     {
-        $written = trim(ltrim(trim((string) $value), "'"));
+        $written = $this->unescaped($value);
         $digits = $this->digits($written);
 
         if (strlen($digits) < self::SUBSCRIBER_DIGITS) {
@@ -226,9 +247,25 @@ class LegacyExtract
             return null;
         }
 
-        $text = trim((string) $value);
+        $text = $this->unescaped($value);
 
         return $text === '' ? null : $text;
+    }
+
+    # Excel's two text escapes, both of which reach us from our own CSV export
+    # and from anything a person has edited in Excel. `="00100"` is what keeps a
+    # leading zero through a double-click - see `ExportsTextColumns` - and a bare
+    # apostrophe is what Excel leaves behind when somebody forces text by hand.
+    # Stripped here so an exported sheet re-imports as what it displayed.
+    private function unescaped(mixed $value): string
+    {
+        $written = trim((string) $value);
+
+        if (preg_match('/^="(.*)"$/s', $written, $matches) === 1) {
+            $written = $matches[1];
+        }
+
+        return trim(ltrim($written, "'"));
     }
 
     /**

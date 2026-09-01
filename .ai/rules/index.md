@@ -7,6 +7,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Data/** | .ai/rules/app-data.md |
 | app/Http/Controllers/** | .ai/rules/controllers.md |
 | database/data/** | .ai/rules/data.md |
+| app/Enums/{VisitPurpose,VisitDepartment,CustomerSource}.php, app/Enums/CustomerSegment.php | .ai/rules/enums.md |
 | **/*.php | .ai/rules/general.md |
 | app/{Http,Policies,Data}/** | .ai/rules/http-policies-data.md |
 | resources/js/** | .ai/rules/js.md |

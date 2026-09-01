@@ -23,7 +23,7 @@ class CustomerOptionData extends Data
         public CustomerType $type,
         public ?string $name,
         public ?string $company_name,
-        public ?string $industry,
+        public ?string $segment,
         public ?string $email,
         public ?string $id_number,
     ) {}
@@ -39,7 +39,7 @@ class CustomerOptionData extends Data
             type: $customer->type,
             name: $customer->name,
             company_name: $customer->company_name,
-            industry: $customer->industry,
+            segment: $customer->segment,
             email: $customer->email,
             id_number: $customer->id_number,
         );

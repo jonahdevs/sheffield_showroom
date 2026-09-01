@@ -10,10 +10,12 @@ use App\Data\DashboardStatData;
 use App\Data\ProductOptionData;
 use App\Data\VisitFormData;
 use App\Data\VisitRowData;
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
 use App\Enums\Permission;
+use App\Enums\VisitDepartment;
 use App\Enums\VisitPurpose;
 use App\Enums\VisitReport;
 use App\Exports\VisitExport;
@@ -62,6 +64,7 @@ class VisitController extends Controller
             'presets' => DashboardRangeData::options(),
             'window_days' => $this->precedingWindow($filters)['days'] ?? null,
             'purposes' => VisitPurpose::options(),
+            'departments' => VisitDepartment::options(),
             'page_sizes' => PageSize::OPTIONS,
             'formats' => ExportResponse::available(),
             'stats' => $this->stats($viewer, $filters),
@@ -76,10 +79,11 @@ class VisitController extends Controller
     }
 
     /**
-     * Narrowed by the date window only — deliberately NOT by search or purpose, which ask
-     * "which of these rows did I mean" rather than "which stretch of the log am I reading".
+     * Narrowed by the date window only — deliberately NOT by search, purpose or department,
+     * which ask "which of these rows did I mean" rather than "which stretch of the log am I
+     * reading".
      *
-     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
      * @return array<int, DashboardStatData>
      */
     private function stats(User $viewer, array $filters): array
@@ -126,7 +130,7 @@ class VisitController extends Controller
     }
 
     /**
-     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
      * @return array{days: int, from: string, to: string}|null
      */
     private function precedingWindow(array $filters): ?array
@@ -150,10 +154,12 @@ class VisitController extends Controller
         # Chooses columns only; the rows were already filtered and authorised above.
         $report = VisitReport::forViewer($viewer);
 
+        $format = ExportResponse::format($request->query('format'));
+
         return ExportResponse::make(
-            new VisitExport($query, $report),
+            new VisitExport($query, $report, $format),
             $report->basename().'-'.CarbonImmutable::today()->toDateString(),
-            ExportResponse::format($request->query('format')),
+            $format,
             $report->title(),
             $this->exportSubtitle($viewer, $filters),
         );
@@ -261,7 +267,7 @@ class VisitController extends Controller
     /**
      * One definition shared by the screen and the download — keep it that way.
      *
-     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
      * @return Builder<Visit>
      */
     private function filtered(User $viewer, array $filters): Builder
@@ -273,7 +279,11 @@ class VisitController extends Controller
             )
             ->when(
                 $filters['purpose'] !== '',
-                fn (Builder $query) => $query->forPurpose(VisitPurpose::from($filters['purpose'])),
+                fn (Builder $query) => $query->forPurpose($filters['purpose']),
+            )
+            ->when(
+                $filters['department'] !== '',
+                fn (Builder $query) => $query->forDepartment($filters['department']),
             );
 
         return $this->betweenDates($query, $filters['from'], $filters['to']);
@@ -309,7 +319,7 @@ class VisitController extends Controller
     }
 
     /**
-     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
      */
     private function exportSubtitle(User $viewer, array $filters): string
     {
@@ -321,7 +331,11 @@ class VisitController extends Controller
         ];
 
         if ($filters['purpose'] !== '') {
-            $parts[] = VisitPurpose::from($filters['purpose'])->label();
+            $parts[] = VisitPurpose::readable($filters['purpose']);
+        }
+
+        if ($filters['department'] !== '') {
+            $parts[] = VisitDepartment::readable($filters['department']);
         }
 
         if ($filters['search'] !== '') {
@@ -351,7 +365,9 @@ class VisitController extends Controller
                 ->map(ProductOptionData::fromModel(...))
                 ->values(),
             'types' => CustomerType::options(),
+            'segments' => CustomerSegment::options(),
             'purposes' => VisitPurpose::options(),
+            'departments' => VisitDepartment::options(),
             'sources' => CustomerSource::options(),
             'interest_levels' => InterestLevel::options(),
             # Without `customers.update` the details render read-only, rather than offering an
@@ -361,16 +377,20 @@ class VisitController extends Controller
     }
 
     /**
-     * @return array{search: string, purpose: string, range: string, from: string, to: string}
+     * @return array{search: string, purpose: string, department: string, range: string, from: string, to: string}
      */
     private function filters(Request $request): array
     {
         $purpose = $request->string('purpose')->toString();
+        $department = $request->string('department')->toString();
         [$range, $from, $to] = $this->window($request);
 
         return [
             'search' => $request->string('search')->trim()->toString(),
-            'purpose' => in_array($purpose, VisitPurpose::values(), true) ? $purpose : '',
+            # Not checked against the enum: both columns are free text, so a
+            # value somebody typed has to stay filterable.
+            'purpose' => mb_substr(trim($purpose), 0, 120),
+            'department' => mb_substr(trim($department), 0, 120),
             # Carried alongside the resolved dates purely so the picker can keep showing
             # "This month" — everything downstream reads `from`/`to`.
             'range' => $range,
@@ -388,7 +408,7 @@ class VisitController extends Controller
     }
 
     /**
-     * @param  array{search: string, purpose: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
      */
     private function windowLabel(array $filters): string
     {

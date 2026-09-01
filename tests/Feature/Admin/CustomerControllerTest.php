@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerType;
 use App\Enums\Permission;
 use App\Models\Customer;
@@ -64,7 +65,7 @@ function companyPayload(array $overrides = []): array
         'email' => 'procurement@mwangi.co.ke',
         'id_number' => null,
         'company_name' => 'Mwangi Builders Ltd',
-        'industry' => 'Construction',
+        'segment' => CustomerSegment::Corporate->value,
         'country' => 'Kenya',
         'state' => 'Nairobi',
         'city' => 'Nairobi',
@@ -203,13 +204,13 @@ it('clears the business fields when the type is individual', function () {
 
     $this->actingAs($user)->post(route('admin.customers.store'), individualPayload([
         'company_name' => 'Stale Ltd',
-        'industry' => 'Stale',
+        'segment' => 'Stale',
     ]));
 
     $customer = Customer::query()->sole();
 
     expect($customer->company_name)->toBeNull()
-        ->and($customer->industry)->toBeNull()
+        ->and($customer->segment)->toBeNull()
         # Not the name - that one belongs to both types.
         ->and($customer->name)->toBe('Achieng Odhiambo');
 });
@@ -382,4 +383,44 @@ it('records the fuller address', function () {
         ->and($customer->addressLine())->toBe(
             'Plot 14, Enterprise Road, Industrial Area, Nairobi, Nairobi, 00100, Kenya'
         );
+});
+
+# =========================================================================
+# Segment is free text, and the menu is only a suggestion
+# =========================================================================
+
+it('stores a segment picked from the menu and one typed under Other alike', function () {
+    $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.customers.store'), companyPayload([
+            'segment' => CustomerSegment::CoffeeShops->value,
+        ]))
+        ->assertRedirect(route('admin.customers.index'));
+
+    $this->actingAs($user)
+        ->post(route('admin.customers.store'), companyPayload([
+            'phone' => '0733 444 555',
+            'segment' => 'Boat yards',
+        ]))
+        ->assertRedirect(route('admin.customers.index'));
+
+    expect(Customer::query()->orderBy('id')->pluck('segment')->all())
+        ->toBe(['coffee_shops', 'Boat yards']);
+});
+
+it('reads a typed segment back as written and a known one by its label', function () {
+    expect(CustomerSegment::readable('Boat yards'))->toBe('Boat yards')
+        ->and(CustomerSegment::readable('coffee_shops'))->toBe('Coffee shops');
+});
+
+it('offers the segment menu to the form', function () {
+    $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
+
+    $this->actingAs($user)
+        ->get(route('admin.customers.create'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('segments.0.value', CustomerSegment::Hotels->value)
+            ->where('segments.8.label', 'Other'));
 });

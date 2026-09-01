@@ -35,6 +35,7 @@ enum VisitReport: string
                 'customer_type' => 'Type',
                 'customer_phone' => 'Phone',
                 'purpose' => 'Nature of visit',
+                'department' => 'Department',
                 'source' => 'Source',
                 'date' => 'Date',
                 'time' => 'Time',
@@ -45,11 +46,13 @@ enum VisitReport: string
             ],
 
             # Deliberately without `notes`: the floor's write-up is not the
-            # front desk's to read.
+            # front desk's to read. `department` is on it because routing a
+            # caller to a desk is the front desk's own job.
             self::Reception => [
                 'customer_name' => 'Visitor name',
                 'customer_company' => 'Company',
                 'customer_phone' => 'Contact',
+                'department' => 'Department',
                 'purpose' => 'Nature of visit',
                 'respondent' => 'Respondent',
             ],

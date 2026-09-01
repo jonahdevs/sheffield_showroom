@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ImageOff, Trash2 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, watch, watchEffect } from 'vue';
 import DatePicker from '@/components/DatePicker.vue';
 import InputError from '@/components/InputError.vue';
 import OptionMultiCombobox from '@/components/OptionMultiCombobox.vue';
@@ -19,6 +19,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { chosenOption, openOnStored, storedChoice } from '@/lib/options';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/visits';
 
@@ -27,7 +28,9 @@ const props = defineProps<{
     customers: App.Data.CustomerOptionData[];
     products: App.Data.ProductOptionData[];
     types: { value: string; label: string }[];
+    segments: { value: string; label: string }[];
     purposes: { value: string; label: string }[];
+    departments: { value: string; label: string }[];
     sources: { value: string; label: string }[];
     interest_levels: { value: string; label: string }[];
     /* Whether a correction typed here reaches the customer's own record or
@@ -61,11 +64,13 @@ const form = useForm({
     email: props.visit?.email ?? '',
     id_number: props.visit?.id_number ?? '',
     company_name: props.visit?.company_name ?? '',
-    industry: props.visit?.industry ?? '',
+    segment: props.visit?.segment ?? '',
     visited_on: props.visit?.visited_on ?? now.date,
     visited_time: props.visit?.visited_time ?? now.time,
     purpose: props.visit?.purpose ?? 'new_enquiry',
+    department: props.visit?.department ?? 'showroom_sales',
     source: props.visit?.source ?? 'walk_in',
+    referred_by: props.visit?.referred_by ?? '',
     /* Blank on a new visit, deliberately - do not "fix" this to the signed-in
        user. A manager often writes up the day's calls, and a pre-filled name
        nobody rereads credits the wrong salesperson. */
@@ -149,7 +154,7 @@ function choose(chosen: App.Data.CustomerOptionData) {
     form.email = chosen.email ?? '';
     form.id_number = chosen.id_number ?? '';
     form.company_name = chosen.company_name ?? '';
-    form.industry = chosen.industry ?? '';
+    openSegment(chosen.segment);
     form.clearErrors();
 }
 
@@ -175,7 +180,7 @@ function changeType(next: App.Enums.CustomerType) {
 
     if (next === 'individual') {
         form.company_name = '';
-        form.industry = '';
+        openSegment(null);
     }
 
     form.clearErrors();
@@ -184,6 +189,61 @@ function changeType(next: App.Enums.CustomerType) {
 const heading = computed(() =>
     props.visit ? `Visit by ${props.visit.customer_label}` : 'New visit',
 );
+
+const { choice: purposeChoice, other: purposeOther } = openOnStored(
+    props.purposes,
+    props.visit?.purpose,
+    'new_enquiry',
+);
+
+const { choice: departmentChoice, other: departmentOther } = openOnStored(
+    props.departments,
+    props.visit?.department,
+    'showroom_sales',
+);
+
+const { choice: sourceChoice, other: sourceOther } = openOnStored(
+    props.sources,
+    props.visit?.source,
+    'walk_in',
+);
+
+/* Blank rather than a default: a segment nobody recorded must stay unrecorded. */
+const { choice: segmentChoice, other: segmentOther } = openOnStored(
+    props.segments,
+    props.visit?.segment,
+    '',
+);
+
+/* Picking a customer, or dropping to an individual, re-opens the pair on what
+   that record holds - writing `form.segment` directly would be overwritten by
+   the watcher below on the next tick. */
+function openSegment(stored: string | null | undefined) {
+    const opened = storedChoice(props.segments, stored, '');
+
+    segmentChoice.value = opened.choice;
+    segmentOther.value = opened.other;
+}
+
+watchEffect(() => {
+    form.purpose = chosenOption(purposeChoice.value, purposeOther.value);
+    form.department = chosenOption(
+        departmentChoice.value,
+        departmentOther.value,
+    );
+    form.source = chosenOption(sourceChoice.value, sourceOther.value);
+    form.segment = chosenOption(segmentChoice.value, segmentOther.value);
+});
+
+const isReferral = computed(() => form.source === 'referral');
+
+/* `referred_by` is refused for every other source, so it has to leave with the
+   choice rather than linger from an earlier save. */
+watch(isReferral, (referral) => {
+    if (!referral) {
+        form.referred_by = '';
+    }
+});
 
 const canSubmit = computed(() => {
     if (form.processing || form.visited_on === '' || form.visited_time === '') {
@@ -395,7 +455,7 @@ defineOptions({
                                     Source
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select v-model="form.source">
+                                <Select v-model="sourceChoice">
                                     <SelectTrigger
                                         id="source"
                                         class="mt-2.25 w-full"
@@ -413,7 +473,39 @@ defineOptions({
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
+
+                                <Input
+                                    v-if="sourceChoice === 'other'"
+                                    id="source-other"
+                                    v-model="sourceOther"
+                                    class="mt-2.25"
+                                    maxlength="120"
+                                    placeholder="How did they hear about us?"
+                                    aria-label="Describe how they found the showroom"
+                                    data-test="field-source-other"
+                                />
+
                                 <InputError :message="form.errors.source" />
+                            </div>
+
+                            <!-- A referral stays filed as "Referral"; this is
+                                 the second fact of who made it. -->
+                            <div v-if="isReferral">
+                                <Label for="referred_by">
+                                    Referred by
+                                    <span class="text-primary">*</span>
+                                </Label>
+                                <Input
+                                    id="referred_by"
+                                    v-model="form.referred_by"
+                                    class="mt-2.25"
+                                    maxlength="120"
+                                    placeholder="Who sent them"
+                                    data-test="field-referred-by"
+                                />
+                                <InputError
+                                    :message="form.errors.referred_by"
+                                />
                             </div>
                         </div>
                     </div>
@@ -452,16 +544,44 @@ defineOptions({
                             </div>
 
                             <div>
-                                <Label for="industry">Industry</Label>
+                                <Label for="segment">Segment</Label>
+                                <Select
+                                    v-model="segmentChoice"
+                                    :disabled="locked"
+                                >
+                                    <SelectTrigger
+                                        id="segment"
+                                        class="mt-2.25 w-full"
+                                        data-test="field-segment"
+                                    >
+                                        <SelectValue
+                                            placeholder="Which trade are they in?"
+                                        />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            v-for="segment in props.segments"
+                                            :key="segment.value"
+                                            :value="segment.value"
+                                        >
+                                            {{ segment.label }}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+
                                 <Input
-                                    id="industry"
-                                    v-model="form.industry"
+                                    v-if="segmentChoice === 'other'"
+                                    id="segment-other"
+                                    v-model="segmentOther"
                                     class="mt-2.25"
+                                    maxlength="120"
                                     :readonly="locked"
-                                    placeholder="e.g. Construction"
-                                    data-test="field-industry"
+                                    placeholder="Name their trade"
+                                    aria-label="Name the segment they are in"
+                                    data-test="field-segment-other"
                                 />
-                                <InputError :message="form.errors.industry" />
+
+                                <InputError :message="form.errors.segment" />
                             </div>
                         </div>
                     </div>
@@ -516,7 +636,7 @@ defineOptions({
                                     Nature of visit
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select v-model="form.purpose">
+                                <Select v-model="purposeChoice">
                                     <SelectTrigger
                                         id="purpose"
                                         class="mt-2.25 w-full"
@@ -534,7 +654,60 @@ defineOptions({
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
+
+                                <!-- The menu is short by design; anything it
+                                     does not cover is typed here and stored as
+                                     written. -->
+                                <Input
+                                    v-if="purposeChoice === 'other'"
+                                    id="purpose-other"
+                                    v-model="purposeOther"
+                                    class="mt-2.25"
+                                    maxlength="120"
+                                    placeholder="What brought them in?"
+                                    aria-label="Describe the nature of the visit"
+                                    data-test="field-purpose-other"
+                                />
+
                                 <InputError :message="form.errors.purpose" />
+                            </div>
+
+                            <div>
+                                <Label for="department">
+                                    Department
+                                    <span class="text-primary">*</span>
+                                </Label>
+                                <Select v-model="departmentChoice">
+                                    <SelectTrigger
+                                        id="department"
+                                        class="mt-2.25 w-full"
+                                        data-test="field-department"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            v-for="department in props.departments"
+                                            :key="department.value"
+                                            :value="department.value"
+                                        >
+                                            {{ department.label }}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+
+                                <Input
+                                    v-if="departmentChoice === 'other'"
+                                    id="department-other"
+                                    v-model="departmentOther"
+                                    class="mt-2.25"
+                                    maxlength="120"
+                                    placeholder="Which desk were they here for?"
+                                    aria-label="Name the department they came to see"
+                                    data-test="field-department-other"
+                                />
+
+                                <InputError :message="form.errors.department" />
                             </div>
 
                             <div>

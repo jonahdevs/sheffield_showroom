@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Visits;
 
 use App\Enums\CustomerSource;
+use App\Enums\VisitDepartment;
 use App\Enums\VisitPurpose;
 use App\Services\Customers\LegacyExtract;
 
@@ -30,6 +31,9 @@ class LegacyVisitLog
         'samples', 'toner', 'printer', 'welder', 'job', 'meter', 'reading',
         'training', 'attachment', 'internship', 'inspection', 'payment',
     ];
+
+    /** What `VisitRequest` accepts in `department`, so the backfill cannot outgrow the form. */
+    private const MAX_DEPARTMENT = 120;
 
     # Strict on purpose: "Som nath" is real staff and is missed, which is the price of
     # "Meter reading" not being read as a person.
@@ -121,7 +125,11 @@ class LegacyVisitLog
 
             'purpose' => $this->purposeFor($note)->value,
 
+            'department' => $this->departmentFor($note),
+
             'source' => CustomerSource::WalkIn->value,
+
+            'referred_by' => null,
 
             'respondent' => $this->respondentIn($note),
 
@@ -153,6 +161,28 @@ class LegacyVisitLog
         }
 
         return $purpose ?? VisitPurpose::Other;
+    }
+
+    /**
+     * The desk the note was filed against, as a `VisitDepartment` where one of the
+     * cases fits and as the leading text where none does - `visits.department` is
+     * free text, so a desk the enum does not name is kept rather than dropped.
+     *
+     * @return string|null Null when the note names no desk at all.
+     */
+    public function departmentFor(string $note): ?string
+    {
+        $department = $this->department($note);
+
+        $matched = $this->departmentCase(mb_strtolower($department));
+
+        if ($matched !== null) {
+            return $matched->value;
+        }
+
+        return $department === ''
+            ? null
+            : mb_substr($department, 0, self::MAX_DEPARTMENT);
     }
 
     # Bare names are read from the end backwards - where a note holds both an errand
@@ -197,6 +227,41 @@ class LegacyVisitLog
                 'hr', 'admin', 'import', 'production', 'marketing',
                 'secur', 'design', 'meeting', 'deliver', 'interview',
             ]) => VisitPurpose::Other,
+
+            default => null,
+        };
+    }
+
+    /**
+     * Read top to bottom like `departmentPurpose()` and settling the same overlaps -
+     * a cheque collection is money at the accounts window, not goods off the yard,
+     * and "Import stores" is the imports desk rather than the stores. Do not reorder.
+     *
+     * @return VisitDepartment|null Null when the leading text names no desk this knows.
+     */
+    private function departmentCase(string $department): ?VisitDepartment
+    {
+        return match (true) {
+            $this->mentions($department, ['cheque', 'account', 'finance']) => VisitDepartment::Finance,
+
+            $this->mentions($department, ['showroom', 'cold room', 'coldroom', 'laundry', 'rational']) => VisitDepartment::ShowroomSales,
+
+            $this->mentions($department, ['logistic', 'collection']) => VisitDepartment::Logistics,
+
+            $this->mentions($department, ['installation']) => VisitDepartment::Installation,
+            $this->mentions($department, ['service', 'repair']) => VisitDepartment::Service,
+
+            $this->mentions($department, ['horeca']) => VisitDepartment::Horeca,
+            $this->mentions($department, ['sales']) => VisitDepartment::ShowroomSales,
+
+            $this->mentions($department, ['import']) => VisitDepartment::Imports,
+            $this->mentions($department, ['purchas', 'store']) => VisitDepartment::Stores,
+
+            $this->mentions($department, ['production']) => VisitDepartment::Production,
+            $this->mentions($department, ['marketing']) => VisitDepartment::Marketing,
+            $this->mentions($department, ['design']) => VisitDepartment::Design,
+            $this->mentions($department, ['crm']) => VisitDepartment::Crm,
+            $this->mentions($department, ['hr', 'interview']) => VisitDepartment::Hr,
 
             default => null,
         };

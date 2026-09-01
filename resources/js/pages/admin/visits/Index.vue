@@ -56,6 +56,7 @@ const props = defineProps<{
     filters: {
         search: string;
         purpose: string;
+        department: string;
         /** The name of the window, where one was named rather than drawn. */
         range: string;
         from: string;
@@ -66,9 +67,10 @@ const props = defineProps<{
     /** Null where the window has no length, which turns the tiles' comparison off. */
     window_days: number | null;
     purposes: { value: string; label: string }[];
+    departments: { value: string; label: string }[];
     page_sizes: number[];
     formats: string[];
-    /** The window's figures, unaffected by the search and the purpose filter. */
+    /** The window's figures, unaffected by the search and the two menu filters. */
     stats: App.Data.DashboardStatData[];
     scoped_to_own: boolean;
     can: {
@@ -96,11 +98,20 @@ const { filters, query, hasFilters, processing, apply, clear } = useFilters({
     initial: {
         search: props.filters.search ?? '',
         purpose: props.filters.purpose === '' ? 'all' : props.filters.purpose,
+        department:
+            props.filters.department === '' ? 'all' : props.filters.department,
         range: props.filters.range ?? '',
         from: props.filters.range === '' ? (props.filters.from ?? '') : '',
         to: props.filters.range === '' ? (props.filters.to ?? '') : '',
     },
-    blank: { search: '', purpose: 'all', range: '', from: '', to: '' },
+    blank: {
+        search: '',
+        purpose: 'all',
+        department: 'all',
+        range: '',
+        from: '',
+        to: '',
+    },
     only: ['visits', 'filters', 'date_label', 'window_days', 'stats'],
 });
 
@@ -271,6 +282,26 @@ defineOptions({
                         </SelectItem>
                     </SelectContent>
                 </Select>
+
+                <Select v-model="filters.department">
+                    <SelectTrigger
+                        class="w-52"
+                        aria-label="Filter by department"
+                        data-test="visit-department-filter"
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                        <SelectItem value="all">All departments</SelectItem>
+                        <SelectItem
+                            v-for="department in props.departments"
+                            :key="department.value"
+                            :value="department.value"
+                        >
+                            {{ department.label }}
+                        </SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             <!-- Ahead of the empty branch on purpose: mid-reload this must not flash "no visits". -->
@@ -278,7 +309,7 @@ defineOptions({
                 v-if="processing"
                 class="px-5 py-2"
                 :rows="Math.min(props.visits.per_page, 10)"
-                :columns="7"
+                :columns="8"
             />
 
             <div
@@ -310,11 +341,12 @@ defineOptions({
             <template v-else>
                 <div class="overflow-x-auto">
                     <div
-                        class="grid min-w-[1120px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
+                        class="grid min-w-[1260px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.7fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 border-b border-border bg-muted/50 px-5 py-3.5 text-xs font-semibold"
                     >
                         <span>Customer</span>
                         <span>Company</span>
                         <span>Nature of visit</span>
+                        <span>Department</span>
                         <span>Interested products</span>
                         <span>Respondent</span>
                         <span>Visit date &amp; time</span>
@@ -325,7 +357,7 @@ defineOptions({
                         <div
                             v-for="visit in props.visits.data"
                             :key="visit.id"
-                            class="grid min-w-[1120px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 px-5 py-3.5"
+                            class="grid min-w-[1260px] grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.7fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_84px] items-center gap-4 px-5 py-3.5"
                             :data-test="`visit-${visit.id}`"
                         >
                             <div class="flex min-w-0 items-center gap-3">
@@ -374,6 +406,16 @@ defineOptions({
                                     aria-label="Has a write-up"
                                 />
                             </div>
+
+                            <span
+                                class="truncate text-xs"
+                                :class="
+                                    visit.department_label ? '' : 'text-faint'
+                                "
+                                :title="visit.department_label ?? undefined"
+                            >
+                                {{ visit.department_label ?? '--' }}
+                            </span>
 
                             <div class="flex min-w-0 items-center gap-1.5">
                                 <Package

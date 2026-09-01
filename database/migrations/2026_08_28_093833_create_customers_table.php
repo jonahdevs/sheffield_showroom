@@ -29,7 +29,7 @@ return new class extends Migration
             # Company, when they are buying for one
             # --------------------------------------------------------------
             $table->string('company_name')->nullable();
-            $table->string('industry')->nullable();
+            $table->string('segment')->nullable();
 
             # --------------------------------------------------------------
             # Contact

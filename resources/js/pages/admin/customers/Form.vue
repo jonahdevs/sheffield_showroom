@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, watchEffect } from 'vue';
 import InputError from '@/components/InputError.vue';
 import PhoneInput from '@/components/PhoneInput.vue';
 import { Button } from '@/components/ui/button';
@@ -15,12 +15,14 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { chosenOption, openOnStored } from '@/lib/options';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/customers';
 
 const props = defineProps<{
     customer: App.Data.CustomerFormData | null;
     types: { value: string; label: string }[];
+    segments: { value: string; label: string }[];
     default_country: string;
 }>();
 
@@ -33,7 +35,7 @@ const form = useForm({
     email: props.customer?.email ?? '',
     id_number: props.customer?.id_number ?? '',
     company_name: props.customer?.company_name ?? '',
-    industry: props.customer?.industry ?? '',
+    segment: props.customer?.segment ?? '',
     country: props.customer?.country ?? props.default_country,
     state: props.customer?.state ?? '',
     city: props.customer?.city ?? '',
@@ -41,6 +43,19 @@ const form = useForm({
     area: props.customer?.area ?? '',
     postal_code: props.customer?.postal_code ?? '',
     notes: props.customer?.notes ?? '',
+});
+
+/* `segment` is free text and the menu is only a suggestion, so a stored value
+   matching no option is one somebody typed: it opens on Other with the box
+   filled rather than falling off the form and being overwritten on save. */
+const { choice: segmentChoice, other: segmentOther } = openOnStored(
+    props.segments,
+    props.customer?.segment,
+    '',
+);
+
+watchEffect(() => {
+    form.segment = chosenOption(segmentChoice.value, segmentOther.value);
 });
 
 const isCompany = computed(() => form.type === 'company');
@@ -242,15 +257,43 @@ defineOptions({
                         </div>
 
                         <div>
-                            <Label for="industry">Industry</Label>
+                            <Label for="segment">Segment</Label>
+                            <Select v-model="segmentChoice">
+                                <SelectTrigger
+                                    id="segment"
+                                    class="mt-2.25 w-full"
+                                    data-test="field-segment"
+                                >
+                                    <SelectValue
+                                        placeholder="Which trade are they in?"
+                                    />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem
+                                        v-for="segment in props.segments"
+                                        :key="segment.value"
+                                        :value="segment.value"
+                                    >
+                                        {{ segment.label }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+
+                            <!-- The menu is short by design; a trade it does
+                                 not cover is typed here and stored as
+                                 written. -->
                             <Input
-                                id="industry"
-                                v-model="form.industry"
+                                v-if="segmentChoice === 'other'"
+                                id="segment-other"
+                                v-model="segmentOther"
                                 class="mt-2.25"
-                                placeholder="e.g. Construction"
-                                data-test="field-industry"
+                                maxlength="120"
+                                placeholder="Name their trade"
+                                aria-label="Name the segment they are in"
+                                data-test="field-segment-other"
                             />
-                            <InputError :message="form.errors.industry" />
+
+                            <InputError :message="form.errors.segment" />
                         </div>
                     </div>
                 </div>

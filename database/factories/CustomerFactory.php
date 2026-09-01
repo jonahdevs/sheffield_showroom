@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerType;
 use App\Models\Customer;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -44,7 +45,12 @@ class CustomerFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'type' => CustomerType::Company,
             'company_name' => fake()->company(),
-            'industry' => fake()->randomElement(['Construction', 'Manufacturing', 'Real Estate', 'Agriculture']),
+            # The stored value, never the case: an enum instance here leaves the
+            # in-memory model disagreeing with the row read back.
+            'segment' => fake()->randomElement(array_values(array_diff(
+                CustomerSegment::values(),
+                [CustomerSegment::Other->value],
+            ))),
         ]);
     }
 

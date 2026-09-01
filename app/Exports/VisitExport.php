@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exports;
 
+use App\Concerns\ExportsTextColumns;
 use App\Data\VisitRowData;
 use App\Enums\VisitReport;
 use App\Models\Visit;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithTitle;
@@ -22,15 +24,19 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
  *
  * @implements WithMapping<Visit>
  */
-class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, WithHeadings, WithMapping, WithTitle
+class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, WithCustomValueBinder, WithHeadings, WithMapping, WithTitle
 {
+    use ExportsTextColumns;
+
     /**
      * @param  Builder<Visit>  $query  Already filtered and authorised.
      * @param  VisitReport  $report  Which columns to print.
+     * @param  string  $format  Decides whether the phone needs its CSV escape.
      */
     public function __construct(
         private Builder $query,
         private VisitReport $report = VisitReport::Full,
+        private string $format = 'csv',
     ) {}
 
     public function title(): string
@@ -95,9 +101,10 @@ class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, Wi
             'customer_name' => $visit->customer_name,
             'customer_company' => $visit->customer_company ?? '',
             'customer_type' => $visit->customer_type->label(),
-            'customer_phone' => $visit->customer_phone ?? '',
+            'customer_phone' => $this->textCell($visit->customer_phone, $this->format),
             'purpose' => $visit->purpose_label,
-            'source' => $row->source->label(),
+            'department' => $visit->department_label ?? '',
+            'source' => $visit->source_label,
             'date' => $visit->visited_on,
             'time' => $visit->visited_time,
             'products' => implode(', ', $visit->products),

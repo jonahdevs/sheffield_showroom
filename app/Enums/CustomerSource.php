@@ -13,9 +13,6 @@ enum CustomerSource: string
     case Referral = 'referral';
     case Website = 'website';
     case SocialMedia = 'social_media';
-    case Repeat = 'repeat';
-    case Advertisement = 'advertisement';
-    case SalesCall = 'sales_call';
     case Other = 'other';
 
     public function label(): string
@@ -25,11 +22,18 @@ enum CustomerSource: string
             self::Referral => 'Referral',
             self::Website => 'Website',
             self::SocialMedia => 'Social media',
-            self::Repeat => 'Existing customer',
-            self::Advertisement => 'Advertisement',
-            self::SalesCall => 'Sales call',
             self::Other => 'Other',
         };
+    }
+
+    # `visits.source` is free text: the cases above are the menu the form
+    # offers, not a closed set, so anything typed under Other is stored as
+    # written and read back as written.
+    public static function readable(string|self $value): string
+    {
+        return $value instanceof self
+            ? $value->label()
+            : self::tryFrom($value)?->label() ?? $value;
     }
 
     /**

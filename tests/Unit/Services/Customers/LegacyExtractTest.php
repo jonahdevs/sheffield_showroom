@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\CustomerSegment;
 use App\Services\Customers\LegacyExtract;
 
 /**
@@ -80,7 +81,7 @@ it('falls back to the company name when nobody is named', function () {
         ->and($row['company_name'])->toBe('Tausi Insurance');
 });
 
-it('keeps the company name and industry for a company', function () {
+it('keeps the company name and segment for a company', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow([
         'customer_type' => 'company',
         'company_name' => 'Boramex',
@@ -89,10 +90,10 @@ it('keeps the company name and industry for a company', function () {
 
     expect($row['type'])->toBe('company')
         ->and($row['company_name'])->toBe('Boramex')
-        ->and($row['industry'])->toBe('Construction');
+        ->and($row['segment'])->toBe('Construction');
 });
 
-it('nulls the company name and industry for an individual', function () {
+it('nulls the company name and segment for an individual', function () {
     $row = (new LegacyExtract)->toSeedRow(extractRow([
         'customer_type' => 'individual',
         'company_name' => 'Jason',
@@ -101,7 +102,47 @@ it('nulls the company name and industry for an individual', function () {
 
     expect($row['type'])->toBe('individual')
         ->and($row['company_name'])->toBeNull()
-        ->and($row['industry'])->toBeNull();
+        ->and($row['segment'])->toBeNull();
+});
+
+it('folds a legacy segment spelling onto the case it names', function () {
+    $restaurant = (new LegacyExtract)->toSeedRow(extractRow([
+        'customer_type' => 'company',
+        'company_name' => 'Test Company',
+        'industry' => 'Restaurant',
+    ]));
+
+    $bakery = (new LegacyExtract)->toSeedRow(extractRow([
+        'customer_type' => 'company',
+        'company_name' => 'ASAI TREATS',
+        'industry' => 'BAKERIES',
+    ]));
+
+    expect($restaurant['segment'])->toBe(CustomerSegment::Restaurants->value)
+        ->and($bakery['segment'])->toBe(CustomerSegment::Bakery->value);
+});
+
+it('keeps a segment the menu does not name as it was typed', function () {
+    $row = (new LegacyExtract)->toSeedRow(extractRow([
+        'customer_type' => 'company',
+        'company_name' => 'Cosim',
+        'industry' => 'Cosim',
+    ]));
+
+    expect($row['segment'])->toBe('Cosim');
+});
+
+# The old book's typists put the customer *type* in this column. A person
+# buying in their own name is not in the "Individual" trade.
+it('drops a customer type somebody filed as a segment', function () {
+    $row = (new LegacyExtract)->toSeedRow(extractRow([
+        'customer_type' => 'company',
+        'company_name' => 'Mwangi Builders Ltd',
+        'industry' => 'INDIVIDUAL',
+    ]));
+
+    expect($row['type'])->toBe('company')
+        ->and($row['segment'])->toBeNull();
 });
 
 it('treats an unrecognised customer type as an individual', function () {
@@ -220,7 +261,7 @@ it('carries over nothing but the columns the customers table has', function () {
 
     expect(array_keys($row))->toBe([
         'legacy_id',
-        'type', 'name', 'company_name', 'industry', 'phone', 'email', 'id_number',
+        'type', 'name', 'company_name', 'segment', 'phone', 'email', 'id_number',
         'street_address', 'area', 'city', 'state', 'postal_code', 'country',
         'created_at', 'updated_at',
     ]);

@@ -27,7 +27,7 @@ class CustomerRequest extends FormRequest
         if ($this->input('type') === CustomerType::Individual->value) {
             $this->merge([
                 'company_name' => null,
-                'industry' => null,
+                'segment' => null,
             ]);
         }
     }
@@ -56,7 +56,7 @@ class CustomerRequest extends FormRequest
             # Business
             # -----------------------------------------------------------------
             'company_name' => [Rule::requiredIf($isCompany), 'nullable', 'string', 'max:160'],
-            'industry' => ['nullable', 'string', 'max:120'],
+            'segment' => ['nullable', 'string', 'max:120'],
 
             # -----------------------------------------------------------------
             # Address

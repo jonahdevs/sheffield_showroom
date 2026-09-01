@@ -1,7 +1,9 @@
 <?php
 
+use App\Data\VisitRowData;
 use App\Enums\CustomerType;
 use App\Enums\Permission;
+use App\Enums\VisitReport;
 use App\Exceptions\DocumentRenderingFailedException;
 use App\Exports\CustomerExport;
 use App\Exports\VisitExport;
@@ -13,6 +15,8 @@ use App\Services\Documents\TableDocumentService;
 use Illuminate\Http\UploadedFile;
 use Maatwebsite\Excel\Excel as ExcelWriter;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -94,6 +98,56 @@ it('exports the customers matching the search rather than the whole list', funct
         'customers-'.now()->toDateString().'.csv',
         fn (CustomerExport $export) => $export->query()->pluck('id')->all() === [$wanted->id],
     );
+});
+
+it('heads the trade column Segment and prints the label, not the stored value', function () {
+    $customer = Customer::factory()->create([
+        'type' => CustomerType::Company,
+        'segment' => 'coffee_shops',
+    ]);
+
+    $export = new CustomerExport(Customer::query()->whereKey($customer->id), 'csv');
+
+    expect($export->headings())->toBe([
+        'ID',
+        'Type',
+        'Name',
+        'Company',
+        'Segment',
+        'Phone',
+        'Email',
+        'ID number',
+        'Street address',
+        'Area',
+        'City',
+        'County',
+        'Postal code',
+        'Country',
+        'Visits',
+        'Last visit',
+    ])->and($export->map($customer->fresh())[4])->toBe('Coffee shops');
+});
+
+it('reads a segment back off its own sheet, label and typed alike', function () {
+    $staff = transferStaff([
+        Permission::CustomersViewAny,
+        Permission::CustomersCreate,
+        Permission::CustomersUpdate,
+        Permission::CustomersImport,
+    ]);
+
+    $file = csvUpload([
+        ['type', 'name', 'company', 'phone', 'segment'],
+        ['company', 'Peter Mwangi', 'Mwangi Builders Ltd', '020 271 1000', 'Coffee shops'],
+        ['company', 'Achieng Odhiambo', 'Boat Yard Ltd', '0722 000 111', 'Boat yards'],
+    ]);
+
+    $this->actingAs($staff)
+        ->post(route('admin.customers.import'), ['file' => $file])
+        ->assertRedirect(route('admin.customers.index'));
+
+    expect(Customer::query()->orderBy('id')->pluck('segment')->all())
+        ->toBe(['coffee_shops', 'Boat yards']);
 });
 
 it('refuses a customer export without customers.export', function () {
@@ -187,6 +241,7 @@ it('hands reception the front desk sheet rather than the full log', function () 
             'Visitor name',
             'Company',
             'Contact',
+            'Department',
             'Nature of visit',
             'Respondent',
         ],
@@ -457,4 +512,75 @@ it('refuses an import from somebody who may not write customers by hand', functi
         ->assertForbidden();
 
     expect(Customer::query()->count())->toBe(0);
+});
+
+# =========================================================================
+# Numeric-looking columns survive the trip into a spreadsheet
+# =========================================================================
+
+it('wraps the phone for CSV, where Excel would otherwise read it as a number', function () {
+    $customer = Customer::factory()->create([
+        'phone' => '+254101741785',
+        'id_number' => '01234567',
+        'postal_code' => '00100',
+    ]);
+
+    $row = (new CustomerExport(Customer::query()->whereKey($customer->id), 'csv'))
+        ->map($customer->fresh());
+
+    expect($row[5])->toBe('="+254101741785"')
+        ->and($row[7])->toBe('="01234567"')
+        ->and($row[12])->toBe('="00100"');
+});
+
+it('leaves the phone bare for xlsx, where the value binder keeps it text', function () {
+    $customer = Customer::factory()->create(['phone' => '+254101741785']);
+
+    $row = (new CustomerExport(Customer::query()->whereKey($customer->id), 'xlsx'))
+        ->map($customer->fresh());
+
+    expect($row[5])->toBe('+254101741785');
+});
+
+it('never wraps a value a spreadsheet would not coerce', function () {
+    $customer = Customer::factory()->create([
+        'name' => 'Achieng Odhiambo',
+        'phone' => '+254722000111',
+        'id_number' => null,
+    ]);
+
+    $row = (new CustomerExport(Customer::query()->whereKey($customer->id), 'csv'))
+        ->map($customer->fresh());
+
+    expect($row[2])->toBe('Achieng Odhiambo')
+        ->and($row[7])->toBe('');
+});
+
+it('binds a phone as a string cell rather than letting it become a number', function () {
+    $cell = (new Spreadsheet)->getActiveSheet()->getCell('A1');
+
+    (new CustomerExport(Customer::query(), 'xlsx'))->bindValue($cell, '+254101741785');
+
+    expect($cell->getDataType())->toBe(DataType::TYPE_STRING)
+        ->and($cell->getValue())->toBe('+254101741785');
+});
+
+# The CSV writer pre-calculates formulas, so a wrapper bound as one would be
+# unwrapped straight back to the bare number this is meant to prevent.
+it('binds the CSV wrapper as a string rather than a formula', function () {
+    $cell = (new Spreadsheet)->getActiveSheet()->getCell('A1');
+
+    (new CustomerExport(Customer::query(), 'csv'))->bindValue($cell, '="+254101741785"');
+
+    expect($cell->getDataType())->toBe(DataType::TYPE_STRING);
+});
+
+it('wraps the phone on the visits sheet too', function () {
+    $customer = Customer::factory()->create(['phone' => '+254101741785']);
+    $visit = Visit::factory()->for($customer)->create();
+
+    $row = (new VisitExport(Visit::query()->whereKey($visit->id), VisitReport::Full, 'csv'))
+        ->map($visit->fresh()->load(VisitRowData::RELATIONS));
+
+    expect($row)->toContain('="+254101741785"');
 });

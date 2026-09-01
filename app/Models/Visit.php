@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\CustomerSource;
-use App\Enums\VisitPurpose;
 use App\Policies\VisitPolicy;
 use Carbon\CarbonImmutable;
 use Database\Factories\VisitFactory;
@@ -24,8 +22,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $customer_id
  * @property string|null $respondent
  * @property CarbonImmutable $visited_at
- * @property VisitPurpose $purpose
- * @property CustomerSource $source
+ * @property string $purpose
+ * @property string $source
+ * @property string|null $referred_by
+ * @property string|null $department
  * @property CarbonImmutable|null $expected_follow_up_on
  * @property string|null $notes
  * @property int|null $created_by
@@ -45,6 +45,8 @@ class Visit extends Model
         'visited_at',
         'purpose',
         'source',
+        'referred_by',
+        'department',
         'expected_follow_up_on',
         'notes',
     ];
@@ -53,8 +55,6 @@ class Visit extends Model
     {
         return [
             'visited_at' => 'immutable_datetime',
-            'purpose' => VisitPurpose::class,
-            'source' => CustomerSource::class,
             'expected_follow_up_on' => 'immutable_date',
         ];
     }
@@ -117,8 +117,17 @@ class Visit extends Model
      * @param  Builder<static>  $query
      */
     #[Scope]
-    protected function forPurpose(Builder $query, VisitPurpose $purpose): void
+    protected function forPurpose(Builder $query, string $purpose): void
     {
         $query->where('purpose', $purpose);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    #[Scope]
+    protected function forDepartment(Builder $query, string $department): void
+    {
+        $query->where('department', $department);
     }
 }

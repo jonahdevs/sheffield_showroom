@@ -7,7 +7,6 @@ namespace App\Http\Requests\Admin;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
-use App\Enums\VisitPurpose;
 use App\Models\Customer;
 use App\Models\Visit;
 use Carbon\CarbonImmutable;
@@ -48,13 +47,25 @@ class VisitRequest extends FormRequest
             'id_number' => ['nullable', 'string', 'max:30'],
 
             'company_name' => [Rule::requiredIf($isCompany), 'nullable', 'string', 'max:160'],
-            'industry' => ['nullable', 'string', 'max:120'],
+            'segment' => ['nullable', 'string', 'max:120'],
 
             'visited_on' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'visited_time' => ['required', 'date_format:H:i'],
 
-            'purpose' => ['required', Rule::enum(VisitPurpose::class)],
-            'source' => ['required', Rule::enum(CustomerSource::class)],
+            'purpose' => ['required', 'string', 'max:120'],
+            'source' => ['required', 'string', 'max:120'],
+            'department' => ['required', 'string', 'max:120'],
+
+            # A referral is still filed under "Referral" - this names who made
+            # it, so it is required there and refused everywhere else rather
+            # than folded into `source` as free text.
+            'referred_by' => [
+                Rule::requiredIf(fn (): bool => $this->isReferral()),
+                Rule::prohibitedIf(fn (): bool => ! $this->isReferral()),
+                'nullable',
+                'string',
+                'max:120',
+            ],
 
             'respondent' => ['required', 'string', 'max:120'],
 
@@ -121,7 +132,7 @@ class VisitRequest extends FormRequest
         $business = $type === CustomerType::Company
             ? [
                 'company_name' => $this->validated('company_name'),
-                'industry' => $this->validated('industry'),
+                'segment' => $this->validated('segment'),
             ]
             : [];
 
@@ -172,13 +183,27 @@ class VisitRequest extends FormRequest
      */
     public function visitAttributes(): array
     {
-        return $this->safe()->only([
-            'purpose',
-            'source',
-            'respondent',
-            'expected_follow_up_on',
-            'notes',
-        ]);
+        return [
+            ...$this->safe()->only([
+                'purpose',
+                'source',
+                'department',
+                'respondent',
+                'expected_follow_up_on',
+                'notes',
+            ]),
+            # Written unconditionally: `prohibited` leaves the key out of
+            # `validated()`, so a visit moved off Referral would otherwise keep
+            # the name of whoever referred it.
+            'referred_by' => $this->isReferral()
+                ? $this->validated('referred_by')
+                : null,
+        ];
+    }
+
+    private function isReferral(): bool
+    {
+        return $this->input('source') === CustomerSource::Referral->value;
     }
 
     /**
@@ -195,6 +220,7 @@ class VisitRequest extends FormRequest
             'visited_on' => 'visit date',
             'visited_time' => 'visit time',
             'expected_follow_up_on' => 'expected follow-up',
+            'referred_by' => 'referrer',
             'products' => 'products viewed',
             'products.*.quantity' => 'quantity',
             'products.*.interest_level' => 'interest level',
@@ -211,6 +237,8 @@ class VisitRequest extends FormRequest
             'phone.required' => 'A phone number is what tells one customer from another.',
             'phone.regex' => 'Use digits, spaces, brackets, + and - only.',
             'respondent.required' => 'Say who took the visit.',
+            'referred_by.required' => 'Say who referred them.',
+            'referred_by.prohibited' => 'Only a referral names who sent them.',
             'visited_on.before_or_equal' => 'A visit cannot be logged for a future date.',
             'expected_follow_up_on.after_or_equal' => 'The follow-up cannot be before the visit.',
         ];

@@ -12,10 +12,8 @@ enum VisitPurpose: string
     case NewEnquiry = 'new_enquiry';
     case Quotation = 'quotation';
     case ProductViewing = 'product_viewing';
-    case FollowUp = 'follow_up';
     case Order = 'order';
     case AfterSales = 'after_sales';
-    case Complaint = 'complaint';
     case Collection = 'collection';
     case Other = 'other';
 
@@ -25,13 +23,21 @@ enum VisitPurpose: string
             self::NewEnquiry => 'New enquiry',
             self::Quotation => 'Quotation request',
             self::ProductViewing => 'Product viewing / demo',
-            self::FollowUp => 'Follow-up',
             self::Order => 'Placing an order',
             self::AfterSales => 'After-sales / service',
-            self::Complaint => 'Complaint',
             self::Collection => 'Collection / delivery',
             self::Other => 'Other',
         };
+    }
+
+    # `visits.purpose` is free text: the cases below are the menu the form
+    # offers, not a closed set, so anything typed under Other is stored as
+    # written and read back as written.
+    public static function readable(string|self $value): string
+    {
+        return $value instanceof self
+            ? $value->label()
+            : self::tryFrom($value)?->label() ?? $value;
     }
 
     /**

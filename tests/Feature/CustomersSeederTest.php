@@ -74,7 +74,8 @@ it('imports a company with its company columns filled in', function () {
         'type' => 'company',
         'name' => 'ISABELLA MUTHONI',
         'company_name' => 'ASAI TREATS',
-        'industry' => 'BAKERIES',
+        # `BAKERIES` in the extract, folded onto the case it names.
+        'segment' => 'bakery',
         # Written `0746211877` in the extract - see `LegacyExtract::phone`.
         'phone' => '+254746211877',
         'email' => 'asaitreatske@gmail.com',
@@ -91,7 +92,7 @@ it('imports an individual with no company columns', function () {
 
     expect($individual)->not->toBeEmpty()
         ->and($individual->pluck('company_name')->filter())->toBeEmpty()
-        ->and($individual->pluck('industry')->filter())->toBeEmpty();
+        ->and($individual->pluck('segment')->filter())->toBeEmpty();
 });
 
 it('imports nobody without a phone number', function () {

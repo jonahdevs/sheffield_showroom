@@ -204,3 +204,43 @@ it('counts the rows that record a customer and no visit', function () {
     expect($result['rows'])->toHaveCount(1)
         ->and($result['unlogged'])->toBe(1);
 });
+
+# The department the note was filed against is kept now rather than thrown away
+# once `departmentPurpose()` has read a purpose out of it.
+it('keeps the desk a note was filed against', function (string $note, ?string $department) {
+    expect(visitLog()->departmentFor($note))->toBe($department);
+})->with([
+    'showroom' => ['Showroom Visit', 'showroom_sales'],
+    'cold room' => ['Cold room- Coldroom solutions', 'showroom_sales'],
+    'laundry' => ['Laundry- Calender ironer', 'showroom_sales'],
+    'sales' => ["Sales\nMeeting", 'showroom_sales'],
+
+    'accounts' => ["Accounts\nDelivery of invoices\nRachael", 'finance'],
+    'cheque before collection' => ['Cheque collection-Accounts', 'finance'],
+    'logistics' => ['Logistics-Collection of meat mincer', 'logistics'],
+
+    'service' => ['Service- fryer repair', 'service'],
+    'installation' => ["Installation\nDucting", 'installation'],
+
+    'horeca' => ["HORECA\nDelivery", 'horeca'],
+    'purchasing' => ["Purchasing\nDelivery of samples", 'stores'],
+    'imports before stores' => ['Import stores- Delivery of spares', 'imports'],
+
+    'hr' => ['HR- Delivery of documents', 'hr'],
+    'production' => ["Production\nInspection", 'production'],
+    'marketing' => ['Marketing-Delivery of invitation for expo', 'marketing'],
+    'design' => ["Design\nMeeting", 'design'],
+
+    'a desk the menu does not name' => ['Wickerwork', 'Wickerwork'],
+    'admin, which is not a case' => ['Admin- Delivery of toner', 'Admin'],
+    'nothing in front of the note' => ['-Inquiry on ovens', null],
+]);
+
+it('writes the department onto the seed row alongside the purpose', function () {
+    $row = visitLog()->toSeedRow(loggedRow(['notes' => 'Service- fryer repair']));
+
+    expect($row)
+        ->department->toBe('service')
+        ->purpose->toBe('after_sales')
+        ->referred_by->toBeNull();
+});

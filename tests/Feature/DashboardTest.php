@@ -170,7 +170,7 @@ it('counts the people behind the visits and how many were new to the window', fu
 it('divides the window by purpose and says what share each wedge is', function () {
     visitOn(1, ['purpose' => VisitPurpose::Quotation]);
     visitOn(2, ['purpose' => VisitPurpose::Quotation]);
-    visitOn(3, ['purpose' => VisitPurpose::Complaint]);
+    visitOn(3, ['purpose' => VisitPurpose::AfterSales]);
 
     $this->actingAs(dashboardManager())
         ->get(route('dashboard'))
@@ -180,13 +180,13 @@ it('divides the window by purpose and says what share each wedge is', function (
             ->where('purposes.0.value', VisitPurpose::Quotation->value)
             ->where('purposes.0.count', 2)
             ->where('purposes.0.share', 66.7)
-            ->where('purposes.1.value', VisitPurpose::Complaint->value));
+            ->where('purposes.1.value', VisitPurpose::AfterSales->value));
 });
 
 it('divides the window by where the customer came from', function () {
-    visitOn(1, ['source' => CustomerSource::WalkIn]);
-    visitOn(2, ['source' => CustomerSource::WalkIn]);
-    visitOn(3, ['source' => CustomerSource::Website]);
+    visitOn(1, ['source' => CustomerSource::WalkIn->value]);
+    visitOn(2, ['source' => CustomerSource::WalkIn->value]);
+    visitOn(3, ['source' => CustomerSource::Website->value]);
 
     $this->actingAs(dashboardManager())
         ->get(route('dashboard'))

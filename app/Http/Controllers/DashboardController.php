@@ -244,16 +244,23 @@ class DashboardController extends Controller
 
         $slices = [];
 
-        foreach ($enum::cases() as $case) {
-            $count = (int) ($counts[$case->value] ?? 0);
+        # Walks the buckets the query actually returned rather than the enum's
+        # cases: `visits.purpose` is free text, so a reason somebody typed has
+        # no case to match and iterating the enum would drop it from the chart
+        # while still counting it in the total the shares divide by.
+        foreach ($counts as $bucket => $count) {
+            $bucket = (string) $bucket;
+            $count = (int) $count;
 
-            if ($count === 0) {
+            if ($bucket === '' || $count === 0) {
                 continue;
             }
 
+            $case = $enum::tryFrom($bucket);
+
             $slices[] = new DashboardSliceData(
-                value: $case->value,
-                label: $case->label(),
+                value: $bucket,
+                label: $case?->label() ?? $bucket,
                 count: $count,
                 share: round(($count / $total) * 100, 1),
             );

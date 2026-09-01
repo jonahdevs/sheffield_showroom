@@ -32,7 +32,7 @@ declare namespace App {
             email: string | null;
             id_number: string | null;
             company_name: string | null;
-            industry: string | null;
+            segment: string | null;
             country: string;
             state: string | null;
             city: string | null;
@@ -51,7 +51,7 @@ declare namespace App {
             type: App.Enums.CustomerType;
             name: string | null;
             company_name: string | null;
-            industry: string | null;
+            segment: string | null;
             email: string | null;
             id_number: string | null;
         };
@@ -327,11 +327,13 @@ declare namespace App {
             email: string | null;
             id_number: string | null;
             company_name: string | null;
-            industry: string | null;
+            segment: string | null;
             visited_on: string;
             visited_time: string;
-            purpose: App.Enums.VisitPurpose;
-            source: App.Enums.CustomerSource;
+            purpose: string;
+            source: string;
+            referred_by: string | null;
+            department: string | null;
             respondent: string | null;
             expected_follow_up_on: string | null;
             notes: string | null;
@@ -344,8 +346,12 @@ declare namespace App {
             customer_type: App.Enums.CustomerType;
             customer_company: string | null;
             customer_phone: string | null;
-            purpose: App.Enums.VisitPurpose;
+            purpose: string;
             purpose_label: string;
+            source: string;
+            source_label: string;
+            department: string | null;
+            department_label: string | null;
             visited_on: string;
             visited_time: string;
             products: string[];
@@ -361,15 +367,18 @@ declare namespace App {
             | 'paused'
             | 'completed'
             | 'cancelled';
-        export type CustomerSource =
-            | 'walk_in'
-            | 'referral'
-            | 'website'
-            | 'social_media'
-            | 'repeat'
-            | 'advertisement'
-            | 'sales_call'
+        export type CustomerSegment =
+            | 'hotels'
+            | 'restaurants'
+            | 'healthcare'
+            | 'coffee_shops'
+            | 'bakery'
+            | 'schools'
+            | 'ngo'
+            | 'corporate'
             | 'other';
+        export type CustomerSource =
+            'walk_in' | 'referral' | 'website' | 'social_media' | 'other';
         export type CustomerType = 'individual' | 'company';
         export type InterestLevel = 'high' | 'medium' | 'low';
         export type Permission =
@@ -430,13 +439,27 @@ declare namespace App {
         export type RewardValueUnit = 'percentage' | 'currency';
         export type ShuffleSessionStatus =
             'pending' | 'shuffled' | 'expired' | 'cancelled';
+        export type VisitDepartment =
+            | 'finance'
+            | 'showroom_sales'
+            | 'marketing'
+            | 'hr'
+            | 'crm'
+            | 'design'
+            | 'imports'
+            | 'logistics'
+            | 'horeca'
+            | 'production'
+            | 'stores'
+            | 'service'
+            | 'installation'
+            | 'other';
         export type VisitPurpose =
             | 'new_enquiry'
             | 'quotation'
             | 'product_viewing'
-            | 'follow_up'
             | 'order'
-            | 'complaint'
+            | 'after_sales'
             | 'collection'
             | 'other';
         export type VisitReport = 'full' | 'reception';

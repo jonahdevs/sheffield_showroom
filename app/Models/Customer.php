@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CustomerType $type
  * @property string|null $name
  * @property string|null $company_name
- * @property string|null $industry
+ * @property string|null $segment
  * @property string $phone
  * @property string|null $email
  * @property string|null $id_number
@@ -49,7 +49,7 @@ class Customer extends Model
         'type',
         'name',
         'company_name',
-        'industry',
+        'segment',
         'phone',
         'email',
         'id_number',

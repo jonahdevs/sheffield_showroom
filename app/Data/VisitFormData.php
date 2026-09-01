@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data;
 
-use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
-use App\Enums\VisitPurpose;
 use App\Models\Visit;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
@@ -28,11 +26,13 @@ class VisitFormData extends Data
         public ?string $email,
         public ?string $id_number,
         public ?string $company_name,
-        public ?string $industry,
+        public ?string $segment,
         public string $visited_on,
         public string $visited_time,
-        public VisitPurpose $purpose,
-        public CustomerSource $source,
+        public string $purpose,
+        public string $source,
+        public ?string $referred_by,
+        public ?string $department,
         public ?string $respondent,
         public ?string $expected_follow_up_on,
         public ?string $notes,
@@ -55,11 +55,13 @@ class VisitFormData extends Data
             email: $customer->email,
             id_number: $customer->id_number,
             company_name: $customer->company_name,
-            industry: $customer->industry,
+            segment: $customer->segment,
             visited_on: $visit->visited_at->format('Y-m-d'),
             visited_time: $visit->visited_at->format('H:i'),
             purpose: $visit->purpose,
             source: $visit->source,
+            referred_by: $visit->referred_by,
+            department: $visit->department,
             respondent: $visit->respondent,
             expected_follow_up_on: $visit->expected_follow_up_on?->format('Y-m-d'),
             notes: $visit->notes,

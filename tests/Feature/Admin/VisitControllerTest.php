@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
 use App\Enums\Permission;
+use App\Enums\VisitDepartment;
 use App\Enums\VisitPurpose;
 use App\Exports\VisitExport;
 use App\Models\Customer;
@@ -110,7 +112,9 @@ function visitFields(): array
         'visited_on' => now()->subDay()->format('Y-m-d'),
         'visited_time' => '14:30',
         'purpose' => VisitPurpose::Quotation->value,
+        'department' => VisitDepartment::ShowroomSales->value,
         'source' => CustomerSource::Referral->value,
+        'referred_by' => 'Mary Wanjiru',
         'notes' => 'Coming back on Friday.',
         'products' => [],
     ];
@@ -327,8 +331,8 @@ it('logs a visit against the person who recorded it', function () {
 
     expect($visit->customer_id)->toBe($payload['customer_id'])
         ->and($visit->created_by)->toBe($user->id)
-        ->and($visit->purpose)->toBe(VisitPurpose::Quotation)
-        ->and($visit->source)->toBe(CustomerSource::Referral)
+        ->and($visit->purpose)->toBe(VisitPurpose::Quotation->value)
+        ->and($visit->source)->toBe(CustomerSource::Referral->value)
         ->and($visit->visited_at->format('Y-m-d H:i'))
         ->toBe($payload['visited_on'].' 14:30');
 });
@@ -540,11 +544,11 @@ it('finds a visit by the customer behind it', function () {
 });
 
 it('narrows the list to one purpose', function () {
-    Visit::factory()->count(2)->for_purpose(VisitPurpose::Complaint)->create();
+    Visit::factory()->count(2)->for_purpose(VisitPurpose::AfterSales)->create();
     Visit::factory()->count(3)->for_purpose(VisitPurpose::Order)->create();
 
     $this->actingAs(visitManager())
-        ->get(route('admin.visits.index', ['purpose' => VisitPurpose::Complaint->value]))
+        ->get(route('admin.visits.index', ['purpose' => VisitPurpose::AfterSales->value]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('visits.total', 2));
 });
@@ -760,7 +764,7 @@ it('records both the person and the company for a company visit', function () {
         'customer_type' => CustomerType::Company->value,
         'customer_name' => 'Peter Mwangi',
         'company_name' => 'Mwangi Builders Ltd',
-        'industry' => 'Construction',
+        'segment' => CustomerSegment::Corporate->value,
     ]));
 
     $customer = Customer::query()->sole();
@@ -768,8 +772,19 @@ it('records both the person and the company for a company visit', function () {
     expect($customer->type)->toBe(CustomerType::Company)
         ->and($customer->name)->toBe('Peter Mwangi')
         ->and($customer->company_name)->toBe('Mwangi Builders Ltd')
-        ->and($customer->industry)->toBe('Construction')
+        ->and($customer->segment)->toBe(CustomerSegment::Corporate->value)
         ->and($customer->displayName())->toBe('Mwangi Builders Ltd');
+});
+
+it('stores a segment typed under Other on the visit form as written', function () {
+    $this->actingAs(visitManager())->post(route('admin.visits.store'), newCustomerPayload([
+        'customer_type' => CustomerType::Company->value,
+        'customer_name' => 'Peter Mwangi',
+        'company_name' => 'Boat Yard Ltd',
+        'segment' => 'Boat yards',
+    ]));
+
+    expect(Customer::query()->sole()->segment)->toBe('Boat yards');
 });
 
 it('refuses a typed-in customer with no phone number', function () {
@@ -899,4 +914,168 @@ it('keeps a visit with no follow-up planned', function () {
     ]));
 
     expect(Visit::query()->sole()->expected_follow_up_on)->toBeNull();
+});
+
+# =========================================================================
+# Nature of visit is free text, and the menu is only a suggestion
+# =========================================================================
+
+it('stores a typed nature of visit exactly as it was written', function () {
+    $user = visitStaff([Permission::VisitsViewAny, Permission::VisitsCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.visits.store'), visitPayload(['purpose' => 'Warranty claim']))
+        ->assertRedirect();
+
+    expect(Visit::query()->sole()->purpose)->toBe('Warranty claim');
+});
+
+it('reads a typed nature of visit back as written and a known one by its label', function () {
+    expect(VisitPurpose::readable('Warranty claim'))->toBe('Warranty claim')
+        ->and(VisitPurpose::readable('after_sales'))->toBe('After-sales / service');
+});
+
+it('filters the log by a typed nature of visit', function () {
+    $user = visitStaff([Permission::VisitsViewAny]);
+
+    Visit::factory()->create(['purpose' => 'Warranty claim']);
+    Visit::factory()->for_purpose(VisitPurpose::Collection)->create();
+
+    $this->actingAs($user)
+        ->get(route('admin.visits.index', ['purpose' => 'Warranty claim']))
+        ->assertInertia(fn ($page) => $page->has('visits.data', 1));
+});
+
+it('no longer offers the two purposes nobody ever used', function () {
+    expect(VisitPurpose::values())
+        ->not->toContain('follow_up')
+        ->not->toContain('complaint');
+});
+
+# =========================================================================
+# Source is free text too, and a referral names who made it
+# =========================================================================
+
+it('stores a typed source exactly as it was written', function () {
+    $user = visitStaff([Permission::VisitsViewAny, Permission::VisitsCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.visits.store'), visitPayload([
+            'source' => 'Trade fair stand',
+            'referred_by' => null,
+        ]))
+        ->assertRedirect();
+
+    expect(Visit::query()->sole()->source)->toBe('Trade fair stand');
+});
+
+it('reads a typed source back as written and a known one by its label', function () {
+    expect(CustomerSource::readable('Trade fair stand'))->toBe('Trade fair stand')
+        ->and(CustomerSource::readable('social_media'))->toBe('Social media');
+});
+
+it('no longer offers the three sources nobody ever used', function () {
+    expect(CustomerSource::values())
+        ->not->toContain('repeat')
+        ->not->toContain('advertisement')
+        ->not->toContain('sales_call');
+});
+
+it('refuses a referral that does not say who made it', function () {
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), visitPayload([
+            'source' => CustomerSource::Referral->value,
+            'referred_by' => '',
+        ]))
+        ->assertSessionHasErrors('referred_by');
+
+    expect(Visit::query()->count())->toBe(0);
+});
+
+it('refuses a referrer against a source that is not a referral', function () {
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), visitPayload([
+            'source' => CustomerSource::WalkIn->value,
+            'referred_by' => 'Mary Wanjiru',
+        ]))
+        ->assertSessionHasErrors('referred_by');
+
+    expect(Visit::query()->count())->toBe(0);
+});
+
+# `prohibited` leaves the key out of `validated()`, so nothing would clear the
+# column if `visitAttributes()` did not write it unconditionally.
+it('drops the referrer when the visit moves off a referral', function () {
+    $visit = Visit::factory()->referredBy('Mary Wanjiru')->create();
+
+    $this->actingAs(visitManager())
+        ->patch(route('admin.visits.update', $visit), visitPayload([
+            'source' => CustomerSource::WalkIn->value,
+            'referred_by' => '',
+        ]))
+        ->assertRedirect(route('admin.visits.index'));
+
+    expect($visit->fresh()->referred_by)->toBeNull();
+});
+
+# =========================================================================
+# Department reaches the form, the list, the filter and the download
+# =========================================================================
+
+it('stores a typed department exactly as it was written', function () {
+    $user = visitStaff([Permission::VisitsViewAny, Permission::VisitsCreate]);
+
+    $this->actingAs($user)
+        ->post(route('admin.visits.store'), visitPayload(['department' => 'Fabrication']))
+        ->assertRedirect();
+
+    expect(Visit::query()->sole()->department)->toBe('Fabrication');
+});
+
+it('reads a typed department back as written and a known one by its label', function () {
+    expect(VisitDepartment::readable('Fabrication'))->toBe('Fabrication')
+        ->and(VisitDepartment::readable('showroom_sales'))->toBe('Showroom/Sales');
+});
+
+it('refuses a visit that names no department', function () {
+    $payload = visitPayload();
+    unset($payload['department']);
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), $payload)
+        ->assertSessionHasErrors('department');
+
+    expect(Visit::query()->count())->toBe(0);
+});
+
+it('narrows the list to one department', function () {
+    Visit::factory()->count(2)->for_department(VisitDepartment::Finance)->create();
+    Visit::factory()->count(3)->for_department(VisitDepartment::Logistics)->create();
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['department' => VisitDepartment::Finance->value]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('visits.total', 2));
+});
+
+it('filters the log by a typed department', function () {
+    Visit::factory()->create(['department' => 'Fabrication']);
+    Visit::factory()->for_department(VisitDepartment::Stores)->create();
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['department' => 'Fabrication']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('visits.data', 1));
+});
+
+it('offers the list and the form the departments to choose between', function () {
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('departments', count(VisitDepartment::cases())));
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.create'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('departments', count(VisitDepartment::cases())));
 });
