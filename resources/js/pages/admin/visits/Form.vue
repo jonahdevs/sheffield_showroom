@@ -258,6 +258,22 @@ const canSubmit = computed(() => {
 });
 
 function submit() {
+    /*
+      The picker's rows are `ProductOptionData`, keyed by `value`, while
+      `VisitRequest` validates `products.*.id`. Posting the rows as they stand
+      fails with "The products.0.id field is required" against a product that
+      is plainly selected, so the id is renamed here and the display-only
+      fields are dropped rather than sent to be discarded by `validated()`.
+    */
+    form.transform((data) => ({
+        ...data,
+        products: data.products.map((product) => ({
+            id: product.value,
+            quantity: product.quantity,
+            interest_level: product.interest_level,
+        })),
+    }));
+
     if (props.visit) {
         form.patch(update(props.visit.id).url);
 
