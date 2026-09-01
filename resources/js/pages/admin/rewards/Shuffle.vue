@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { Ban, Dices, RefreshCw } from '@lucide/vue';
+import { Ban, Dices, RefreshCw, Share2 } from '@lucide/vue';
 import QRCode from 'qrcode';
 import { onMounted, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -51,6 +52,43 @@ onMounted(drawCode);
 /* `v-if` destroys the canvas when the turn closes, so the ref has to be redrawn
    rather than reused if the session becomes shuffleable again. */
 watch(() => props.session.is_shuffleable, drawCode);
+
+/*
+  The device's own share sheet where there is one, clipboard everywhere else.
+  Staff reach for whichever app the customer already uses, so offering a fixed
+  list of channels here would be guessing at that.
+
+  A dismissed sheet rejects with `AbortError`; that is somebody changing their
+  mind, not a failure, so nothing is said about it.
+*/
+async function shareLink() {
+    const link = props.session.url;
+
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'Your shuffle',
+                text: `${props.session.customer_name}, here is your shuffle for ${props.campaign_name}.`,
+                url: link,
+            });
+
+            return;
+        } catch (error) {
+            if ((error as DOMException)?.name === 'AbortError') {
+                return;
+            }
+        }
+    }
+
+    /* Refused outside a secure context and in a few browsers. The address is
+       printed above and selectable, so a failure here loses nothing. */
+    try {
+        await navigator.clipboard.writeText(link);
+        toast.success('Link copied.');
+    } catch {
+        toast.error('Copy the address shown above instead.');
+    }
+}
 
 async function cancelShuffle() {
     if (
@@ -188,6 +226,16 @@ defineOptions({
             v-if="props.session.is_shuffleable"
             class="flex flex-wrap items-center justify-end gap-3"
         >
+            <Button
+                variant="outline"
+                size="icon"
+                aria-label="Share this shuffle with the customer"
+                data-test="share-shuffle"
+                @click="shareLink"
+            >
+                <Share2 />
+            </Button>
+
             <Button
                 v-if="props.can.cancel"
                 variant="outline"
