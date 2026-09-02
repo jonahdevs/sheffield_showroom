@@ -14,6 +14,7 @@ enum VisitDepartment: string
     case Marketing = 'marketing';
     case Hr = 'hr';
     case Crm = 'crm';
+    case It = 'it';
     case Design = 'design';
     case Imports = 'imports';
     case Logistics = 'logistics';
@@ -32,6 +33,7 @@ enum VisitDepartment: string
             self::Marketing => 'Marketing',
             self::Hr => 'HR',
             self::Crm => 'CRM',
+            self::It => 'IT',
             self::Design => 'Design',
             self::Imports => 'Imports',
             self::Logistics => 'Logistics',

@@ -447,6 +447,7 @@ declare namespace App {
             | 'marketing'
             | 'hr'
             | 'crm'
+            | 'it'
             | 'design'
             | 'imports'
             | 'logistics'
@@ -463,6 +464,7 @@ declare namespace App {
             | 'order'
             | 'after_sales'
             | 'collection'
+            | 'delivery'
             | 'other';
         export type VisitReport = 'full' | 'reception';
     }

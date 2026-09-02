@@ -14,7 +14,11 @@ enum VisitPurpose: string
     case ProductViewing = 'product_viewing';
     case Order = 'order';
     case AfterSales = 'after_sales';
+    # Two desks, two errands: goods leaving the yard with the customer is the
+    # logistics window, and goods going out to them is a run somebody schedules.
+    # Rows written before they were told apart still read 'collection'.
     case Collection = 'collection';
+    case Delivery = 'delivery';
     case Other = 'other';
 
     public function label(): string
@@ -25,7 +29,8 @@ enum VisitPurpose: string
             self::ProductViewing => 'Product viewing / demo',
             self::Order => 'Placing an order',
             self::AfterSales => 'After-sales / service',
-            self::Collection => 'Collection / delivery',
+            self::Collection => 'Collection',
+            self::Delivery => 'Delivery',
             self::Other => 'Other',
         };
     }

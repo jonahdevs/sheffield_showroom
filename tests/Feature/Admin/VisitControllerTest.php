@@ -946,6 +946,23 @@ it('filters the log by a typed nature of visit', function () {
         ->assertInertia(fn ($page) => $page->has('visits.data', 1));
 });
 
+it('offers the IT desk, spelled the way it is written', function () {
+    expect(VisitDepartment::values())->toContain('it')
+        ->and(VisitDepartment::It->label())->toBe('IT')
+        ->and(VisitDepartment::readable('it'))->toBe('IT');
+});
+
+it('offers collection and delivery as two separate errands', function () {
+    expect(VisitPurpose::values())
+        ->toContain('collection')
+        ->toContain('delivery')
+        ->and(VisitPurpose::Collection->label())->toBe('Collection')
+        ->and(VisitPurpose::Delivery->label())->toBe('Delivery')
+        # Rows written while the two shared one option keep their value and
+        # still read back - the column is free text, so nothing was migrated.
+        ->and(VisitPurpose::readable('collection'))->toBe('Collection');
+});
+
 it('no longer offers the two purposes nobody ever used', function () {
     expect(VisitPurpose::values())
         ->not->toContain('follow_up')
