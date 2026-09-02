@@ -91,11 +91,20 @@ class RewardPoolService
         });
     }
 
-    private function writeUnits(
+    /**
+     * One attachment's units, and only its own. The way to load a reward added to a
+     * campaign that is already published - `generate()` would write a second pool
+     * for every attachment already standing.
+     *
+     * @return int the number of units written
+     */
+    public function writeUnits(
         RewardCampaign $campaign,
         CampaignReward $reward,
-        CarbonImmutable $now,
+        ?CarbonImmutable $now = null,
     ): int {
+        $now ??= CarbonImmutable::now();
+
         $remaining = $reward->quantity;
 
         while ($remaining > 0) {

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\PoolEntryStatus;
 use App\Models\Reward;
 use App\Models\RewardCampaign;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -49,27 +51,28 @@ class RewardCampaignRequest extends FormRequest
             'minimum_purchase_amount' => ['nullable', 'decimal:0,2', 'min:0', 'max:99999999.99'],
         ];
 
-        if ($this->editsRewards()) {
-            $rules['rewards'] = ['present', 'array', 'max:20'];
+        $rules['rewards'] = ['present', 'array', 'max:20'];
 
-            $rules['rewards.*.reward_id'] = [
-                'required',
-                'integer',
-                Rule::exists('rewards', 'id'),
-            ];
+        $rules['rewards.*.reward_id'] = [
+            'required',
+            'integer',
+            Rule::exists('rewards', 'id'),
+        ];
 
-            $rules['rewards.*.quantity'] = ['required', 'integer', 'min:1', 'max:100000'];
+        # Still required after publication, where it is read only for a reward
+        # being added. A kept attachment's quantity is inventory and the
+        # incoming number is ignored - see `writeRewards`.
+        $rules['rewards.*.quantity'] = ['required', 'integer', 'min:1', 'max:100000'];
 
-            $rules['rewards.*.validity_days'] = ['nullable', 'integer', 'min:1', 'max:3650'];
+        $rules['rewards.*.validity_days'] = ['nullable', 'integer', 'min:1', 'max:3650'];
 
-            # Absent or empty is the common case: the reward qualifies against
-            # any purchase.
-            $rules['rewards.*.qualifying_product_ids'] = ['sometimes', 'array', 'max:50'];
-            $rules['rewards.*.qualifying_product_ids.*'] = [
-                'integer',
-                Rule::exists('products', 'id'),
-            ];
-        }
+        # Absent or empty is the common case: the reward qualifies against
+        # any purchase.
+        $rules['rewards.*.qualifying_product_ids'] = ['sometimes', 'array', 'max:50'];
+        $rules['rewards.*.qualifying_product_ids.*'] = [
+            'integer',
+            Rule::exists('products', 'id'),
+        ];
 
         return $rules;
     }
@@ -81,7 +84,7 @@ class RewardCampaignRequest extends FormRequest
     {
         return [
             function (Validator $validator) {
-                if (! $this->editsRewards() || $validator->errors()->has('rewards')) {
+                if ($validator->errors()->has('rewards')) {
                     return;
                 }
 
@@ -96,6 +99,7 @@ class RewardCampaignRequest extends FormRequest
 
                 $this->refuseRepeatedRewards($validator);
                 $this->refuseRetiredRewards($validator);
+                $this->refuseRemovingWonRewards($validator);
             },
         ];
     }
@@ -160,11 +164,41 @@ class RewardCampaignRequest extends FormRequest
         }
     }
 
-    # Drafts only. Once published the pool is written and the quantities are
-    # inventory, so a `rewards` key is a stale form - dropped, not refused.
-    public function editsRewards(): bool
+    /**
+     * An attachment may be taken out of a campaign at any time - the units it
+     * loses are inventory nobody holds. One with a claimed unit may never be:
+     * a `shuffle_results` row points at that unit, so removing the attachment
+     * would erase somebody's win. `reward_pool_entries` is `restrictOnDelete`
+     * from the results, so the database would refuse it anyway - caught here
+     * so the reward can be named instead of throwing.
+     */
+    private function refuseRemovingWonRewards(Validator $validator): void
     {
-        return ! ($this->subject()?->status->isPublished() ?? false);
+        $campaign = $this->subject();
+
+        if ($campaign === null) {
+            return;
+        }
+
+        $incoming = array_map('intval', array_filter(array_column($this->rewards(), 'reward_id')));
+
+        $won = $campaign->rewards()
+            ->with('reward.product')
+            ->whereNotIn('reward_id', $incoming)
+            ->whereHas(
+                'poolEntries',
+                fn (Builder $entries) => $entries->where('status', PoolEntryStatus::Claimed),
+            )
+            ->get();
+
+        foreach ($won as $attachment) {
+            $validator->errors()->add(
+                'rewards',
+                __(':name has already been won by a customer and cannot be taken out of the campaign. Void its remaining units instead.', [
+                    'name' => $attachment->reward->readableName(),
+                ]),
+            );
+        }
     }
 
     /**

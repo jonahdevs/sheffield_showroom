@@ -99,8 +99,9 @@ function dormantReason(campaign: App.Data.RewardCampaignData): string | null {
     return 'Past its end date';
 }
 
-/* Drafts only: the row's `!campaign.is_published` guard mirrors
-   `RewardCampaignPolicy::delete`, which refuses a published campaign. */
+/* The row's `campaign.turns_given === 0` guard mirrors
+   `RewardCampaignPolicy::delete`, which refuses a campaign that has been
+   shuffled - the pool alone is inventory, and inventory is disposable. */
 async function removeCampaign(campaign: App.Data.RewardCampaignData) {
     if (!(await confirmDelete())) {
         return;
@@ -276,12 +277,12 @@ defineOptions({
                                 <Button
                                     v-if="
                                         props.can.delete &&
-                                        !campaign.is_published
+                                        campaign.turns_given === 0
                                     "
                                     variant="ghost"
                                     size="icon-sm"
                                     class="text-destructive hover:text-destructive"
-                                    :aria-label="`Delete the ${campaign.name} draft`"
+                                    :aria-label="`Delete ${campaign.name}`"
                                     :data-test="`delete-${campaign.id}`"
                                     @click="removeCampaign(campaign)"
                                 >

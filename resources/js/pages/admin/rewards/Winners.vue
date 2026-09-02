@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import {
     Building2,
     CheckCheck,
@@ -9,10 +9,12 @@ import {
     TicketCheck,
     UserRound,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { Component } from 'vue';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import PageSizeSelect from '@/components/PageSizeSelect.vue';
+import RedeemRewardDialog from '@/components/RedeemRewardDialog.vue';
+import type { RedeemLookup } from '@/components/RedeemRewardDialog.vue';
 import StatTile from '@/components/StatTile.vue';
 import TablePagination from '@/components/TablePagination.vue';
 import type { Paginator } from '@/components/TablePagination.vue';
@@ -35,7 +37,6 @@ import { CHART_PALETTE } from '@/composables/useChartTheme';
 import { useFilters } from '@/composables/useFilters';
 import { rewardIcon } from '@/lib/rewardIcons';
 import { dashboard } from '@/routes';
-import { index as redeemIndex } from '@/routes/admin/rewards/redeem';
 import { index } from '@/routes/admin/rewards/winners';
 
 interface Paginated<T> extends Paginator {
@@ -63,7 +64,13 @@ const props = defineProps<{
     types: { value: string; label: string }[];
     statuses: { value: string; label: string }[];
     page_sizes: number[];
+    redeem: RedeemLookup;
 }>();
+
+/* Read from the props, not set on the click, so the dialog is still standing after
+   the handover redirects back and rebuilds the page - and after a reload, since the
+   code it was asked about is in the URL. */
+const redeeming = ref(props.redeem.searched);
 
 /*
   `all` rather than a blank string for the three selects: a shadcn `SelectItem`
@@ -148,20 +155,20 @@ defineOptions({
     layout: {
         breadcrumbs: [
             { title: 'Dashboard', href: dashboard() },
-            { title: 'Rewards' },
+            { title: 'Redeemed' },
         ],
     },
 });
 </script>
 
-<!-- Read-only by design: handing a reward over is Redeem's job and a different permission. -->
+<!-- The table is read-only by design: handing a reward over happens in the dialog, behind its own permission. -->
 <template>
-    <Head title="Rewards" />
+    <Head title="Redeemed" />
 
     <div class="flex flex-col gap-5">
         <div class="flex flex-wrap items-start gap-4">
             <div class="flex min-w-0 flex-1 flex-col gap-2">
-                <h1 class="text-2xl leading-tight">Rewards</h1>
+                <h1 class="text-2xl leading-tight">Redeemed</h1>
                 <p class="text-sm text-muted-foreground">
                     Everything won so far, and whether it has been collected.
                 </p>
@@ -179,11 +186,13 @@ defineOptions({
                     @preset="choosePreset"
                 />
 
-                <Button as-child variant="outline" data-test="go-redeem">
-                    <Link :href="redeemIndex().url">
-                        <TicketCheck />
-                        Redeem a code
-                    </Link>
+                <Button
+                    variant="outline"
+                    data-test="go-redeem"
+                    @click="redeeming = true"
+                >
+                    <TicketCheck />
+                    Redeem a code
                 </Button>
             </div>
         </div>
@@ -498,5 +507,7 @@ defineOptions({
                 </TablePagination>
             </template>
         </Card>
+
+        <RedeemRewardDialog v-model:open="redeeming" :lookup="props.redeem" />
     </div>
 </template>

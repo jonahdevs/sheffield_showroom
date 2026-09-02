@@ -30,9 +30,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-    NativeSelect,
-    NativeSelectOption,
-} from '@/components/ui/native-select';
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
@@ -62,13 +65,12 @@ const heading = computed(() => props.campaign?.name ?? 'New campaign');
 const readOnly = computed(() => !props.can.update);
 
 /**
- * Once `publish` writes the pool the quantities are live inventory, so the
- * reward rows stop being inputs. The server holds the same line:
- * `RewardCampaignRequest::editsRewards` drops anything arriving under
- * `rewards` at a published campaign, so a tab left open on the draft cannot
- * rewrite the odds by being saved an hour later. Everything else stays editable.
+ * The drawer stays editable for the life of the campaign: a reward may be
+ * added or taken out at any time. Publication takes away exactly one field -
+ * `quantity`, which is live inventory from that moment - and one row, the one
+ * whose units somebody has already won.
  */
-const rewardsLocked = computed(() => props.campaign?.is_published ?? false);
+const isPublished = computed(() => props.campaign?.is_published ?? false);
 
 const isClosed = computed(
     () =>
@@ -170,10 +172,6 @@ function pairedNames(ids: number[]): string {
     return ids.map((id) => productNames.value.get(id) ?? `#${id}`).join(', ');
 }
 
-function namesOf(products: { id: number; name: string }[]): string {
-    return products.map((product) => product.name).join(', ');
-}
-
 /**
  * `loaded` is the quantity: on a draft there is no pool yet, so
  * `CampaignRewardData` reports the definition's own number there.
@@ -212,6 +210,35 @@ const form = useForm<CampaignForm>({
             : savedRewards(props.campaign),
 });
 
+/** The attachment a row stands for, or null while the row is a new one. */
+const savedRewardsById = computed(() => {
+    const saved = new Map<number, App.Data.CampaignRewardData>();
+
+    for (const reward of props.campaign?.rewards ?? []) {
+        saved.set(reward.reward_id, reward);
+    }
+
+    return saved;
+});
+
+function saved(row: RewardRow): App.Data.CampaignRewardData | null {
+    return savedRewardsById.value.get(Number(row.reward_id)) ?? null;
+}
+
+/**
+ * A unit somebody won has a `shuffle_results` row pointing at it, so its
+ * attachment can never be removed - `RewardCampaignRequest` refuses it and
+ * `reward_pool_entries` is `restrictOnDelete` from the results underneath.
+ */
+function canDrop(row: RewardRow): boolean {
+    return (saved(row)?.claimed ?? 0) === 0;
+}
+
+/** Its units are written on save, where a draft's wait for publication. */
+function isNewOnPublished(row: RewardRow): boolean {
+    return isPublished.value && saved(row) === null;
+}
+
 const canAddReward = computed(() => form.rewards.length < MAX_REWARDS);
 
 function addReward() {
@@ -249,37 +276,26 @@ function numberOrNull(value: string): number | null {
 }
 
 /**
- * Past publication `rewards` is left out of the payload rather than sent and
- * dropped. The server drops it either way, so this decides nothing - it keeps
- * the request honest about what the screen is asking for.
+ * `rewards` goes up whatever the state, because the drawer is a diff now. A
+ * quantity for an attachment the campaign already holds is ignored server-side
+ * rather than refused, so the disabled box below posting its saved number is
+ * harmless.
  */
 function submit() {
-    form.transform((data) => {
-        const campaign = {
-            name: data.name,
-            description: blankToNull(data.description),
-            starts_at: blankToNull(data.starts_at),
-            ends_at: blankToNull(data.ends_at),
-            max_shuffles_per_customer: numberOrNull(
-                data.max_shuffles_per_customer,
-            ),
-            minimum_purchase_amount: blankToNull(data.minimum_purchase_amount),
-        };
-
-        if (rewardsLocked.value) {
-            return campaign;
-        }
-
-        return {
-            ...campaign,
-            rewards: data.rewards.map((reward) => ({
-                reward_id: numberOrNull(reward.reward_id),
-                quantity: numberOrNull(reward.quantity),
-                validity_days: numberOrNull(reward.validity_days),
-                qualifying_product_ids: reward.qualifying_product_ids,
-            })),
-        };
-    });
+    form.transform((data) => ({
+        name: data.name,
+        description: blankToNull(data.description),
+        starts_at: blankToNull(data.starts_at),
+        ends_at: blankToNull(data.ends_at),
+        max_shuffles_per_customer: numberOrNull(data.max_shuffles_per_customer),
+        minimum_purchase_amount: blankToNull(data.minimum_purchase_amount),
+        rewards: data.rewards.map((reward) => ({
+            reward_id: numberOrNull(reward.reward_id),
+            quantity: numberOrNull(reward.quantity),
+            validity_days: numberOrNull(reward.validity_days),
+            qualifying_product_ids: reward.qualifying_product_ids,
+        })),
+    }));
 
     if (props.campaign === null) {
         form.post(store().url);
@@ -388,7 +404,7 @@ async function publishCampaign() {
     }
 
     const agreed = await confirmDelete(
-        'Publishing writes the reward pool and opens the doors. The quantities below become inventory from that moment and can never be changed - this cannot be undone.',
+        'Publishing writes the reward pool and opens the doors. The quantities below become inventory from that moment and can never be changed - rewards can still be added and taken out, until somebody wins one. This cannot be undone.',
         'Yes, publish it!',
     );
 
@@ -421,8 +437,9 @@ async function moveTo(move: StateMove) {
     postState(transition(campaign.id).url, { to: move.to });
 }
 
-/* Only ever a draft: `RewardCampaignPolicy::delete` refuses a published
-   campaign, so `can.delete` is false once there is history to lose. */
+/* `RewardCampaignPolicy::delete` turns on turns, not status: a campaign
+   nobody ever shuffled is disposable whatever state it is in, so `can.delete`
+   goes false the moment there is history to lose. */
 async function removeCampaign() {
     const campaign = props.campaign;
 
@@ -475,8 +492,8 @@ defineOptions({
                 {{
                     props.campaign === null
                         ? 'The dates it runs between, and what is in the drawer. Nothing is handed out until you publish it.'
-                        : rewardsLocked
-                          ? 'Published. The name, the dates and the ceiling are still yours to correct; the drawer is inventory now and is shown as it stands.'
+                        : isPublished
+                          ? 'Published. Rewards can still be added and taken out; what is fixed is how many units of a reward are loaded, and a reward somebody has already won.'
                           : 'Still a draft, so everything here can be reshaped. Publish it when the drawer is right.'
                 }}
             </p>
@@ -631,138 +648,60 @@ defineOptions({
                         The drawer
                     </h2>
 
-                    <span
-                        v-if="!rewardsLocked"
-                        class="text-xs text-faint tabular-nums"
-                        data-test="reward-count"
-                    >
-                        {{ form.rewards.length }} of {{ MAX_REWARDS }}
-                    </span>
-                    <span
-                        v-else
-                        class="text-xs text-faint tabular-nums"
-                        data-test="drawer-total"
-                    >
-                        {{ props.campaign?.loaded }} loaded
-                        <span aria-hidden="true">&bull;</span>
-                        {{ props.campaign?.available }} available
-                        <span aria-hidden="true">&bull;</span>
-                        {{ props.campaign?.claimed }} claimed
-                        <span aria-hidden="true">&bull;</span>
-                        {{ props.campaign?.void }} void
-                    </span>
-                </div>
-
-                <!-- ===================== The drawer, published ===================== -->
-                <div
-                    v-if="rewardsLocked"
-                    class="divide-y divide-border"
-                    data-test="rewards-locked"
-                >
                     <div
-                        v-for="reward in props.campaign?.rewards ?? []"
-                        :key="reward.id"
-                        class="px-5 py-4"
-                        :data-test="`reward-${reward.id}`"
+                        class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint tabular-nums"
                     >
-                        <div class="flex flex-wrap items-center gap-2.5">
-                            <p class="text-xs font-bold">{{ reward.name }}</p>
-                            <Badge variant="secondary">
-                                {{ reward.type_label }}
-                            </Badge>
-                            <Badge v-if="reward.value_label" variant="outline">
-                                {{ reward.value_label }}
-                            </Badge>
-                            <Badge
-                                v-if="reward.validity_days"
-                                variant="outline"
-                            >
-                                Valid {{ reward.validity_days }}
-                                {{
-                                    reward.validity_days === 1 ? 'day' : 'days'
-                                }}
-                            </Badge>
-                        </div>
+                        <span v-if="isPublished" data-test="drawer-total">
+                            {{ props.campaign?.loaded }} loaded
+                            <span aria-hidden="true">&bull;</span>
+                            {{ props.campaign?.available }} available
+                            <span aria-hidden="true">&bull;</span>
+                            {{ props.campaign?.claimed }} claimed
+                            <span aria-hidden="true">&bull;</span>
+                            {{ props.campaign?.void }} void
+                        </span>
 
-                        <p
-                            v-if="reward.description"
-                            class="mt-1.5 text-xs text-muted-foreground"
-                        >
-                            {{ reward.description }}
-                        </p>
-
-                        <dl
-                            class="mt-3 grid max-w-md grid-cols-4 gap-3 text-xs"
-                        >
-                            <div>
-                                <dt class="text-faint">Loaded</dt>
-                                <dd class="mt-0.5 font-bold tabular-nums">
-                                    {{ reward.loaded }}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt class="text-faint">Available</dt>
-                                <dd class="mt-0.5 font-bold tabular-nums">
-                                    {{ reward.available }}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt class="text-faint">Claimed</dt>
-                                <dd class="mt-0.5 font-bold tabular-nums">
-                                    {{ reward.claimed }}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt class="text-faint">Void</dt>
-                                <dd class="mt-0.5 font-bold tabular-nums">
-                                    {{ reward.void }}
-                                </dd>
-                            </div>
-                        </dl>
-
-                        <!-- Said even when empty: paired to nothing is a real
-                             state, not a pairing nobody got round to. -->
-                        <p
-                            class="mt-3 text-xs text-muted-foreground"
-                            :data-test="`reward-${reward.id}-paired`"
-                        >
-                            <template
-                                v-if="reward.qualifying_products.length > 0"
-                            >
-                                Paired to
-                                {{ namesOf(reward.qualifying_products) }} - only
-                                a purchase of one of those can win it.
-                            </template>
-                            <template v-else>
-                                Paired to nothing, so any purchase that earns a
-                                turn can win it.
-                            </template>
-                        </p>
-
-                        <p
-                            v-if="reward.terms"
-                            class="mt-3 text-xs text-muted-foreground"
-                        >
-                            {{ reward.terms }}
-                        </p>
+                        <span data-test="reward-count">
+                            {{ form.rewards.length }} of {{ MAX_REWARDS }}
+                        </span>
                     </div>
                 </div>
 
-                <!-- ===================== The drawer, as a draft ===================== -->
-                <div v-else class="flex flex-col gap-4 p-5">
+                <!-- ===================== The drawer ===================== -->
+                <div class="flex flex-col gap-4 p-5">
                     <div
                         v-for="(reward, position) in form.rewards"
                         :key="position"
                         class="rounded-xl border border-border p-4"
                         :data-test="`reward-row-${position}`"
                     >
-                        <div class="flex items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-3">
                             <span class="text-xs font-bold text-faint">
                                 Reward {{ position + 1 }}
                             </span>
 
+                            <Badge
+                                v-if="isNewOnPublished(reward)"
+                                variant="outline"
+                                :data-test="`reward-${position}-new`"
+                            >
+                                Its units are written when you save
+                            </Badge>
+
+                            <!-- A won unit is pointed at by a result, so the
+                                 row stays for good. Said rather than shown as
+                                 a disabled bin nobody can explain. -->
+                            <span
+                                v-else-if="!canDrop(reward)"
+                                class="ml-auto text-xs text-muted-foreground"
+                                :data-test="`reward-${position}-permanent`"
+                            >
+                                {{ saved(reward)?.claimed }} already won, so
+                                this reward cannot be taken out
+                            </span>
+
                             <Button
-                                v-if="!readOnly"
+                                v-if="!readOnly && canDrop(reward)"
                                 type="button"
                                 variant="ghost"
                                 size="icon-sm"
@@ -782,28 +721,41 @@ defineOptions({
                                 <Label :for="`reward-${position}-reward-id`">
                                     Reward <span class="text-primary">*</span>
                                 </Label>
-                                <NativeSelect
-                                    :id="`reward-${position}-reward-id`"
+                                <!-- No empty item to return to: reka refuses
+                                     one, and an unwanted row is dropped with
+                                     the bin beside it rather than blanked.
+                                     Locked once won, because swapping the
+                                     reward here is a removal and the server
+                                     refuses that for the same reason. -->
+                                <Select
                                     v-model="reward.reward_id"
-                                    class="mt-2.25 w-full"
-                                    :disabled="readOnly"
-                                    :data-test="`reward-${position}-reward-id`"
+                                    :disabled="readOnly || !canDrop(reward)"
                                 >
-                                    <NativeSelectOption value="">
-                                        Choose a reward
-                                    </NativeSelectOption>
-                                    <NativeSelectOption
-                                        v-for="option in props.catalogue"
-                                        :key="option.id"
-                                        :value="String(option.id)"
+                                    <SelectTrigger
+                                        :id="`reward-${position}-reward-id`"
+                                        class="mt-2.25 w-full"
+                                        :data-test="`reward-${position}-reward-id`"
                                     >
-                                        {{ option.name }} ({{
-                                            option.type_label
-                                        }}){{
-                                            option.is_active ? '' : ' — retired'
-                                        }}
-                                    </NativeSelectOption>
-                                </NativeSelect>
+                                        <SelectValue
+                                            placeholder="Choose a reward"
+                                        />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            v-for="option in props.catalogue"
+                                            :key="option.id"
+                                            :value="String(option.id)"
+                                        >
+                                            {{ option.name }} ({{
+                                                option.type_label
+                                            }}){{
+                                                option.is_active
+                                                    ? ''
+                                                    : ' — retired'
+                                            }}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
                                 <InputError
                                     :message="
                                         rewardError(position, 'reward_id')
@@ -855,12 +807,38 @@ defineOptions({
                                     min="1"
                                     max="100000"
                                     class="mt-2.25"
-                                    :disabled="readOnly"
+                                    :disabled="
+                                        readOnly ||
+                                        (isPublished && saved(reward) !== null)
+                                    "
                                     :data-test="`reward-${position}-quantity`"
                                 />
                                 <InputError
                                     :message="rewardError(position, 'quantity')"
                                 />
+                                <!-- Disabled with a reason: `loaded` never
+                                     falls, so the number stops being an input
+                                     the moment its units exist. -->
+                                <p
+                                    v-if="isPublished && saved(reward) !== null"
+                                    class="mt-1.5 text-xs text-muted-foreground"
+                                    :data-test="`reward-${position}-quantity-note`"
+                                >
+                                    Loaded at publication and fixed:
+                                    {{ saved(reward)?.available }} of these are
+                                    still available,
+                                    {{ saved(reward)?.claimed }} won and
+                                    {{ saved(reward)?.void }} taken off the
+                                    table.
+                                </p>
+                                <p
+                                    v-else-if="isNewOnPublished(reward)"
+                                    class="mt-1.5 text-xs text-muted-foreground"
+                                >
+                                    The campaign is live, so saving writes this
+                                    many units straight into the pool. It cannot
+                                    be changed afterwards.
+                                </p>
                             </div>
 
                             <div>
@@ -1027,7 +1005,7 @@ defineOptions({
                     @click="removeCampaign"
                 >
                     <Trash2 />
-                    Delete draft
+                    {{ isPublished ? 'Delete campaign' : 'Delete draft' }}
                 </Button>
 
                 <Button as-child variant="outline">
@@ -1072,7 +1050,7 @@ defineOptions({
                     {{
                         props.can.publish
                             ? 'Publishing writes one pool entry for every unit in the drawer and opens the doors. It cannot be undone, and the quantities stop being editable the moment it happens.'
-                            : 'The pool has been written. What is left is moving the campaign through its life — only one campaign hands out turns at a time.'
+                            : 'The pool has been written. Rewards can still be added and taken out of the drawer above; what is left here is moving the campaign through its life — only one campaign hands out turns at a time.'
                     }}
                 </p>
 

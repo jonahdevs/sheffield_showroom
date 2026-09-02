@@ -14,7 +14,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | database/migrations/** | .ai/rules/migrations.md |
 | resources/js/pages/** | .ai/rules/pages.md |
 | app/Services/Products/** | .ai/rules/products.md |
-| app/Services/Rewards/**, app/Models/{Reward,CampaignReward,RewardCampaign,RewardPoolEntry,ShuffleResult,ShuffleSession}.php, database/migrations/*_{rewards,campaign_rewards,campaign_reward_product,reward_pool_entries,shuffle_results,shuffle_sessions}_table.php | .ai/rules/rewards.md |
+| app/Services/Rewards/**, app/Models/{Reward,CampaignReward,RewardCampaign,RewardPoolEntry,ShuffleResult,ShuffleSession}.php, app/Http/Controllers/Admin/RewardCampaignController.php, app/Http/Requests/Admin/RewardCampaignRequest.php, app/Policies/{RewardCampaignPolicy,RewardPolicy}.php, resources/js/pages/admin/rewards/**, database/migrations/*_{rewards,campaign_rewards,campaign_reward_product,reward_pool_entries,shuffle_results,shuffle_sessions}_table.php, app/Http/Controllers/Admin/Reward{Winner,Redemption}Controller.php | .ai/rules/rewards.md |
 | routes/** | .ai/rules/routes.md |
 | database/seeders/** | .ai/rules/seeders.md |
 | tests/** | .ai/rules/tests.md |

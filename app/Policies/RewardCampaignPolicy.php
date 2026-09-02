@@ -37,11 +37,14 @@ class RewardCampaignPolicy
         return $this->update($user, $campaign) && ! $campaign->status->isPublished();
     }
 
-    # Only ever a draft nobody used: once a campaign has a pool it has history,
-    # and history is kept — stop it with `complete` instead.
+    # Turns, not status: a campaign nobody ever shuffled holds nothing but
+    # inventory and is disposable whatever state it is in, while one with a
+    # session behind it is history and is kept — stop it with `complete`
+    # instead. `shuffle_sessions.campaign_id` is `restrictOnDelete`, so the
+    # database draws the same line under this.
     public function delete(User $user, RewardCampaign $campaign): bool
     {
         return $user->can(Permission::RewardsCampaignsDelete->value)
-            && ! $campaign->status->isPublished();
+            && ! $campaign->sessions()->exists();
     }
 }

@@ -22,12 +22,13 @@ class DashboardRangeData extends Data
     /** @var array<string, string> */
     public const PRESETS = [
         'today' => 'Today',
+        'yesterday' => 'Yesterday',
         'this_week' => 'This week',
         'last_7_days' => 'Last 7 days',
-        'last_30_days' => 'Last 30 days',
-        'last_90_days' => 'Last 90 days',
         'this_month' => 'This month',
         'last_month' => 'Last month',
+        'this_year' => 'This year',
+        'last_year' => 'Last year',
     ];
 
     private const MAX_DAYS = 366;
@@ -83,15 +84,20 @@ class DashboardRangeData extends Data
 
         return match ($preset) {
             'today' => self::between($preset, $today, $today),
+            'yesterday' => self::between($preset, $today->subDay(), $today->subDay()),
             # Week to date, not a rolling seven days; `last_7_days` is the other one.
             'this_week' => self::between($preset, $today->startOfWeek(), $today),
-            'last_30_days' => self::between($preset, $today->subDays(29), $today),
-            'last_90_days' => self::between($preset, $today->subDays(89), $today),
             'this_month' => self::between($preset, $today->startOfMonth(), $today),
             'last_month' => self::between(
                 $preset,
                 $today->subMonthNoOverflow()->startOfMonth(),
                 $today->subMonthNoOverflow()->endOfMonth(),
+            ),
+            'this_year' => self::between($preset, $today->startOfYear(), $today),
+            'last_year' => self::between(
+                $preset,
+                $today->subYearNoOverflow()->startOfYear(),
+                $today->subYearNoOverflow()->endOfYear(),
             ),
             default => self::between(self::DEFAULT, $today->subDays(6), $today),
         };

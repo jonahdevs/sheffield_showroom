@@ -386,7 +386,7 @@ defineOptions({
                                      for somebody who may not write. -->
                                 <Button
                                     as-child
-                                    variant="ghost"
+                                    variant="outline"
                                     size="icon-sm"
                                     :aria-label="`${props.can.update ? 'Edit' : 'View'} ${reward.name}`"
                                     :data-test="`edit-${reward.id}`"
@@ -396,28 +396,30 @@ defineOptions({
                                     </Link>
                                 </Button>
 
-                                <Button
-                                    v-if="props.can.delete && reward.can_delete"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    class="text-destructive hover:text-destructive"
-                                    :aria-label="`Delete ${reward.name}`"
-                                    :data-test="`delete-${reward.id}`"
-                                    @click="removeReward(reward)"
-                                >
-                                    <Trash2 />
-                                </Button>
-
                                 <!-- `RewardPolicy::delete` refuses a reward a campaign holds
                                      (`campaign_rewards.reward_id` is `restrictOnDelete`), so the
-                                     row says so rather than offering a press that comes back refused. -->
+                                     press is disabled rather than coming back refused. The reason
+                                     sits on the wrapper: the button's own
+                                     `disabled:pointer-events-none` would swallow the hover. -->
                                 <span
-                                    v-else-if="props.can.delete"
-                                    class="text-[0.6875rem] text-faint"
-                                    title="A reward a campaign is handing out cannot be deleted. Retire it instead."
-                                    :data-test="`undeletable-${reward.id}`"
+                                    v-if="props.can.delete"
+                                    :title="
+                                        reward.can_delete
+                                            ? undefined
+                                            : 'A reward a campaign is handing out cannot be deleted. Retire it instead.'
+                                    "
                                 >
-                                    In use
+                                    <Button
+                                        variant="outline"
+                                        size="icon-sm"
+                                        class="text-destructive hover:text-destructive"
+                                        :disabled="!reward.can_delete"
+                                        :aria-label="`Delete ${reward.name}`"
+                                        :data-test="`delete-${reward.id}`"
+                                        @click="removeReward(reward)"
+                                    >
+                                        <Trash2 />
+                                    </Button>
                                 </span>
                             </div>
                         </div>

@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\Reward;
 use App\Models\RewardCampaign;
+use App\Models\RewardPoolEntry;
 use App\Models\Role;
 use App\Models\ShuffleResult;
 use App\Models\ShuffleSession;
@@ -302,29 +303,184 @@ it('publishes a draft and loads the pool', function () {
         ->and($campaign->poolEntries()->count())->toBe(30);
 });
 
-it('ignores reward changes posted at a published campaign', function () {
+# -------------------------------------------------------------------------
+# Editing the drawer of a campaign that is already running
+# -------------------------------------------------------------------------
+#
+# An attachment may be added or removed at any time; one with a claimed unit
+# may never be removed. Everything below is that one rule.
+
+it('ignores a quantity posted at an attachment the campaign already holds', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
     $campaign = campaignHolding(['Audit' => 10]);
+    $attachment = $campaign->rewards()->sole();
 
     $this->actingAs($actor)
         ->patch(route('admin.rewards.update', $campaign), [
             'name' => 'Renamed',
             'max_shuffles_per_customer' => 1,
             'rewards' => [
-                ['reward_id' => Reward::factory()->create()->id, 'quantity' => 500],
+                [
+                    'reward_id' => $attachment->reward_id,
+                    'quantity' => 500,
+                    'validity_days' => 21,
+                ],
             ],
         ])
         ->assertSessionHasNoErrors();
 
     expect($campaign->refresh()->name)->toBe('Renamed')
-        ->and($campaign->rewards()->count())->toBe(1)
-        ->and($campaign->rewards()->sole()->reward->name)->toBe('Audit')
+        ->and($attachment->refresh()->quantity)->toBe(10)
+        ->and($campaign->poolEntries()->count())->toBe(10)
+        # The rest of the row is still the administrator's to correct.
+        ->and($attachment->validity_days)->toBe(21);
+});
+
+it('keeps the attachment id of a reward it is only editing', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
+    $campaign = campaignHolding(['Audit' => 4, 'Tray' => 6]);
+
+    $ids = $campaign->rewards()->pluck('id', 'reward_id')->all();
+
+    $this->actingAs($actor)
+        ->patch(route('admin.rewards.update', $campaign), [
+            'name' => $campaign->name,
+            'max_shuffles_per_customer' => 1,
+            'rewards' => array_map(
+                fn (int $rewardId): array => [
+                    'reward_id' => $rewardId,
+                    'quantity' => 1,
+                    'validity_days' => 30,
+                ],
+                array_keys($ids),
+            ),
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($campaign->rewards()->pluck('id', 'reward_id')->all())->toBe($ids)
+        # Recreating the rows would have repointed every unit at a new id.
         ->and($campaign->poolEntries()->count())->toBe(10);
 });
 
-it('will not delete a campaign that has a pool', function () {
+it('writes the units of a reward added to a published campaign, and only those', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
+    $campaign = campaignHolding(['Audit' => 10]);
+    $held = $campaign->rewards()->sole();
+    $added = Reward::factory()->discount(15)->create();
+
+    $this->actingAs($actor)
+        ->patch(route('admin.rewards.update', $campaign), [
+            'name' => $campaign->name,
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $held->reward_id, 'quantity' => 10],
+                ['reward_id' => $added->id, 'quantity' => 3],
+            ],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $attachment = $campaign->rewards()->where('reward_id', $added->id)->sole();
+
+    expect($attachment->poolEntries()->count())->toBe(3)
+        ->and($held->poolEntries()->count())->toBe(10)
+        ->and($campaign->poolEntries()->count())->toBe(13);
+});
+
+it('removes an attachment nobody has won, and the units behind it', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
+    $campaign = campaignHolding(['Audit' => 5, 'Tray' => 7]);
+
+    $kept = $campaign->rewards()->whereRelation('reward', 'name', 'Audit')->sole();
+    $dropped = $campaign->rewards()->whereRelation('reward', 'name', 'Tray')->sole();
+
+    $this->actingAs($actor)
+        ->patch(route('admin.rewards.update', $campaign), [
+            'name' => $campaign->name,
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $kept->reward_id, 'quantity' => 5],
+            ],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(CampaignReward::query()->whereKey($dropped->id)->exists())->toBeFalse()
+        # Cascaded by `reward_pool_entries.campaign_reward_id`, not by hand.
+        ->and(RewardPoolEntry::query()->where('campaign_reward_id', $dropped->id)->count())->toBe(0)
+        ->and($campaign->poolEntries()->count())->toBe(5);
+});
+
+it('refuses to remove an attachment somebody has already won, and names it', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
+    $campaign = campaignHolding(['Free kitchen audit' => 5, 'Tray' => 5]);
+
+    $won = app(ShuffleRewardService::class)->claim(sessionOn($campaign));
+    $winner = $won->poolEntry->reward;
+    $other = $campaign->rewards()->whereKeyNot($winner->id)->sole();
+
+    $this->actingAs($actor)
+        ->patch(route('admin.rewards.update', $campaign), [
+            'name' => $campaign->name,
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $other->reward_id, 'quantity' => 5],
+            ],
+        ])
+        ->assertSessionHasErrors([
+            'rewards' => $winner->reward->readableName().' has already been won by a customer and cannot be taken out of the campaign. Void its remaining units instead.',
+        ]);
+
+    expect($campaign->rewards()->count())->toBe(2)
+        ->and($campaign->poolEntries()->count())->toBe(10);
+});
+
+it('lets the catalogue delete a reward once the last campaign holding it lets go', function () {
+    $actor = rewardsStaff([
+        Permission::RewardsView,
+        Permission::RewardsCampaignsUpdate,
+        Permission::RewardsCatalogueDelete,
+    ]);
+
+    $campaign = campaignHolding(['Audit' => 5, 'Tray' => 5]);
+    $dropped = $campaign->rewards()->whereRelation('reward', 'name', 'Tray')->sole()->reward;
+    $kept = $campaign->rewards()->whereRelation('reward', 'name', 'Audit')->sole();
+
+    $this->actingAs($actor)
+        ->delete(route('admin.rewards.catalogue.destroy', $dropped))
+        ->assertForbidden();
+
+    $this->actingAs($actor)
+        ->patch(route('admin.rewards.update', $campaign), [
+            'name' => $campaign->name,
+            'max_shuffles_per_customer' => 1,
+            'rewards' => [
+                ['reward_id' => $kept->reward_id, 'quantity' => 5],
+            ],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($actor)
+        ->delete(route('admin.rewards.catalogue.destroy', $dropped))
+        ->assertSessionHasNoErrors();
+
+    expect(Reward::query()->whereKey($dropped->id)->exists())->toBeFalse();
+});
+
+it('deletes a campaign nobody ever shuffled, pool and all', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsDelete]);
     $campaign = campaignHolding(['Audit' => 5]);
+
+    $this->actingAs($actor)
+        ->delete(route('admin.rewards.destroy', $campaign))
+        ->assertSessionHasNoErrors();
+
+    expect(RewardCampaign::query()->whereKey($campaign->id)->exists())->toBeFalse()
+        ->and(RewardPoolEntry::query()->where('campaign_id', $campaign->id)->count())->toBe(0);
+});
+
+it('will not delete a campaign that has been shuffled', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsDelete]);
+    $campaign = campaignHolding(['Audit' => 5]);
+    sessionOn($campaign);
 
     $this->actingAs($actor)
         ->delete(route('admin.rewards.destroy', $campaign))
@@ -489,12 +645,13 @@ it('finds a reward by its code and hands it over', function () {
     $result = app(ShuffleRewardService::class)->claim(sessionOn($campaign));
 
     $this->actingAs($actor)
-        ->get(route('admin.rewards.redeem.index', ['code' => $result->code]))
+        ->get(route('admin.rewards.winners.index', ['redeem' => $result->code]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('admin/rewards/Redeem')
-            ->where('reward.code', $result->code)
-            ->where('can.redeem', true));
+            ->component('admin/rewards/Winners')
+            ->where('redeem.searched', true)
+            ->where('redeem.reward.code', $result->code)
+            ->where('redeem.can_redeem', true));
 
     $this->actingAs($actor)
         ->post(route('admin.rewards.redeem.store'), [
@@ -510,9 +667,32 @@ it('says so plainly when a code is not one', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsRedeem]);
 
     $this->actingAs($actor)
-        ->from(route('admin.rewards.redeem.index'))
+        ->from(route('admin.rewards.winners.index'))
         ->post(route('admin.rewards.redeem.store'), ['code' => 'SHF-ZZZZZZ'])
         ->assertSessionHasErrors('code');
+});
+
+it('leaves the counter closed until a code is asked about', function () {
+    $this->actingAs(rewardsStaff([Permission::RewardsView]))
+        ->get(route('admin.rewards.winners.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('redeem.searched', false)
+            ->where('redeem.reward', null)
+            ->where('redeem.can_redeem', false));
+});
+
+# The dialog offers no handover button without the right, but the record is still readable.
+it('shows a reward without the power to hand it over', function () {
+    $campaign = campaignHolding(['Audit' => 5]);
+    $result = app(ShuffleRewardService::class)->claim(sessionOn($campaign));
+
+    $this->actingAs(rewardsStaff([Permission::RewardsView]))
+        ->get(route('admin.rewards.winners.index', ['redeem' => strtolower($result->code)]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('redeem.reward.code', $result->code)
+            ->where('redeem.can_redeem', false));
 });
 
 it('refuses a second redemption of the same reward', function () {
@@ -523,7 +703,7 @@ it('refuses a second redemption of the same reward', function () {
     $this->actingAs($actor)->post(route('admin.rewards.redeem.store'), ['code' => $result->code]);
 
     $this->actingAs($actor)
-        ->from(route('admin.rewards.redeem.index'))
+        ->from(route('admin.rewards.winners.index'))
         ->post(route('admin.rewards.redeem.store'), ['code' => $result->code])
         ->assertForbidden();
 

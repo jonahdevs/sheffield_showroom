@@ -2,7 +2,12 @@
 paths:
   - 'app/Services/Rewards/**'
   - 'app/Models/{Reward,CampaignReward,RewardCampaign,RewardPoolEntry,ShuffleResult,ShuffleSession}.php'
+  - app/Http/Controllers/Admin/RewardCampaignController.php
+  - app/Http/Requests/Admin/RewardCampaignRequest.php
+  - 'app/Policies/{RewardCampaignPolicy,RewardPolicy}.php'
+  - 'resources/js/pages/admin/rewards/**'
   - 'database/migrations/*_{rewards,campaign_rewards,campaign_reward_product,reward_pool_entries,shuffle_results,shuffle_sessions}_table.php'
+  - 'app/Http/Controllers/Admin/Reward{Winner,Redemption}Controller.php'
 ---
 
 # Rewards
@@ -14,7 +19,19 @@ The pivot deliberately keeps the name `campaign_rewards` and its own `id`. Every
 
 `validity_days` is copied down from `rewards.default_validity_days` when the reward is attached, never read through at win time. Retuning the catalogue must not move a deadline a campaign has already promised.
 
-`reward_id` is `restrictOnDelete` and unique per campaign. A reward a campaign is handing out cannot be deleted — retire it with `rewards.is_active`, which stops it going into anything new while leaving the campaigns already holding it alone. `RewardCampaignRequest` only refuses a retired reward that is being *added*, for that reason.
+`reward_id` is `restrictOnDelete` and unique per campaign. A reward *while a campaign holds it* cannot be deleted — retire it with `rewards.is_active`, which stops it going into anything new while leaving the campaigns already holding it alone. `RewardCampaignRequest` only refuses a retired reward that is being *added*, for that reason. Taking the attachment out of the campaign is the other way, and is allowed unless somebody has won one — see *The drawer is editable for the life of the campaign* below.
+
+## The drawer is editable for the life of the campaign; a won reward is not
+An attachment may be added or removed at any time, whatever state the campaign is in. An attachment with any claimed unit may never be removed: a `shuffle_results` row points at that unit, so erasing it would destroy the record — `reward_pool_entries` is `restrictOnDelete` from the results, and `RewardCampaignRequest::refuseRemovingWonRewards()` catches it first so the reward can be named instead of throwing. Everything else in the drawer is inventory, and inventory can be reshaped.
+
+Publication does not close the drawer. It takes away exactly one field: **`quantity` is editable only while the campaign is a draft**, because `loaded` never falls and `loaded = available + claimed + void` must keep reconciling. An incoming quantity for an attachment the campaign already holds is *dropped*, not refused — a stale form is not an attack. Take unwon units off the table with `PoolEntryStatus::Void` instead, never by lowering a number.
+
+`RewardCampaignController::writeRewards()` is a **diff, never a rewrite**: attachment ids are load-bearing, since `reward_pool_entries.campaign_reward_id` and the winners' results point at them and `shuffle_results.expires_at` was stamped from `campaign_rewards.validity_days`. A kept attachment is updated in place; a removed one is deleted and cascades its pool entries and `campaign_reward_product` rows; an added one on an *already published* campaign has its units written with it through `RewardPoolService::writeUnits()`, per attachment — calling `generate()` there would write a second pool for every attachment already standing.
+
+`RewardPolicy::delete` is left alone by all of this: it already permits deleting a catalogue reward once nothing is attached to it, which is what makes tidying up possible at all.
+
+## Deleting a campaign turns on turns, not on status
+`RewardCampaignPolicy::delete` refuses a campaign that has any `shuffle_sessions` row, not a published one. A campaign nobody ever shuffled holds nothing but inventory and is disposable whatever state it is in; one with a turn behind it is history and is kept — stop it with `complete` instead. `shuffle_sessions.campaign_id` is `restrictOnDelete`, so the database draws the same line under the policy. `admin/rewards/Index.vue` mirrors it with `campaign.turns_given === 0`.
 
 ## Product pairing is resolved before the lock, never joined into it
 A reward may name the products that qualify for it — buy the oven, win the tray — in `campaign_reward_product`, per campaign. **A reward naming no products qualifies against any purchase**, and that silence is the common case.
@@ -40,3 +57,8 @@ Expiry is stamped onto `shuffle_results.expires_at` at win time from `campaign_r
 Eligibility matches on **any** one of them: `RewardEligibilityService::qualifyingRewardIds($campaign, $productIds)` and `availableCountFor($campaign, $productIds)` take an array, and a reward paired to the oven qualifies as soon as the oven is on the sale, whatever else is beside it. Read the ids with `RewardEligibilityService::productIdsOn($purchase)`, which reads a loaded relation when there is one - a list that does not eager-load `products` pays a query per row. An empty array behaves exactly as the old null did: it draws only from the unpaired rewards, because a sale that recorded nothing has not met "buy the oven".
 
 Still not a ledger. The pivot carries no price and no quantity, deliberately - it answers "which products were on this sale" and nothing else. `Purchase::products()` is `withTrashed()` so a withdrawn product still names itself on a historical sale; `CampaignReward::qualifyingProducts()` deliberately keeps the default scope, so a pairing to a withdrawn product stops qualifying anybody.
+
+## The redemption counter is a dialog on the winners list, not a screen
+`RewardRedemptionController` holds only `store`. The code lookup lives in `RewardWinnerController::lookup()` and ships as the `redeem` prop on `admin/rewards/Winners`, read from `?redeem=CODE` in the query string beside the list's own filters.
+
+`RedeemRewardDialog.vue` looks a code up with `router.reload({ only: ['redeem'], data: { redeem } })`, so typing never redraws the table. The dialog's open state is derived from `redeem.searched`, not set on the click — `store` answers with `back()`, which rebuilds the page, and a click-set flag would close the dialog on the handover it just made.

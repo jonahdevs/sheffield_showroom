@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Data\OptionData;
 use App\Data\RewardCampaignData;
+use App\Enums\CampaignStatus;
 use App\Enums\Permission;
 use App\Exceptions\CampaignStateException;
 use App\Http\Controllers\Controller;
@@ -16,6 +17,7 @@ use App\Models\RewardCampaign;
 use App\Services\Rewards\CampaignService;
 use App\Services\Rewards\RewardPoolService;
 use App\Support\Http\PageSize;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -72,8 +74,6 @@ class RewardCampaignController extends Controller
         ]);
     }
 
-    # `RewardCampaignRequest` drops anything arriving under `rewards` for a published
-    # campaign rather than refusing it, so a stale tab cannot rewrite the odds.
     public function edit(Request $request, RewardCampaign $campaign): Response
     {
         $this->authorize('view', $campaign);
@@ -112,6 +112,10 @@ class RewardCampaignController extends Controller
             ]));
 
             $campaign->created_by = $request->user()->id;
+            # Spelled out rather than left to the column default, which a saved
+            # model does not carry back: `writeRewards` reads the status to decide
+            # whether the new attachments need units written with them.
+            $campaign->status = CampaignStatus::Draft;
             $campaign->save();
 
             $this->writeRewards($campaign, $request);
@@ -135,11 +139,7 @@ class RewardCampaignController extends Controller
                 'max_shuffles_per_customer', 'minimum_purchase_amount',
             ]));
 
-            # Drafts only. After publication the pool is written and the definitions are history.
-            if ($request->editsRewards()) {
-                $campaign->rewards()->delete();
-                $this->writeRewards($campaign, $request);
-            }
+            $this->writeRewards($campaign, $request);
         });
 
         Inertia::flash('toast', [
@@ -211,7 +211,7 @@ class RewardCampaignController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => __('The :name draft has been deleted.', ['name' => $name]),
+            'message' => __(':name has been deleted.', ['name' => $name]),
         ]);
 
         return to_route('admin.rewards.index');
@@ -266,35 +266,73 @@ class RewardCampaignController extends Controller
             ->all();
     }
 
-    # Rewritten wholesale rather than diffed: only ever runs on a draft, where nothing
-    # points at an attachment yet.
+    /**
+     * A diff, never a rewrite: attachment ids are load-bearing.
+     * `reward_pool_entries.campaign_reward_id` and the results behind them point at
+     * these rows, so recreating a kept attachment would orphan real wins.
+     */
     private function writeRewards(RewardCampaign $campaign, RewardCampaignRequest $request): void
     {
+        $incoming = $request->rewards();
+        $isPublished = $campaign->status->isPublished();
+        $now = CarbonImmutable::now();
+
+        $held = $campaign->rewards()->get()->keyBy('reward_id');
+
         $catalogue = Reward::query()
-            ->whereIn('id', array_column($request->rewards(), 'reward_id'))
+            ->whereIn('id', array_column($incoming, 'reward_id'))
             ->get()
             ->keyBy('id');
 
-        foreach ($request->rewards() as $reward) {
-            $catalogueRow = $catalogue->get($reward['reward_id']);
+        $keptIds = [];
 
-            $attachment = $campaign->rewards()->create([
-                'reward_id' => $reward['reward_id'],
-                'quantity' => $reward['quantity'],
-                # Copied down, never read through at win time, so retuning the catalogue
-                # cannot move a deadline this campaign has already promised.
-                'validity_days' => $reward['validity_days']
-                    ?? $catalogueRow?->default_validity_days,
-                'is_active' => true,
-            ]);
+        foreach ($incoming as $reward) {
+            $rewardId = (int) $reward['reward_id'];
 
-            $productIds = array_values(array_unique(
-                array_map('intval', $reward['qualifying_product_ids'] ?? []),
-            ));
+            # Copied down, never read through at win time, so retuning the catalogue
+            # cannot move a deadline this campaign has already promised.
+            $validityDays = $reward['validity_days']
+                ?? $catalogue->get($rewardId)?->default_validity_days;
 
-            if ($productIds !== []) {
-                $attachment->qualifyingProducts()->sync($productIds);
+            $attachment = $held->get($rewardId);
+
+            if ($attachment === null) {
+                $attachment = $campaign->rewards()->create([
+                    'reward_id' => $rewardId,
+                    'quantity' => (int) $reward['quantity'],
+                    'validity_days' => $validityDays,
+                    'is_active' => true,
+                ]);
+
+                # A reward added after publication needs its own units written or it
+                # is a reward nobody can win. Per attachment, never `generate()`,
+                # which would write a second pool for every attachment already here.
+                if ($isPublished) {
+                    $this->pool->writeUnits($campaign, $attachment, $now);
+                }
+            } else {
+                $attachment->validity_days = $validityDays;
+
+                # `quantity` is inventory once the pool is written: `loaded` never
+                # falls, and `loaded = available + claimed + void` must keep
+                # reconciling. A stale form is dropped here, not refused.
+                if (! $isPublished) {
+                    $attachment->quantity = (int) $reward['quantity'];
+                }
+
+                $attachment->save();
             }
+
+            $attachment->qualifyingProducts()->sync(array_values(array_unique(
+                array_map('intval', $reward['qualifying_product_ids'] ?? []),
+            )));
+
+            $keptIds[] = $attachment->id;
         }
+
+        # Cascades its `reward_pool_entries` and `campaign_reward_product` rows.
+        # `RewardCampaignRequest::refuseRemovingWonRewards` has already refused any
+        # attachment carrying a claimed unit, which is the only kind kept for good.
+        $campaign->rewards()->whereNotIn('id', $keptIds)->delete();
     }
 }

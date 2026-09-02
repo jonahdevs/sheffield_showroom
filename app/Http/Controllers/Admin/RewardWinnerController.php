@@ -7,11 +7,13 @@ namespace App\Http\Controllers\Admin;
 use App\Data\DashboardRangeData;
 use App\Data\DashboardStatData;
 use App\Data\RewardWinnerRowData;
+use App\Data\ShuffleRewardData;
 use App\Enums\RewardResultStatus;
 use App\Enums\RewardType;
 use App\Http\Controllers\Controller;
 use App\Models\RewardCampaign;
 use App\Models\ShuffleResult;
+use App\Services\Rewards\RewardRedemptionService;
 use App\Support\Http\DateWindow;
 use App\Support\Http\PageSize;
 use Carbon\CarbonImmutable;
@@ -22,6 +24,8 @@ use Inertia\Response;
 
 class RewardWinnerController extends Controller
 {
+    public function __construct(private readonly RewardRedemptionService $redemptions) {}
+
     public function index(Request $request): Response
     {
         $this->authorize('viewAny', ShuffleResult::class);
@@ -44,6 +48,7 @@ class RewardWinnerController extends Controller
             'presets' => DashboardRangeData::options(),
             'window_days' => DateWindow::preceding($filters['from'], $filters['to'])['days'] ?? null,
             'stats' => $this->stats($filters),
+            'redeem' => $this->lookup($request),
             'campaigns' => RewardCampaign::query()
                 ->whereHas('sessions.result')
                 ->orderBy('name')
@@ -57,6 +62,28 @@ class RewardWinnerController extends Controller
             'statuses' => RewardResultStatus::options(),
             'page_sizes' => PageSize::OPTIONS,
         ]);
+    }
+
+    /**
+     * The counter is a dialog on this page rather than a screen of its own, so the code it
+     * was asked about rides in the query string beside the list's own filters - the screen
+     * can be reloaded, or read back over the phone, without losing what was found.
+     *
+     * @return array{code: string, searched: bool, reward: ShuffleRewardData|null, can_redeem: bool}
+     */
+    private function lookup(Request $request): array
+    {
+        $code = $request->string('redeem')->trim()->toString();
+        $result = $code === '' ? null : $this->redemptions->find($code);
+
+        return [
+            'code' => $code,
+            'searched' => $code !== '',
+            'reward' => $result === null
+                ? null
+                : ShuffleRewardData::fromModel($result, withCustomer: true),
+            'can_redeem' => $result !== null && $request->user()->can('redeem', $result),
+        ];
     }
 
     /**

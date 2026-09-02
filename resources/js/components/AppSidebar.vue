@@ -10,7 +10,6 @@ import {
     Package,
     Receipt,
     Shield,
-    TicketCheck,
     Trophy,
     Users,
 } from '@lucide/vue';
@@ -34,7 +33,6 @@ import { index as purchasesIndex } from '@/routes/admin/purchases';
 import { index as rewardsIndex } from '@/routes/admin/rewards';
 import { index as catalogueIndex } from '@/routes/admin/rewards/catalogue';
 import { index as overviewIndex } from '@/routes/admin/rewards/overview';
-import { index as redeemIndex } from '@/routes/admin/rewards/redeem';
 import { index as winnersIndex } from '@/routes/admin/rewards/winners';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { index as visitsIndex } from '@/routes/admin/visits';
@@ -109,10 +107,9 @@ const adminNavItems = computed<NavItem[]>(() =>
 
 /*
   The row labels do not match their route names, and the mismatch is deliberate:
-  "Rewards" is the catalogue, "Redeemed" is the searchable record of what has
-  been won (`winners`), and "Redeem" is the counter, reachable only by the code
-  off a customer's phone. Renaming any of the three to match its route puts two
-  rows under one name.
+  "Rewards" is the catalogue and "Redeemed" is the searchable record of what has
+  been won (`winners`). Renaming either to match its route puts two rows under
+  one name. The counter has no row of its own - it is a dialog on "Redeemed".
 */
 const rewardNavItems = computed<NavItem[]>(() =>
     can('rewards.view')
@@ -139,11 +136,6 @@ const rewardNavItems = computed<NavItem[]>(() =>
                   title: 'Redeemed',
                   href: winnersIndex(),
                   icon: Trophy,
-              },
-              {
-                  title: 'Redeem',
-                  href: redeemIndex(),
-                  icon: TicketCheck,
               },
           ]
         : [],

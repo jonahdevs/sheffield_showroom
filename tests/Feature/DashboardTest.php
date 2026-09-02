@@ -89,12 +89,34 @@ it('opens the dashboard over the last seven days by default', function () {
 
 it('takes the window from the range the page was asked for', function () {
     $this->actingAs(dashboardManager())
-        ->get(route('dashboard', ['range' => 'last_30_days']))
+        ->get(route('dashboard', ['range' => 'yesterday']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('range.preset', 'last_30_days')
-            ->where('range.days', 30)
-            ->has('trend', 30));
+            ->where('range.preset', 'yesterday')
+            ->where('range.from', now()->subDay()->format('Y-m-d'))
+            ->where('range.to', now()->subDay()->format('Y-m-d'))
+            ->where('range.days', 1)
+            ->has('trend', 1));
+});
+
+it('resolves a named year window to that whole calendar year', function () {
+    $lastYear = now()->subYear();
+
+    $this->actingAs(dashboardManager())
+        ->get(route('dashboard', ['range' => 'last_year']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('range.preset', 'last_year')
+            ->where('range.from', $lastYear->copy()->startOfYear()->format('Y-m-d'))
+            ->where('range.to', $lastYear->copy()->endOfYear()->format('Y-m-d')));
+
+    $this->actingAs(dashboardManager())
+        ->get(route('dashboard', ['range' => 'this_year']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('range.preset', 'this_year')
+            ->where('range.from', now()->startOfYear()->format('Y-m-d'))
+            ->where('range.to', now()->format('Y-m-d')));
 });
 
 it('offers the same named windows the other lists offer', function () {
@@ -393,12 +415,20 @@ it('narrows the download to the window the page was showing', function () {
     visitOn(2);
     visitOn(40);
 
+    $from = now()->subDays(59)->format('Y-m-d');
+    $to = now()->format('Y-m-d');
+
     $this->actingAs(dashboardManager())
-        ->get(route('dashboard.export', ['range' => 'last_90_days', 'format' => 'csv']))
+        ->get(route('dashboard.export', [
+            'range' => 'custom',
+            'from' => $from,
+            'to' => $to,
+            'format' => 'csv',
+        ]))
         ->assertOk();
 
     Excel::assertDownloaded(
-        'showroom-dashboard-'.now()->subDays(89)->format('Y-m-d').'-to-'.now()->format('Y-m-d').'.csv',
+        'showroom-dashboard-'.$from.'-to-'.$to.'.csv',
         fn (DashboardSummaryExport $export) => collect($export->array())
             ->firstWhere(1, 'Total visits')[2] === 2,
     );

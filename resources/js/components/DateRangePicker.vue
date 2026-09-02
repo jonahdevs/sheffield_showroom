@@ -127,7 +127,7 @@ function choosePreset(value: string, close: () => void): void {
                                 : 'ghost'
                         "
                         size="sm"
-                        class="justify-start whitespace-nowrap"
+                        class="justify-start py-1.5 whitespace-nowrap"
                         :aria-pressed="preset.value === props.active"
                         :data-test="`${props.dataTest}-${preset.value}`"
                         @click="choosePreset(preset.value, close)"

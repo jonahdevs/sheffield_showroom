@@ -221,13 +221,11 @@ Route::middleware(['auth', 'verified'])
             ->middleware('permission:rewards.view')
             ->name('rewards.overview.index');
 
-        Route::controller(RewardRedemptionController::class)
-            ->prefix('rewards/redeem')
-            ->name('rewards.redeem.')
-            ->group(function () {
-                Route::get('/', 'index')->middleware('permission:rewards.view')->name('index');
-                Route::post('/', 'store')->middleware('permission:rewards.redeem')->name('store');
-            });
+        # The counter is a dialog on the winners list, which serves the lookup; only the
+        # handover itself is posted, so there is no screen behind this name.
+        Route::post('rewards/redeem', [RewardRedemptionController::class, 'store'])
+            ->middleware('permission:rewards.redeem')
+            ->name('rewards.redeem.store');
 
         Route::get('rewards/winners', [RewardWinnerController::class, 'index'])
             ->middleware('permission:rewards.view')

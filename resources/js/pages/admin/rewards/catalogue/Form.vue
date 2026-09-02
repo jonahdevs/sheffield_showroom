@@ -11,9 +11,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-    NativeSelect,
-    NativeSelectOption,
-} from '@/components/ui/native-select';
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
@@ -39,6 +42,18 @@ const heading = computed(() => props.reward?.name ?? 'New reward');
  * somebody who may not write: every field is disabled rather than hidden.
  */
 const readOnly = computed(() => !props.can.update);
+
+/* reka refuses a `SelectItem` with an empty value, so the "no figure" choice
+   travels under a name and is mapped back here - the same boundary the filter
+   bars cross with `all`. */
+const NO_FIGURE = 'none';
+
+const valueUnit = computed({
+    get: () => (form.value_unit === '' ? NO_FIGURE : form.value_unit),
+    set: (chosen: string) => {
+        form.value_unit = chosen === NO_FIGURE ? '' : chosen;
+    },
+});
 
 type RewardForm = {
     name: string;
@@ -238,21 +253,24 @@ defineOptions({
                             <Label for="type">
                                 Kind <span class="text-primary">*</span>
                             </Label>
-                            <NativeSelect
-                                id="type"
-                                v-model="form.type"
-                                class="mt-2.25 w-full"
-                                :disabled="readOnly"
-                                data-test="field-type"
-                            >
-                                <NativeSelectOption
-                                    v-for="type in props.types"
-                                    :key="type.value"
-                                    :value="type.value"
+                            <Select v-model="form.type" :disabled="readOnly">
+                                <SelectTrigger
+                                    id="type"
+                                    class="mt-2.25 w-full"
+                                    data-test="field-type"
                                 >
-                                    {{ type.label }}
-                                </NativeSelectOption>
-                            </NativeSelect>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem
+                                        v-for="type in props.types"
+                                        :key="type.value"
+                                        :value="type.value"
+                                    >
+                                        {{ type.label }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
                             <InputError :message="form.errors.type" />
                         </div>
 
@@ -296,24 +314,27 @@ defineOptions({
 
                         <div>
                             <Label for="value_unit">Read as</Label>
-                            <NativeSelect
-                                id="value_unit"
-                                v-model="form.value_unit"
-                                class="mt-2.25 w-full"
-                                :disabled="readOnly"
-                                data-test="field-value-unit"
-                            >
-                                <NativeSelectOption value="">
-                                    No figure
-                                </NativeSelectOption>
-                                <NativeSelectOption
-                                    v-for="unit in props.units"
-                                    :key="unit.value"
-                                    :value="unit.value"
+                            <Select v-model="valueUnit" :disabled="readOnly">
+                                <SelectTrigger
+                                    id="value_unit"
+                                    class="mt-2.25 w-full"
+                                    data-test="field-value-unit"
                                 >
-                                    {{ unit.label }}
-                                </NativeSelectOption>
-                            </NativeSelect>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="NO_FIGURE">
+                                        No figure
+                                    </SelectItem>
+                                    <SelectItem
+                                        v-for="unit in props.units"
+                                        :key="unit.value"
+                                        :value="unit.value"
+                                    >
+                                        {{ unit.label }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
                             <InputError :message="form.errors.value_unit" />
                         </div>
 
