@@ -7,9 +7,11 @@ namespace App\Services\Rewards;
 use App\Enums\ShuffleSessionStatus;
 use App\Exceptions\ShuffleUnavailableException;
 use App\Models\Purchase;
+use App\Models\RewardCampaign;
 use App\Models\ShuffleSession;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -71,6 +73,70 @@ class ShuffleSessionService
 
             return $existing;
         }
+    }
+
+    /**
+     * Another go, given by hand rather than earned: a turn with no purchase behind it.
+     *
+     * It steps over `max_shuffles_per_customer` on purpose. That cap governs what a
+     * campaign hands out on its own; this is somebody deciding otherwise, and
+     * `created_by` records who. What it does not step over is the campaign being open
+     * and there being something left to win.
+     *
+     * The new turn names no products, so it draws only from the unpaired rewards -
+     * `RewardEligibilityService::productIdsOn(null)`. A tray paired to an oven stays
+     * for whoever bought the oven, whatever goodwill is owed elsewhere.
+     */
+    public function grantAfter(ShuffleSession $previous, ?User $staff = null): ShuffleSession
+    {
+        $campaign = $previous->campaign;
+        $now = CarbonImmutable::now();
+
+        if (! $campaign->isRunning($now)) {
+            throw ShuffleUnavailableException::campaignClosed();
+        }
+
+        if ($this->eligibility->availableCountFor($campaign, []) === 0) {
+            throw ShuffleUnavailableException::poolEmpty();
+        }
+
+        if ($this->holdsALiveTurn($campaign, $previous->customer_id, $now)) {
+            throw ShuffleUnavailableException::turnOutstanding();
+        }
+
+        $session = new ShuffleSession([
+            'campaign_id' => $campaign->id,
+            'customer_id' => $previous->customer_id,
+            # The visit carries across, so the extra turn still reports under the walk-in
+            # it came out of. The purchase does not: one turn per sale, and that sale has
+            # had its - the unique index on `purchase_id` would refuse it anyway.
+            'visit_id' => $previous->visit_id,
+            'purchase_id' => null,
+            'expires_at' => $now->addHours(self::LIFETIME_HOURS),
+            'status' => ShuffleSessionStatus::Pending,
+        ]);
+
+        $session->forceFill([
+            'token' => $this->token(),
+            'created_by' => $staff?->id,
+        ])->save();
+
+        return $session;
+    }
+
+    /**
+     * A turn the customer could still play right now. A pending row whose window has
+     * closed is not one - it is waiting for `rewards:expire` to say so.
+     */
+    private function holdsALiveTurn(RewardCampaign $campaign, int $customerId, CarbonImmutable $at): bool
+    {
+        return $campaign->sessions()
+            ->where('customer_id', $customerId)
+            ->where('status', ShuffleSessionStatus::Pending)
+            ->where(fn (Builder $window) => $window
+                ->whereNull('expires_at')
+                ->orWhere('expires_at', '>', $at))
+            ->exists();
     }
 
     public function forToken(string $token, ?CarbonImmutable $at = null): ShuffleSession

@@ -8,6 +8,7 @@ use App\Models\Purchase;
 use App\Models\RewardCampaign;
 use App\Models\ShuffleSession;
 use App\Services\Rewards\CampaignService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -37,12 +38,20 @@ expect()->extend('toBeOne', function () {
  * Declared here rather than in one test file: several need it, and a helper
  * declared twice across files is a fatal redeclaration.
  *
+ * The start is set back a year on purpose. `CampaignService::publish()` stamps
+ * today onto a campaign that names no start, and `PurchaseFactory` dates a sale
+ * anywhere in the last three months - so without this, every test about
+ * something other than dates would be refused for a sale made before the
+ * promotion opened. A campaign that names its own start is left alone by
+ * publication, which is what makes this work.
+ *
  * @param  array<string, int>  $quantities  reward name to how many units
  */
 function campaignHolding(array $quantities, ?float $minimum = null): RewardCampaign
 {
     $campaign = RewardCampaign::factory()->create([
         'status' => CampaignStatus::Draft,
+        'starts_at' => CarbonImmutable::now()->subYear(),
         'minimum_purchase_amount' => $minimum,
     ]);
 

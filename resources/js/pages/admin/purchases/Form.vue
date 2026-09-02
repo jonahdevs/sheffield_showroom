@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
+import DatePicker from '@/components/DatePicker.vue';
 import InputError from '@/components/InputError.vue';
 import OptionCombobox from '@/components/OptionCombobox.vue';
 import OptionMultiCombobox from '@/components/OptionMultiCombobox.vue';
@@ -27,7 +28,7 @@ interface PurchaseForm {
     reference: string | null;
     amount: string;
     status: App.Enums.PurchaseStatus;
-    /** Already `Y-m-d\TH:i:s`, which is what a datetime-local input wants. */
+    /** Already `Y-m-d\TH:i:s`, so the two halves are a slice apart. */
     purchased_at: string;
 }
 
@@ -46,6 +47,25 @@ const props = defineProps<{
     selected_products: App.Data.OptionData[];
 }>();
 
+/**
+ * Today and the hour, in the shapes the calendar and the clock field read.
+ *
+ * Assembled from the local `get*` parts rather than slicing `toISOString()`,
+ * which is UTC and west of Greenwich yields a future time - exactly what the
+ * server refuses.
+ */
+function nowParts(): { date: string; time: string } {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, '0');
+
+    return {
+        date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+        time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    };
+}
+
+const now = nowParts();
+
 /*
   `visit_id` is deliberately absent from the payload rather than sent as null:
   the tie to a visit is made elsewhere, and leaving the key out means
@@ -62,24 +82,29 @@ const form = useForm({
     reference: props.purchase?.reference ?? '',
     amount: props.purchase?.amount ?? '',
     status: props.purchase?.status ?? 'completed',
-    purchased_at: props.purchase?.purchased_at ?? nowForInput(),
+    purchased_at: props.purchase?.purchased_at ?? `${now.date}T${now.time}`,
 });
 
-/**
- * The current local moment in the shape a datetime-local input reads.
- *
- * The offset is subtracted before `toISOString()` because that returns UTC,
- * which west of Greenwich yields a future time - exactly what the server
- * refuses.
- */
-function nowForInput(): string {
-    const now = new Date();
-    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+/*
+  `DatePicker` keeps the day and the clock apart while the server takes a
+  single `purchased_at`, so the halves are split here and rejoined below rather
+  than on the wire - unlike a visit, whose two columns the server joins itself.
 
-    return local.toISOString().slice(0, 16);
-}
+  The clock is held separately so that clearing the calendar does not throw the
+  time away: an empty day empties the field, `canSubmit` holds the form, and
+  picking a day again restores the hour that was typed.
+*/
+const purchasedDay = ref(props.purchase?.purchased_at.slice(0, 10) ?? now.date);
+const purchasedTime = ref(
+    props.purchase?.purchased_at.slice(11, 16) ?? now.time,
+);
 
-const latestMoment = nowForInput();
+watchEffect(() => {
+    form.purchased_at =
+        purchasedDay.value === ''
+            ? ''
+            : `${purchasedDay.value}T${purchasedTime.value === '' ? '00:00' : purchasedTime.value}`;
+});
 
 const heading = computed(() => {
     if (props.purchase === null) {
@@ -248,14 +273,17 @@ defineOptions({
                             <Label for="purchased_at">
                                 Purchased <span class="text-primary">*</span>
                             </Label>
-                            <Input
-                                id="purchased_at"
-                                v-model="form.purchased_at"
-                                type="datetime-local"
-                                :max="latestMoment"
-                                class="mt-2.25"
-                                data-test="field-purchased-at"
-                            />
+                            <div class="mt-2.25">
+                                <DatePicker
+                                    id="purchased_at"
+                                    v-model="purchasedDay"
+                                    v-model:time="purchasedTime"
+                                    with-time
+                                    max="today"
+                                    placeholder="Pick the date of sale"
+                                    data-test="field-purchased-at"
+                                />
+                            </div>
                             <InputError :message="form.errors.purchased_at" />
                         </div>
 

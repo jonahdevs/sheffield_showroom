@@ -55,6 +55,33 @@ it('refuses to publish the same campaign twice', function () {
     expect($campaign->poolEntries()->count())->toBe(5);
 });
 
+it('starts a campaign that names no start date on the day it is published', function () {
+    $campaign = RewardCampaign::factory()->create([
+        'status' => CampaignStatus::Draft,
+        'starts_at' => null,
+    ]);
+    CampaignReward::factory()->quantity(5)->create(['campaign_id' => $campaign->id]);
+
+    app(CampaignService::class)->publish($campaign);
+
+    expect($campaign->refresh()->starts_at->toDateTimeString())
+        ->toBe(CarbonImmutable::now()->startOfDay()->toDateTimeString());
+});
+
+it('leaves a start date the campaign named alone', function () {
+    $opened = CarbonImmutable::now()->subMonth();
+
+    $campaign = RewardCampaign::factory()->create([
+        'status' => CampaignStatus::Draft,
+        'starts_at' => $opened,
+    ]);
+    CampaignReward::factory()->quantity(5)->create(['campaign_id' => $campaign->id]);
+
+    app(CampaignService::class)->publish($campaign);
+
+    expect($campaign->refresh()->starts_at->toDateTimeString())->toBe($opened->toDateTimeString());
+});
+
 it('holds a campaign back until its start date', function () {
     $campaign = RewardCampaign::factory()->create([
         'status' => CampaignStatus::Draft,
@@ -99,6 +126,33 @@ it('will not reopen a campaign that is over', function () {
 
     expect(fn () => app(CampaignService::class)->activate($campaign->refresh()))
         ->toThrow(CampaignStateException::class);
+});
+
+# Cancelling is the reversible way to stop a campaign: the pool stands, so
+# starting it again reopens the doors on the units still in it.
+it('restarts a campaign that was called off, on the pool it already had', function () {
+    $campaign = campaignHolding(['Audit' => 5]);
+    app(ShuffleRewardService::class)->claim(sessionOn($campaign));
+
+    app(CampaignService::class)->cancel($campaign);
+    app(CampaignService::class)->activate($campaign->refresh());
+
+    expect($campaign->refresh()->status)->toBe(CampaignStatus::Active)
+        # No second pool: restarting is not republishing.
+        ->and($campaign->poolEntries()->count())->toBe(5)
+        ->and($campaign->availableCount())->toBe(4);
+});
+
+it('will not restart a cancelled campaign while another is running', function () {
+    $first = campaignHolding(['Audit' => 5]);
+    app(CampaignService::class)->cancel($first);
+
+    campaignHolding(['Discount' => 5]);
+
+    expect(fn () => app(CampaignService::class)->activate($first->refresh()))
+        ->toThrow(CampaignStateException::class);
+
+    expect($first->refresh()->status)->toBe(CampaignStatus::Cancelled);
 });
 
 # Void keeps `loaded = available + claimed + void` reconciling.

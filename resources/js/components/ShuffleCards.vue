@@ -47,7 +47,7 @@ const chosen = ref<number | null>(null);
 /**
  * A turn played before this page was loaded. `chosen` is component state, so a
  * refresh forgets which card was tapped and the table would otherwise come
- * back dealt face up under a heading saying "Your reward". Nothing is worth
+ * back dealt face up under a heading congratulating them. Nothing is worth
  * restoring, so a reload draws the won card alone and no table.
  */
 const alreadyWon = computed(
@@ -175,7 +175,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     observer?.disconnect();
-    gsap.killTweensOf([...cardEls.value, ...innerEls.value]);
+    gsap.killTweensOf([...cardEls.value, ...innerEls.value, ...flying]);
+    waiting = null;
 });
 
 // =========================================================================
@@ -191,6 +192,14 @@ onBeforeUnmount(() => {
 const reducedMotion = (): boolean =>
     document.hidden ||
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/*
+  How long the table is kept moving. Named rather than inline because the two
+  are read together: the shuffle runs `SHUFFLE_PASSES * PASS_SECONDS`, and the
+  flip that precedes it adds about another 0.6s on a full table.
+*/
+const SHUFFLE_PASSES = 8;
+const PASS_SECONDS = 0.3;
 
 async function shuffleCards(): Promise<void> {
     phase.value = 'shuffling';
@@ -208,7 +217,7 @@ async function shuffleCards(): Promise<void> {
         ease: 'power2.inOut',
     });
 
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < SHUFFLE_PASSES; pass++) {
         /* A real permutation each pass rather than pairwise swaps: no card can
            sit still through the whole shuffle and be followed. */
         const shuffled = [...slotOf.value];
@@ -234,7 +243,7 @@ async function shuffleCards(): Promise<void> {
                     .to(element, {
                         x,
                         y,
-                        duration: 0.42,
+                        duration: PASS_SECONDS,
                         ease: 'power2.inOut',
                         keyframes: { scale: [1, 1.06, 1], zIndex: [1, 10, 1] },
                     })
@@ -295,8 +304,31 @@ function pick(index: number): void {
             rotationY: 270,
             duration: 0.3,
             ease: 'power2.in',
+            onComplete: () => holdWhileClaiming(element),
         });
     }
+}
+
+/**
+ * The claim is a round trip and the card is edge-on the whole time it is in
+ * the air - a line that does not move reads as a stall, which is what makes a
+ * fast request feel like waiting on a server. So the card breathes until the
+ * answer lands, on `scale` rather than the rotation, which is spoken for.
+ */
+let waiting: gsap.core.Tween | null = null;
+
+function holdWhileClaiming(element: HTMLElement | undefined): void {
+    if (!element || props.reward !== null) {
+        return;
+    }
+
+    waiting = gsap.to(element, {
+        scale: 1.16,
+        duration: 0.5,
+        yoyo: true,
+        repeat: -1,
+        ease: 'sine.inOut',
+    });
 }
 
 /**
@@ -323,6 +355,15 @@ watch(
             await edgeOn;
         }
 
+        if (waiting !== null) {
+            waiting.kill();
+            waiting = null;
+            gsap.to(cardEls.value[chosen.value], {
+                scale: 1.08,
+                duration: 0.2,
+            });
+        }
+
         gsap.to(element, {
             rotationY: 360,
             duration: 0.3,
@@ -332,7 +373,24 @@ watch(
     },
 );
 
-/** Confetti, hand-rolled on the GSAP the shuffle already needs. */
+const COLOURS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a855f7'];
+
+const PIECES = 110;
+
+/** Live confetti, so a page that goes away mid-celebration takes its tweens with it. */
+const flying: HTMLElement[] = [];
+
+/**
+ * Confetti, hand-rolled on the GSAP the shuffle already needs.
+ *
+ * Thrown across the whole viewport rather than around the card: the host is
+ * teleported to `body` and fixed, so no panel, card or `overflow` on the way
+ * up clips it, and the celebration is the size of the screen it is on.
+ *
+ * Two throws per piece, which is what makes it read as celebration rather than
+ * as a scatter - out from the card that was just turned over, filling the
+ * screen, then down past the bottom edge under its own weight.
+ */
 function burst(): void {
     const host = burstHost.value;
 
@@ -340,29 +398,63 @@ function burst(): void {
         return;
     }
 
-    const colours = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a855f7'];
+    const width = window.innerWidth;
+    const height = window.innerHeight;
 
-    for (let i = 0; i < 14; i++) {
+    /* Out of the card the customer is already looking at, so the celebration
+       carries on from the reveal instead of arriving from nowhere. */
+    const card = chosen.value === null ? null : cardEls.value[chosen.value];
+    const from = card?.getBoundingClientRect();
+    const originX = from ? from.left + from.width / 2 : width / 2;
+    const originY = from ? from.top + from.height / 2 : height / 2;
+
+    for (let i = 0; i < PIECES; i++) {
         const piece = document.createElement('span');
+        const round = i % 3 === 0;
+        const size = gsap.utils.random(7, 15);
 
-        piece.className = 'absolute size-2 rounded-[2px]';
-        piece.style.backgroundColor = colours[i % colours.length];
+        piece.className = round
+            ? 'absolute top-0 left-0 rounded-full'
+            : 'absolute top-0 left-0 rounded-[2px]';
+        piece.style.width = `${size}px`;
+        piece.style.height = `${round ? size : size * gsap.utils.random(0.45, 1)}px`;
+        piece.style.backgroundColor = COLOURS[i % COLOURS.length];
+
         host.appendChild(piece);
+        flying.push(piece);
 
-        gsap.fromTo(
-            piece,
-            { x: 0, y: 0, opacity: 1, scale: 1 },
-            {
-                x: gsap.utils.random(-140, 140),
-                y: gsap.utils.random(-160, 40),
-                rotation: gsap.utils.random(-220, 220),
-                opacity: 0,
-                scale: gsap.utils.random(0.4, 1.1),
-                duration: gsap.utils.random(0.9, 1.5),
-                ease: 'power2.out',
-                onComplete: () => piece.remove(),
+        gsap.timeline({
+            onComplete: () => {
+                piece.remove();
+                flying.splice(flying.indexOf(piece), 1);
             },
-        );
+        })
+            .fromTo(
+                piece,
+                {
+                    x: originX,
+                    y: originY,
+                    opacity: 1,
+                    rotation: gsap.utils.random(0, 360),
+                    scale: gsap.utils.random(0.6, 1.2),
+                },
+                {
+                    x: gsap.utils.random(0, width),
+                    /* The top three fifths, so the screen fills upwards before
+                       any of it starts coming down. */
+                    y: gsap.utils.random(0, height * 0.6),
+                    duration: gsap.utils.random(0.45, 0.9),
+                    ease: 'power2.out',
+                },
+            )
+            .to(piece, {
+                y: height + 60,
+                x: `+=${gsap.utils.random(-90, 90)}`,
+                rotation: `+=${gsap.utils.random(-540, 540)}`,
+                opacity: 0,
+                duration: gsap.utils.random(1.1, 2.1),
+                ease: 'power1.in',
+            });
     }
 }
 
@@ -516,13 +608,19 @@ function iconOf(card: ShuffleCard, index: number): Component {
                     />
                 </span>
             </button>
+        </div>
 
-            <span
+        <!-- On `body` rather than in the table: fixed inside the page it would
+             be clipped by the panel around it, and the celebration is meant to
+             be the whole screen. Inside the root element all the same, so the
+             component keeps its single root. -->
+        <Teleport to="body">
+            <div
                 ref="burstHost"
-                class="pointer-events-none absolute top-1/2 left-1/2 z-30"
+                class="pointer-events-none fixed inset-0 z-100 overflow-hidden"
                 aria-hidden="true"
             />
-        </div>
+        </Teleport>
 
         <Button
             v-if="phase === 'ready' && props.playable"

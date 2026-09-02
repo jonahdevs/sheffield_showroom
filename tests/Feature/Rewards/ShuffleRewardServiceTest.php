@@ -102,7 +102,13 @@ it('refuses a turn once its campaign has stopped', function () {
 it('stamps the expiry from the reward definition and leaves it there', function () {
     $wonAt = CarbonImmutable::parse('2026-08-31 12:00:00');
 
-    $campaign = RewardCampaign::factory()->create(['status' => CampaignStatus::Draft]);
+    # Open before the moment the turn is claimed at. Publication stamps today
+    # onto a campaign that names no start, and this one is claimed against a
+    # fixed date in the past.
+    $campaign = RewardCampaign::factory()->create([
+        'status' => CampaignStatus::Draft,
+        'starts_at' => $wonAt->subWeek(),
+    ]);
     $reward = CampaignReward::factory()->quantity(1)->create([
         'campaign_id' => $campaign->id,
         'validity_days' => 30,

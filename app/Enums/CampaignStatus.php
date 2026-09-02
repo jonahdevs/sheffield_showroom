@@ -35,9 +35,18 @@ enum CampaignStatus: string
         return $this !== self::Draft;
     }
 
+    # Stopped: handing out nothing, whether it was seen through or called off.
     public function isClosed(): bool
     {
         return $this === self::Completed || $this === self::Cancelled;
+    }
+
+    # Cancelled is called off, not finished - the pool it was published with is
+    # untouched, so it can be restarted. Completed is the one state nothing
+    # moves out of, and `CampaignService::activate` refuses only this.
+    public function isFinal(): bool
+    {
+        return $this === self::Completed;
     }
 
     /**

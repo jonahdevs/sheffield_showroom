@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { Ban, Dices, RefreshCw, Share2 } from '@lucide/vue';
+import { Ban, Dices, RefreshCw, Share2, Ticket } from '@lucide/vue';
 import QRCode from 'qrcode';
 import { onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import AlertError from '@/components/AlertError.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { confirmDelete } from '@/lib/confirm';
 import { dashboard } from '@/routes';
 import { index as rewardsIndex } from '@/routes/admin/rewards';
-import { destroy } from '@/routes/admin/shuffles';
+import { destroy, grant } from '@/routes/admin/shuffles';
 
 const props = defineProps<{
     session: App.Data.ShuffleSessionData;
     campaign_name: string;
-    can: { run: boolean; cancel: boolean };
+    can: { run: boolean; cancel: boolean; grant: boolean };
 }>();
 
 /*
@@ -90,6 +91,15 @@ async function shareLink() {
     }
 }
 
+/* The page draws no field errors of its own, so a refusal - a closed campaign,
+   an empty drawer, a turn the customer is still holding - is caught here and
+   shown rather than landing nowhere. */
+const refusal = ref<string | null>(null);
+
+function report(bag: Record<string, string>) {
+    refusal.value = bag.shuffle ?? null;
+}
+
 async function cancelShuffle() {
     if (
         !(await confirmDelete(
@@ -99,7 +109,33 @@ async function cancelShuffle() {
         return;
     }
 
-    router.delete(destroy(props.session.id).url, { preserveScroll: true });
+    refusal.value = null;
+
+    router.delete(destroy(props.session.id).url, {
+        preserveScroll: true,
+        onError: report,
+    });
+}
+
+/*
+  A turn nobody earned. It steps over the campaign's per-customer limit on
+  purpose - see `ShuffleSessionService::grantAfter` - so it is confirmed rather
+  than given on one press, and the wording says what it cannot do: a granted
+  turn carries no purchase, so the rewards paired to a product are out of it.
+*/
+async function grantAnother() {
+    if (
+        !(await confirmDelete(
+            `${props.session.customer_name} gets a fresh turn, on top of whatever this campaign allows each customer. It carries no purchase, so it can only win a reward that is not paired to a product.`,
+            'Yes, give another turn!',
+        ))
+    ) {
+        return;
+    }
+
+    refusal.value = null;
+
+    router.post(grant(props.session.id).url, {}, { onError: report });
 }
 
 defineOptions({
@@ -222,20 +258,36 @@ defineOptions({
             </div>
         </Card>
 
-        <div
-            v-if="props.session.is_shuffleable"
-            class="flex flex-wrap items-center justify-end gap-3"
-        >
+        <AlertError
+            v-if="refusal"
+            :errors="[refusal]"
+            title="That was refused."
+            data-test="shuffle-refusal"
+        />
+
+        <!-- One row for the life of the turn: which buttons stand in it is what
+             changes. A spent or lapsed turn keeps only the way out and, for
+             whoever holds `rewards.shuffle.grant`, another go. -->
+        <div class="flex flex-wrap items-center justify-end gap-3">
+            <!-- Icon only, but standing as tall as the labelled buttons beside
+                 it. `size="icon"` is a 36px square and the default size is
+                 padding plus a line of text, which an icon alone does not
+                 make - so the empty `::before` supplies that one line box
+                 (`1lh`) and `gap-0` keeps it from spacing the icon along. -->
             <Button
+                v-if="props.session.is_shuffleable"
                 variant="outline"
-                size="icon"
+                class="gap-0 before:h-[1lh] before:content-['']"
                 aria-label="Share this shuffle with the customer"
+                title="Share this shuffle with the customer"
                 data-test="share-shuffle"
                 @click="shareLink"
             >
                 <Share2 />
             </Button>
 
+            <!-- `ShuffleSessionPolicy::cancel` already refuses a turn that is not
+                 pending, so this needs no second condition. -->
             <Button
                 v-if="props.can.cancel"
                 variant="outline"
@@ -248,17 +300,30 @@ defineOptions({
 
             <!-- A plain `<a>`, not a `<Link>`: it leaves the admin SPA for the
                  customer's own shuffle page rather than growing a second copy
-                 of that experience here. -->
+                 of that experience here. Opened in a new tab so this screen -
+                 the QR code, the code to read out, the Cancel button - is
+                 still behind it when the turn is over. -->
             <Button
-                v-if="props.can.run"
+                v-if="props.can.run && props.session.is_shuffleable"
                 as-child
                 variant="outline"
                 data-test="run-shuffle"
             >
-                <a :href="props.session.url">
+                <a :href="props.session.url" target="_blank" rel="noopener">
                     <Dices />
                     Shuffle on this screen
                 </a>
+            </Button>
+
+            <!-- `ShuffleSessionPolicy::grant` holds this back until the turn is
+                 over, so it never stands beside a live QR code. -->
+            <Button
+                v-if="props.can.grant"
+                data-test="grant-shuffle"
+                @click="grantAnother"
+            >
+                <Ticket />
+                Give another chance
             </Button>
 
             <Button as-child variant="outline">

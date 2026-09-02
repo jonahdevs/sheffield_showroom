@@ -7,6 +7,7 @@ namespace App\Services\Rewards;
 use App\Enums\CampaignStatus;
 use App\Exceptions\CampaignStateException;
 use App\Models\RewardCampaign;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -55,7 +56,18 @@ class CampaignService
 
             $written = $this->pool->generate($campaign);
 
-            $campaign->forceFill(['status' => $status])->save();
+            $campaign->forceFill([
+                'status' => $status,
+                # A campaign published without a start date starts on publication -
+                # `statusOnPublication` has just read it exactly that way. Stamped
+                # rather than left null so every screen can say when the promotion
+                # opened, and so the date is fixed at the moment it happened.
+                #
+                # The start of that day, not the minute: a promotion published at
+                # three in the afternoon still covers the sale made at eleven, which
+                # is how a showroom means "it starts today".
+                'starts_at' => $campaign->starts_at ?? CarbonImmutable::now()->startOfDay(),
+            ])->save();
 
             return $written;
         });
@@ -63,6 +75,11 @@ class CampaignService
 
     /**
      * A draft cannot be started - it has no pool yet. Publish it instead.
+     *
+     * A *cancelled* campaign can: calling one off leaves its pool entries exactly
+     * as they were, so starting it again reopens the doors on the inventory it
+     * still holds - no second pool is written, which is why this is the way back
+     * and republishing is not. Only `Completed` is refused.
      */
     public function activate(RewardCampaign $campaign): void
     {
@@ -73,8 +90,8 @@ class CampaignService
                 throw CampaignStateException::notPublished();
             }
 
-            if ($campaign->status->isClosed()) {
-                throw CampaignStateException::closed();
+            if ($campaign->status->isFinal()) {
+                throw CampaignStateException::completed();
             }
 
             $this->refuseIfAnotherIsRunning($campaign);
@@ -93,13 +110,18 @@ class CampaignService
 
     /**
      * Nothing is deleted and nothing returns to the pool - results, redemptions and
-     * the reporting behind them outlive the campaign.
+     * the reporting behind them outlive the campaign. This is the final word: a
+     * completed campaign never starts again, where a cancelled one does.
      */
     public function complete(RewardCampaign $campaign): void
     {
         $this->moveTo($campaign, CampaignStatus::Completed);
     }
 
+    /**
+     * Called off rather than finished: the pool stands and `activate()` takes it
+     * back, so this is the reversible way to stop a campaign. `complete()` is not.
+     */
     public function cancel(RewardCampaign $campaign): void
     {
         $this->moveTo($campaign, CampaignStatus::Cancelled);

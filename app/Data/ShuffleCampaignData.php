@@ -17,6 +17,12 @@ class ShuffleCampaignData extends Data
     public function __construct(
         public string $name,
         public ?string $description,
+        /**
+         * Whether the promotion is open right now, and nothing finer. The status
+         * itself stays in: that a campaign is *paused* rather than finished is the
+         * showroom's business, and this page is read by anybody holding a link.
+         */
+        public bool $is_running,
         public ?string $runs_from,
         public ?string $runs_to,
         public ?string $minimum_purchase,
@@ -52,8 +58,17 @@ class ShuffleCampaignData extends Data
         return new self(
             name: $campaign->name,
             description: $campaign->description,
-            runs_from: $campaign->starts_at?->toFormattedDayDateString(),
-            runs_to: $campaign->ends_at?->toFormattedDayDateString(),
+            is_running: $campaign->isRunning(),
+            # `j M Y`, not the weekday form used for a single date elsewhere: these
+            # two are printed as one range on a narrow panel, and "Fri, Oct 3, 2026"
+            # twice over wraps onto three lines.
+            #
+            # A campaign published with no start date runs from the moment it was
+            # published - `CampaignService::statusOnPublication` reads it exactly that
+            # way - so the row's own creation date stands in rather than leaving the
+            # panel to say "Until the 9th" and nothing about when it opened.
+            runs_from: ($campaign->starts_at ?? $campaign->created_at)?->format('j M Y'),
+            runs_to: $campaign->ends_at?->format('j M Y'),
             minimum_purchase: $minimum === null
                 ? null
                 : 'KSh '.number_format((float) $minimum, 2),

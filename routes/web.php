@@ -291,6 +291,13 @@ Route::middleware(['auth', 'verified'])
                     ->middleware('permission:rewards.shuffle')
                     ->name('run');
 
+                # Another go for the same customer, once this turn is over. Its own
+                # permission: handing out a turn nobody earned is not the same trust
+                # as handing out the one a sale earned.
+                Route::post('shuffles/{session}/grant', 'grant')
+                    ->middleware('permission:rewards.shuffle.grant')
+                    ->name('grant');
+
                 Route::delete('shuffles/{session}', 'destroy')
                     ->middleware('permission:rewards.shuffle')
                     ->name('destroy');

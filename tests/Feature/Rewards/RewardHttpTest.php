@@ -19,6 +19,7 @@ use App\Models\ShuffleResult;
 use App\Models\ShuffleSession;
 use App\Models\User;
 use App\Models\Visit;
+use App\Services\Rewards\CampaignService;
 use App\Services\Rewards\ShuffleRewardService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
@@ -91,6 +92,18 @@ it('refuses to redeem without rewards.redeem', function () {
         ->assertForbidden();
 
     expect($result->refresh()->status)->toBe(RewardResultStatus::Unredeemed);
+});
+
+it('refuses to give another turn without rewards.shuffle.grant', function () {
+    $campaign = campaignHolding(['Audit' => 5]);
+    $session = sessionOn($campaign);
+    app(ShuffleRewardService::class)->claim($session);
+
+    $this->actingAs(rewardsStaff([Permission::RewardsView, Permission::RewardsShuffle]))
+        ->post(route('admin.shuffles.grant', $session))
+        ->assertForbidden();
+
+    expect(ShuffleSession::query()->count())->toBe(1);
 });
 
 it('refuses to mint a turn without rewards.shuffle', function () {
@@ -301,6 +314,40 @@ it('publishes a draft and loads the pool', function () {
 
     expect($campaign->refresh()->status)->toBe(CampaignStatus::Active)
         ->and($campaign->poolEntries()->count())->toBe(30);
+});
+
+it('restarts a cancelled campaign without republishing it', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
+    $campaign = campaignHolding(['Audit' => 4]);
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.transition', $campaign), ['to' => 'cancelled'])
+        ->assertSessionHasNoErrors();
+
+    expect($campaign->refresh()->status)->toBe(CampaignStatus::Cancelled);
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.transition', $campaign), ['to' => 'active'])
+        ->assertSessionHasNoErrors();
+
+    expect($campaign->refresh()->status)->toBe(CampaignStatus::Active)
+        # The pool is the one it was called off with - Publish stays shut.
+        ->and($campaign->poolEntries()->count())->toBe(4);
+});
+
+it('will not restart a completed campaign, and says why', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsCampaignsUpdate]);
+    $campaign = campaignHolding(['Audit' => 4]);
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.transition', $campaign), ['to' => 'completed'])
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($actor)
+        ->post(route('admin.rewards.transition', $campaign), ['to' => 'active'])
+        ->assertSessionHasErrors('campaign');
+
+    expect($campaign->refresh()->status)->toBe(CampaignStatus::Completed);
 });
 
 # -------------------------------------------------------------------------
@@ -530,6 +577,97 @@ it('says why a purchase cannot be given a turn', function () {
     expect(ShuffleSession::query()->count())->toBe(0);
 });
 
+# -------------------------------------------------------------------------
+# Another chance, given by hand
+# -------------------------------------------------------------------------
+#
+# A turn with no purchase behind it: it steps over the campaign's per-customer
+# limit deliberately, and only once the turn in front of it is over.
+
+it('gives a spent turn another go, on a fresh turn of its own', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffleGrant]);
+    $campaign = campaignHolding(['Audit' => 5]);
+    $session = sessionOn($campaign);
+    app(ShuffleRewardService::class)->claim($session);
+
+    $this->actingAs($actor)
+        ->post(route('admin.shuffles.grant', $session))
+        ->assertSessionHasNoErrors();
+
+    $granted = ShuffleSession::query()->latest('id')->first();
+
+    expect($granted->id)->not->toBe($session->id)
+        ->and($granted->customer_id)->toBe($session->customer_id)
+        ->and($granted->campaign_id)->toBe($campaign->id)
+        ->and($granted->status)->toBe(ShuffleSessionStatus::Pending)
+        # No purchase: one turn per sale, and this one was not earned by a sale.
+        ->and($granted->purchase_id)->toBeNull()
+        ->and($granted->created_by)->toBe($actor->id)
+        ->and($granted->token)->not->toBe($session->token);
+});
+
+it('gives another turn over the campaign limit the customer has already reached', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffleGrant]);
+    $campaign = campaignHolding(['Audit' => 5]);
+    $campaign->forceFill(['max_shuffles_per_customer' => 1])->save();
+
+    $session = sessionOn($campaign);
+    app(ShuffleRewardService::class)->claim($session);
+
+    $this->actingAs($actor)
+        ->post(route('admin.shuffles.grant', $session))
+        ->assertSessionHasNoErrors();
+
+    expect($campaign->sessions()->where('customer_id', $session->customer_id)->count())->toBe(2);
+});
+
+it('will not give another turn while the one in hand is still live', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffleGrant]);
+    $campaign = campaignHolding(['Audit' => 5]);
+
+    $this->actingAs($actor)
+        ->post(route('admin.shuffles.grant', sessionOn($campaign)))
+        ->assertForbidden();
+
+    expect(ShuffleSession::query()->count())->toBe(1);
+});
+
+it('will not hand a customer a second live turn, and says why', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffleGrant]);
+    $campaign = campaignHolding(['Audit' => 5]);
+
+    $spent = sessionOn($campaign);
+    app(ShuffleRewardService::class)->claim($spent);
+
+    # A turn given a moment ago and not yet played.
+    ShuffleSession::factory()->create([
+        'campaign_id' => $campaign->id,
+        'customer_id' => $spent->customer_id,
+    ]);
+
+    $this->actingAs($actor)
+        ->post(route('admin.shuffles.grant', $spent))
+        ->assertSessionHasErrors('shuffle');
+
+    expect(ShuffleSession::query()->count())->toBe(2);
+});
+
+it('will not give another turn once the campaign is over', function () {
+    $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffleGrant]);
+    $campaign = campaignHolding(['Audit' => 5]);
+
+    $session = sessionOn($campaign);
+    app(ShuffleRewardService::class)->claim($session);
+
+    app(CampaignService::class)->complete($campaign);
+
+    $this->actingAs($actor)
+        ->post(route('admin.shuffles.grant', $session))
+        ->assertSessionHasErrors('shuffle');
+
+    expect(ShuffleSession::query()->count())->toBe(1);
+});
+
 it('runs the staff fallback with the same service the customer uses', function () {
     $actor = rewardsStaff([Permission::RewardsView, Permission::RewardsShuffle]);
     $campaign = campaignHolding(['Audit' => 5]);
@@ -546,6 +684,25 @@ it('runs the staff fallback with the same service the customer uses', function (
 # =========================================================================
 # The public page
 # =========================================================================
+
+it('dates the promotion from its own start when the campaign names none', function () {
+    $campaign = campaignHolding(['Audit' => 5]);
+    $campaign->forceFill([
+        'starts_at' => null,
+        'ends_at' => CarbonImmutable::now()->addWeek(),
+    ])->save();
+
+    $session = sessionOn($campaign);
+
+    $this->get(route('rewards.shuffle.show', $session->token))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            # Not null, which is what left the panel saying only "Until ..." with
+            # nothing about when the promotion opened.
+            ->where('campaign.runs_from', $campaign->created_at->format('j M Y'))
+            ->where('campaign.runs_to', $campaign->ends_at->format('j M Y'))
+            ->where('campaign.is_running', true));
+});
 
 it('opens the customer page with nothing but a token', function () {
     $campaign = campaignHolding(['Free kitchen audit' => 5]);

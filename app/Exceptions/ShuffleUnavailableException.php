@@ -57,6 +57,16 @@ class ShuffleUnavailableException extends RuntimeException
         );
     }
 
+    # Refused on the way in, not on the way out: the customer is holding a live
+    # link already, and two at once is two chances at once.
+    public static function turnOutstanding(): self
+    {
+        return new self(
+            'turn_outstanding',
+            'This customer already has a turn waiting to be played.',
+        );
+    }
+
     # Nothing is spent: the turn stays pending, so the customer keeps it if
     # stock is added back.
     public static function poolEmpty(): self

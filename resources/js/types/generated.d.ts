@@ -277,6 +277,7 @@ declare namespace App {
         export type ShuffleCampaignData = {
             name: string;
             description: string | null;
+            is_running: boolean;
             runs_from: string | null;
             runs_to: string | null;
             minimum_purchase: string | null;
@@ -411,6 +412,7 @@ declare namespace App {
             | 'rewards.catalogue.update'
             | 'rewards.catalogue.delete'
             | 'rewards.shuffle'
+            | 'rewards.shuffle.grant'
             | 'rewards.redeem'
             | 'roles.view'
             | 'roles.create'

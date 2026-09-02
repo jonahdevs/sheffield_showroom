@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { Head, router, usePage } from '@inertiajs/vue3';
-import { Ban, Check, CircleAlert, Clock, Copy, Hourglass } from '@lucide/vue';
+import {
+    Ban,
+    CalendarDays,
+    Check,
+    CircleAlert,
+    Clock,
+    Copy,
+    CopyCheck,
+    Hourglass,
+    PartyPopper,
+} from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import ShuffleCards from '@/components/ShuffleCards.vue';
@@ -62,6 +72,11 @@ function claim(): void {
                cards, the phase and the tween with it: the reveal would appear
                with no shuffle in front of it. */
             preserveState: true,
+            /* No loading bar across the top. The claim is a round trip, but to
+               the customer this is a card being turned over, not a page being
+               fetched - the progress bar is what made it read as one. The card
+               itself shows the wait, in `ShuffleCards`. */
+            showProgress: false,
         },
     );
 }
@@ -136,22 +151,33 @@ const isPlayable = computed(
 );
 
 const heading = computed(() =>
-    props.state === 'won' ? 'Your reward' : 'Try your luck',
+    props.state === 'won' ? 'Congratulations!' : 'Try your luck',
 );
 
-const documentTitle = computed(() =>
-    isPlayable.value ? heading.value : notice.value.title,
-);
+/*
+  The tab says what the page is, not what just happened to the person reading
+  it: a browser history and a shared screenshot are both easier to place as
+  "Your reward" than as "Congratulations!".
+*/
+const documentTitle = computed(() => {
+    if (!isPlayable.value) {
+        return notice.value.title;
+    }
+
+    return props.state === 'won' ? 'Your reward' : heading.value;
+});
 
 /**
  * Either end of a campaign may be open - a showroom stops one by pausing it,
- * not by waiting for a date - so all four cases are real.
+ * not by waiting for a date - so all four cases are real. With neither end set
+ * there is nothing worth printing: the badge beside the name already says
+ * whether the promotion is open.
  */
-const runsFor = computed(() => {
+const runsFor = computed<string | null>(() => {
     const { runs_from: from, runs_to: to } = props.campaign;
 
     if (from && to) {
-        return `${from} to ${to}`;
+        return `${from} – ${to}`;
     }
 
     if (to) {
@@ -162,7 +188,7 @@ const runsFor = computed(() => {
         return `From ${from}`;
     }
 
-    return 'Running now';
+    return null;
 });
 
 const STEPS = [
@@ -183,38 +209,59 @@ defineOptions({ layout: PublicLayout });
     >
         <!-- ===================== The promotion ===================== -->
         <div class="order-2 flex flex-col gap-4 xl:order-1">
+            <!-- No panel heading: the promotion names itself, and "The
+                 promotion" over the top of its own name was a label on a
+                 label. -->
             <Card as="section" class="gap-0 p-0" data-test="panel-campaign">
-                <div class="border-b border-divider px-5 py-3.5">
-                    <h2
-                        class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
-                    >
-                        The promotion
-                    </h2>
-                </div>
-
                 <div class="flex flex-col gap-3 p-5 text-left">
                     <div>
-                        <span class="text-lg leading-tight font-extrabold">
-                            {{ props.campaign.name }}
-                        </span>
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <h2 class="text-lg leading-tight font-extrabold">
+                                {{ props.campaign.name }}
+                            </h2>
+                            <!-- The same green the Rewards list gives a running
+                                 campaign - see `statusTone` in
+                                 `admin/rewards/Index.vue`. A tint rather than a
+                                 fill, so it reads beside the name instead of
+                                 shouting over it. -->
+                            <Badge
+                                variant="outline"
+                                :class="
+                                    props.campaign.is_running
+                                        ? 'border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                                        : ''
+                                "
+                                data-test="campaign-status"
+                            >
+                                {{
+                                    props.campaign.is_running
+                                        ? 'Active'
+                                        : 'Closed'
+                                }}
+                            </Badge>
+                        </div>
+
+                        <p
+                            v-if="runsFor"
+                            class="mt-1.5 flex items-center gap-1.5 text-xs font-bold"
+                            data-test="runs-for"
+                        >
+                            <CalendarDays
+                                class="size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                            {{ runsFor }}
+                        </p>
+
                         <p
                             v-if="props.campaign.description"
-                            class="mt-1 text-xs text-muted-foreground"
+                            class="mt-2 text-xs text-muted-foreground"
                         >
                             {{ props.campaign.description }}
                         </p>
                     </div>
 
                     <dl class="flex flex-col gap-2.5 text-xs">
-                        <div class="flex justify-between gap-3">
-                            <dt class="text-muted-foreground">Running</dt>
-                            <dd
-                                class="text-right font-bold"
-                                data-test="runs-for"
-                            >
-                                {{ runsFor }}
-                            </dd>
-                        </div>
                         <div
                             v-if="props.campaign.minimum_purchase"
                             class="flex justify-between gap-3"
@@ -275,11 +322,19 @@ defineOptions({ layout: PublicLayout });
         <div
             class="order-1 flex flex-col items-center gap-6 text-center xl:order-2"
         >
+            <!-- Names no reward, deliberately: the card is still turning over
+                 when this arrives, and the turn is the reveal. What was won is
+                 said below, in the panel that belongs to the answer. -->
             <h1
                 v-if="isPlayable"
-                class="text-2xl leading-tight font-extrabold"
+                class="flex items-center gap-2.5 text-2xl leading-tight font-extrabold"
                 data-test="shuffle-heading"
             >
+                <PartyPopper
+                    v-if="props.state === 'won'"
+                    class="size-7 text-primary"
+                    aria-hidden="true"
+                />
                 {{ heading }}
             </h1>
 
@@ -296,6 +351,13 @@ defineOptions({ layout: PublicLayout });
                 class="flex w-full flex-col items-center gap-4"
                 data-test="reward-reveal"
             >
+                <p class="text-lg leading-tight" data-test="reward-name">
+                    You have won
+                    <span class="font-extrabold text-primary">
+                        {{ props.reward.name }}
+                    </span>
+                </p>
+
                 <div class="flex flex-wrap items-center justify-center gap-2">
                     <Badge variant="secondary">{{
                         props.reward.type_label
@@ -312,29 +374,46 @@ defineOptions({ layout: PublicLayout });
                     {{ props.reward.description }}
                 </p>
 
-                <div
-                    class="w-full rounded-xl border-2 border-dashed border-primary/40 bg-card p-4"
-                >
-                    <span class="block text-xs text-muted-foreground">
+                <div class="flex flex-col items-center gap-1.5">
+                    <span class="text-xs text-muted-foreground">
                         Show this code at the showroom
                     </span>
-                    <span
-                        class="mt-1.5 block font-mono text-3xl font-extrabold tracking-[0.12em] break-all select-all sm:text-4xl"
-                        data-test="reward-code"
-                    >
-                        {{ props.reward.code }}
-                    </span>
-                </div>
 
-                <Button
-                    variant="outline"
-                    class="w-full"
-                    data-test="copy-code"
-                    @click="copyCode"
-                >
-                    <component :is="hasCopied ? Check : Copy" />
-                    {{ hasCopied ? 'Copied' : 'Copy code' }}
-                </Button>
+                    <!-- The code is the thing worth looking at, so it is
+                         highlighted rather than framed: a box around it drew
+                         the eye to the border. `select-all` keeps a long press
+                         on a phone selecting the whole code and not a word of
+                         it. -->
+                    <div class="flex items-center gap-1.5">
+                        <span
+                            class="rounded-lg bg-primary/10 px-3 py-1 font-mono text-2xl font-extrabold tracking-[0.12em] break-all text-primary select-all sm:text-3xl"
+                            data-test="reward-code"
+                        >
+                            {{ props.reward.code }}
+                        </span>
+
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            :aria-label="
+                                hasCopied ? 'Code copied' : 'Copy the code'
+                            "
+                            :title="hasCopied ? 'Copied' : 'Copy the code'"
+                            data-test="copy-code"
+                            @click="copyCode"
+                        >
+                            <!-- `CopyCheck`, not a bare tick: it stays the same
+                                 mark with the copy done, so the button does not
+                                 appear to become a different control for two
+                                 seconds. `Check` is still the notice icon for a
+                                 reward already claimed, above. -->
+                            <component
+                                :is="hasCopied ? CopyCheck : Copy"
+                                :class="hasCopied ? 'text-primary' : ''"
+                            />
+                        </Button>
+                    </div>
+                </div>
 
                 <p class="text-xs text-muted-foreground">
                     Won {{ props.reward.won_on

@@ -33,6 +33,14 @@ class ShuffleSessionPolicy
         return $user->can(Permission::RewardsShuffle->value);
     }
 
+    # Another go, given by hand. Only once this turn is over: while it is still
+    # pending the customer has their chance, and it is the link in their hand.
+    public function grant(User $user, ShuffleSession $session): bool
+    {
+        return $user->can(Permission::RewardsShuffleGrant->value)
+            && ! $session->isShuffleable();
+    }
+
     # A turn already shuffled cannot be cancelled: the reward behind it was won.
     public function cancel(User $user, ShuffleSession $session): bool
     {

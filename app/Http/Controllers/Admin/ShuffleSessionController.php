@@ -65,6 +65,7 @@ class ShuffleSessionController extends Controller
             'can' => [
                 'run' => $viewer->can('run', $session),
                 'cancel' => $viewer->can('cancel', $session),
+                'grant' => $viewer->can('grant', $session),
             ],
         ]);
     }
@@ -80,6 +81,28 @@ class ShuffleSessionController extends Controller
         }
 
         return back();
+    }
+
+    # Lands on the new turn's screen, which is the QR code to hand over - the
+    # one somebody pressing this is reaching for.
+    public function grant(Request $request, ShuffleSession $session): RedirectResponse
+    {
+        $this->authorize('grant', $session);
+
+        try {
+            $next = $this->sessions->grantAfter($session, $request->user());
+        } catch (ShuffleUnavailableException $exception) {
+            return back()->withErrors(['shuffle' => $exception->getMessage()]);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __(':name has another turn.', [
+                'name' => $session->customer->displayName(),
+            ]),
+        ]);
+
+        return to_route('admin.shuffles.show', $next);
     }
 
     public function destroy(ShuffleSession $session): RedirectResponse

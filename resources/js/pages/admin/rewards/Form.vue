@@ -8,6 +8,7 @@ import {
     Play,
     Plus,
     Rocket,
+    RotateCcw,
     Trash2,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
@@ -72,11 +73,18 @@ const readOnly = computed(() => !props.can.update);
  */
 const isPublished = computed(() => props.campaign?.is_published ?? false);
 
-const isClosed = computed(
-    () =>
-        props.campaign?.status === 'completed' ||
-        props.campaign?.status === 'cancelled',
-);
+/*
+  Called off is not finished. Cancelling leaves the pool exactly as it was, so
+  `CampaignService::activate` takes a cancelled campaign back and the screen
+  offers Restart - the way back in, since publishing is one-way and would write
+  a second pool. Completing is the only state nothing moves out of.
+*/
+const isCancelled = computed(() => props.campaign?.status === 'cancelled');
+
+const isCompleted = computed(() => props.campaign?.status === 'completed');
+
+/** Stopped either way, which is what decides whether the panel is drawn at all. */
+const isClosed = computed(() => isCompleted.value || isCancelled.value);
 
 // =========================================================================
 // The form
@@ -321,8 +329,8 @@ type StateMove = {
     label: string;
     icon: Component;
     hint: string;
-    /** Whether it ends the campaign for good. */
-    final: boolean;
+    /** What the move is confirmed with, or null where it needs no asking. */
+    confirm: string | null;
 };
 
 /**
@@ -332,13 +340,26 @@ type StateMove = {
 const stateMoves = computed<StateMove[]>(() => {
     const campaign = props.campaign;
 
-    if (
-        campaign === null ||
-        !campaign.is_published ||
-        isClosed.value ||
-        !props.can.update
-    ) {
+    if (campaign === null || !campaign.is_published || !props.can.update) {
         return [];
+    }
+
+    /* Completed is the end. Cancelled is not: `moveTo` still refuses every
+       other move out of it, so Restart stands alone. */
+    if (isCompleted.value) {
+        return [];
+    }
+
+    if (isCancelled.value) {
+        return [
+            {
+                to: 'active',
+                label: 'Restart',
+                icon: RotateCcw,
+                hint: 'Opens the doors again on the pool it was called off with. Nothing is reloaded.',
+                confirm: null,
+            },
+        ];
     }
 
     const moves: StateMove[] = [];
@@ -349,7 +370,7 @@ const stateMoves = computed<StateMove[]>(() => {
             label: 'Start',
             icon: Play,
             hint: 'Starts handing out turns now.',
-            final: false,
+            confirm: null,
         });
     }
 
@@ -359,7 +380,7 @@ const stateMoves = computed<StateMove[]>(() => {
             label: 'Pause',
             icon: Pause,
             hint: 'Stops it without ending it. The pool and the turns already handed out are untouched.',
-            final: false,
+            confirm: null,
         });
     }
 
@@ -369,14 +390,16 @@ const stateMoves = computed<StateMove[]>(() => {
             label: 'Complete',
             icon: CircleCheck,
             hint: 'Ends the campaign. Every result and redemption behind it is kept.',
-            final: true,
+            confirm:
+                'Ends the campaign. Every result and redemption behind it is kept, and unlike cancelling it can never be started again.',
         },
         {
             to: 'cancelled',
             label: 'Cancel',
             icon: Ban,
-            hint: 'Calls the campaign off. Rewards already won stay won.',
-            final: true,
+            hint: 'Calls the campaign off. Rewards already won stay won, and it can be restarted.',
+            confirm:
+                'Calls the campaign off and stops the turns. Rewards already won stay won, and the pool is kept - you can restart it from here afterwards.',
         },
     );
 
@@ -422,10 +445,11 @@ async function moveTo(move: StateMove) {
         return;
     }
 
-    /* Only the two that close it: starting and pausing each undo the other. */
-    if (move.final) {
+    /* Only the two that close it: starting, pausing and restarting each undo
+       the other, and none of them costs anything to get wrong. */
+    if (move.confirm !== null) {
         const agreed = await confirmDelete(
-            `${move.hint} The campaign cannot be started again afterwards.`,
+            move.confirm,
             `Yes, ${move.label.toLowerCase()} it!`,
         );
 
@@ -1050,7 +1074,9 @@ defineOptions({
                     {{
                         props.can.publish
                             ? 'Publishing writes one pool entry for every unit in the drawer and opens the doors. It cannot be undone, and the quantities stop being editable the moment it happens.'
-                            : 'The pool has been written. Rewards can still be added and taken out of the drawer above; what is left here is moving the campaign through its life — only one campaign hands out turns at a time.'
+                            : isCancelled
+                              ? 'This campaign was called off. Restarting puts it back on the same pool - only one campaign hands out turns at a time, so whatever is running now must be paused or completed first.'
+                              : 'The pool has been written. Rewards can still be added and taken out of the drawer above; what is left here is moving the campaign through its life — only one campaign hands out turns at a time.'
                     }}
                 </p>
 
@@ -1081,12 +1107,22 @@ defineOptions({
             </div>
 
             <p
-                v-if="isClosed"
+                v-if="isCompleted"
                 class="border-t border-border px-5 py-3.5 text-xs text-muted-foreground"
                 data-test="campaign-closed"
             >
                 This campaign is over. Its results, redemptions and reporting
                 are kept, and nothing can move it back.
+            </p>
+
+            <p
+                v-else-if="isCancelled"
+                class="border-t border-border px-5 py-3.5 text-xs text-muted-foreground"
+                data-test="campaign-cancelled"
+            >
+                This campaign was called off. Its pool is exactly as it was
+                left, so restarting hands out the units still in it - it is not
+                published again, and nothing is reloaded.
             </p>
         </Card>
     </div>

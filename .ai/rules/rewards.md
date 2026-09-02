@@ -8,6 +8,7 @@ paths:
   - 'resources/js/pages/admin/rewards/**'
   - 'database/migrations/*_{rewards,campaign_rewards,campaign_reward_product,reward_pool_entries,shuffle_results,shuffle_sessions}_table.php'
   - 'app/Http/Controllers/Admin/Reward{Winner,Redemption}Controller.php'
+  - app/Services/Rewards/CampaignService.php
 ---
 
 # Rewards
@@ -62,3 +63,11 @@ Still not a ledger. The pivot carries no price and no quantity, deliberately - i
 `RewardRedemptionController` holds only `store`. The code lookup lives in `RewardWinnerController::lookup()` and ships as the `redeem` prop on `admin/rewards/Winners`, read from `?redeem=CODE` in the query string beside the list's own filters.
 
 `RedeemRewardDialog.vue` looks a code up with `router.reload({ only: ['redeem'], data: { redeem } })`, so typing never redraws the table. The dialog's open state is derived from `redeem.searched`, not set on the click — `store` answers with `back()`, which rebuilds the page, and a click-set flag would close the dialog on the handover it just made.
+
+## Cancelling a campaign is reversible; completing it is not
+Publishing stays one-way — it writes the pool, and `RewardCampaignPolicy::publish` hides Publish the moment the status leaves draft. The way back into a stopped campaign is `activate()`, not a second publish.
+
+`CampaignStatus::isFinal()` (Completed only) is what `activate()` refuses, so a **cancelled** campaign restarts on the pool it was called off with — no units are written, claimed ones stay claimed. `isClosed()` (Completed *or* Cancelled) still guards `moveTo()`, so pause/complete/cancel out of a closed campaign are refused; Restart stands alone.
+
+Only one campaign is active at a time, so a restart still runs `refuseIfAnotherIsRunning()`. `admin/rewards/Form.vue` mirrors these by hand in `stateMoves` — a move the service would refuse must not be drawn.</note>
+</invoke>

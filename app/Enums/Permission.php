@@ -86,6 +86,11 @@ enum Permission: string
     # in the QR code instead.
     case RewardsShuffle = 'rewards.shuffle';
 
+    # Giving somebody a turn they did not earn is a different trust from handing
+    # out the one a sale earned: it answers to nothing on a receipt and it steps
+    # over the campaign's own per-customer limit, so it is held apart.
+    case RewardsShuffleGrant = 'rewards.shuffle.grant';
+
     case RewardsRedeem = 'rewards.redeem';
 
     # =========================================================================

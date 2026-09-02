@@ -38,10 +38,19 @@ class CampaignStateException extends RuntimeException
         );
     }
 
+    # Only completing is final. Cancelling calls a campaign off and leaves the
+    # pool standing, so `CampaignService::activate()` will take it back.
+    public static function completed(): self
+    {
+        return new self(
+            'This campaign has been completed. Its results stay on file, but a finished campaign cannot be reopened.',
+        );
+    }
+
     public static function closed(): self
     {
         return new self(
-            'This campaign is over. Its results stay on file, but it cannot be reopened.',
+            'This campaign is not running. A cancelled one can be restarted; a completed one is finished for good.',
         );
     }
 }
