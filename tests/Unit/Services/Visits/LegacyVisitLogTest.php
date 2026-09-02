@@ -210,10 +210,10 @@ it('counts the rows that record a customer and no visit', function () {
 it('keeps the desk a note was filed against', function (string $note, ?string $department) {
     expect(visitLog()->departmentFor($note))->toBe($department);
 })->with([
-    'showroom' => ['Showroom Visit', 'showroom_sales'],
-    'cold room' => ['Cold room- Coldroom solutions', 'showroom_sales'],
-    'laundry' => ['Laundry- Calender ironer', 'showroom_sales'],
-    'sales' => ["Sales\nMeeting", 'showroom_sales'],
+    'showroom' => ['Showroom Visit', 'showroom'],
+    'cold room' => ['Cold room- Coldroom solutions', 'showroom'],
+    'laundry' => ['Laundry- Calender ironer', 'showroom'],
+    'sales' => ["Sales\nMeeting", 'sales'],
 
     'accounts' => ["Accounts\nDelivery of invoices\nRachael", 'finance'],
     'cheque before collection' => ['Cheque collection-Accounts', 'finance'],

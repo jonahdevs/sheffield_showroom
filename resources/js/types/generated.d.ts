@@ -443,7 +443,8 @@ declare namespace App {
             'pending' | 'shuffled' | 'expired' | 'cancelled';
         export type VisitDepartment =
             | 'finance'
-            | 'showroom_sales'
+            | 'showroom'
+            | 'sales'
             | 'marketing'
             | 'hr'
             | 'crm'

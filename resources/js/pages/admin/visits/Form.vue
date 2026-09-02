@@ -74,7 +74,7 @@ const form = useForm({
     visited_on: props.visit?.visited_on ?? now.date,
     visited_time: props.visit?.visited_time ?? now.time,
     purpose: props.visit?.purpose ?? 'new_enquiry',
-    department: props.visit?.department ?? 'showroom_sales',
+    department: props.visit?.department ?? 'showroom',
     source: props.visit?.source ?? 'walk_in',
     referred_by: props.visit?.referred_by ?? '',
     /* Blank on a new visit, deliberately - do not "fix" this to the signed-in
@@ -205,7 +205,7 @@ const { choice: purposeChoice, other: purposeOther } = openOnStored(
 const { choice: departmentChoice, other: departmentOther } = openOnStored(
     props.departments,
     props.visit?.department,
-    'showroom_sales',
+    'showroom',
 );
 
 const { choice: sourceChoice, other: sourceOther } = openOnStored(

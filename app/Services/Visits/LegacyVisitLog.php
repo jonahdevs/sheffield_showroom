@@ -244,7 +244,7 @@ class LegacyVisitLog
         return match (true) {
             $this->mentions($department, ['cheque', 'account', 'finance']) => VisitDepartment::Finance,
 
-            $this->mentions($department, ['showroom', 'cold room', 'coldroom', 'laundry', 'rational']) => VisitDepartment::ShowroomSales,
+            $this->mentions($department, ['showroom', 'cold room', 'coldroom', 'laundry', 'rational']) => VisitDepartment::Showroom,
 
             $this->mentions($department, ['logistic', 'collection']) => VisitDepartment::Logistics,
 
@@ -252,7 +252,7 @@ class LegacyVisitLog
             $this->mentions($department, ['service', 'repair']) => VisitDepartment::Service,
 
             $this->mentions($department, ['horeca']) => VisitDepartment::Horeca,
-            $this->mentions($department, ['sales']) => VisitDepartment::ShowroomSales,
+            $this->mentions($department, ['sales']) => VisitDepartment::Sales,
 
             $this->mentions($department, ['import']) => VisitDepartment::Imports,
             $this->mentions($department, ['purchas', 'store']) => VisitDepartment::Stores,

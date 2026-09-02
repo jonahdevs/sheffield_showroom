@@ -10,7 +10,11 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 enum VisitDepartment: string
 {
     case Finance = 'finance';
-    case ShowroomSales = 'showroom_sales';
+    # Two desks, not one: the floor that shows the equipment and the desk that
+    # closes the sale. Rows written while they shared an option still read
+    # 'showroom_sales' - see `RETIRED`.
+    case Showroom = 'showroom';
+    case Sales = 'sales';
     case Marketing = 'marketing';
     case Hr = 'hr';
     case Crm = 'crm';
@@ -29,7 +33,8 @@ enum VisitDepartment: string
     {
         return match ($this) {
             self::Finance => 'Finance',
-            self::ShowroomSales => 'Showroom/Sales',
+            self::Showroom => 'Showroom',
+            self::Sales => 'Sales',
             self::Marketing => 'Marketing',
             self::Hr => 'HR',
             self::Crm => 'CRM',
@@ -46,14 +51,31 @@ enum VisitDepartment: string
         };
     }
 
+    /**
+     * Values taken off the menu that rows still hold. Named here rather than kept
+     * as cases, so the form stops offering a desk that no longer exists while the
+     * visits already filed under it keep reading as something a person wrote.
+     * Nothing is migrated: the column is free text and only the people who took
+     * those visits know which half of the old joint desk each one belonged to.
+     *
+     * @var array<string, string>
+     */
+    private const RETIRED = [
+        'showroom_sales' => 'Showroom/Sales',
+    ];
+
     # `visits.department` is free text: the cases above are the menu the form
     # offers, not a closed set, so a desk somebody typed is stored as written
     # and read back as written.
     public static function readable(string|self $value): string
     {
-        return $value instanceof self
-            ? $value->label()
-            : self::tryFrom($value)?->label() ?? $value;
+        if ($value instanceof self) {
+            return $value->label();
+        }
+
+        return self::tryFrom($value)?->label()
+            ?? self::RETIRED[$value]
+            ?? $value;
     }
 
     /**

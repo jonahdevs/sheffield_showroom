@@ -112,7 +112,7 @@ function visitFields(): array
         'visited_on' => now()->subDay()->format('Y-m-d'),
         'visited_time' => '14:30',
         'purpose' => VisitPurpose::Quotation->value,
-        'department' => VisitDepartment::ShowroomSales->value,
+        'department' => VisitDepartment::Showroom->value,
         'source' => CustomerSource::Referral->value,
         'referred_by' => 'Mary Wanjiru',
         'notes' => 'Coming back on Friday.',
@@ -1051,7 +1051,22 @@ it('stores a typed department exactly as it was written', function () {
 
 it('reads a typed department back as written and a known one by its label', function () {
     expect(VisitDepartment::readable('Fabrication'))->toBe('Fabrication')
-        ->and(VisitDepartment::readable('showroom_sales'))->toBe('Showroom/Sales');
+        ->and(VisitDepartment::readable('showroom'))->toBe('Showroom');
+});
+
+it('offers the showroom and the sales desk separately', function () {
+    expect(VisitDepartment::values())
+        ->toContain('showroom')
+        ->toContain('sales')
+        ->not->toContain('showroom_sales')
+        ->and(VisitDepartment::Showroom->label())->toBe('Showroom')
+        ->and(VisitDepartment::Sales->label())->toBe('Sales');
+});
+
+it('still names the joint desk the visits already on file were filed under', function () {
+    # Off the menu, but not unreadable: the log, the filters and the dashboard
+    # all print through `readable()`, and the rows were never migrated.
+    expect(VisitDepartment::readable('showroom_sales'))->toBe('Showroom/Sales');
 });
 
 it('refuses a visit that names no department', function () {
