@@ -3,6 +3,7 @@
 use App\Data\VisitRowData;
 use App\Enums\CustomerType;
 use App\Enums\Permission;
+use App\Enums\VisitPurpose;
 use App\Enums\VisitReport;
 use App\Exceptions\DocumentRenderingFailedException;
 use App\Exports\CustomerExport;
@@ -243,15 +244,17 @@ it('hands reception the front desk sheet rather than the full log', function () 
             'Contact',
             'Department',
             'Nature of visit',
+            'Visit notes',
             'Respondent',
         ],
     );
 });
 
-it('keeps the write-up off reception\'s sheet', function () {
+it('prints both the purpose and the write-up on reception\'s sheet', function () {
     Excel::fake();
 
     $visit = Visit::factory()->for(Customer::factory())->create([
+        'purpose' => VisitPurpose::Enquiry->value,
         'notes' => 'Haggled hard on the oven; go in at 12% next time.',
     ]);
 
@@ -264,8 +267,8 @@ it('keeps the write-up off reception\'s sheet', function () {
         function (VisitExport $export) use ($visit): bool {
             $printed = implode('|', array_map(strval(...), $export->map($visit)));
 
-            return ! in_array('Notes', $export->headings(), true)
-                && ! str_contains($printed, 'Haggled hard');
+            return str_contains($printed, 'Enquiry')
+                && str_contains($printed, 'Haggled hard');
         },
     );
 });

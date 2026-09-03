@@ -45,15 +45,17 @@ enum VisitReport: string
                 'notes' => 'Notes',
             ],
 
-            # Deliberately without `notes`: the floor's write-up is not the
-            # front desk's to read. `department` is on it because routing a
-            # caller to a desk is the front desk's own job.
+            # `department` is on it because routing a caller to a desk is the
+            # front desk's own job. The write-up sits beside the purpose rather
+            # than instead of it: the menu label says what kind of visit it was,
+            # the notes say what was actually asked for.
             self::Reception => [
                 'customer_name' => 'Visitor name',
                 'customer_company' => 'Company',
                 'customer_phone' => 'Contact',
                 'department' => 'Department',
                 'purpose' => 'Nature of visit',
+                'notes' => 'Visit notes',
                 'respondent' => 'Respondent',
             ],
         };
