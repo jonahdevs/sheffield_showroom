@@ -84,14 +84,14 @@ it('reads the department a visitor came to see as the nearest purpose', function
     'a department nobody recognises' => ['Wickerwork', 'other'],
 ]);
 
-it('reads a showroom note that asks about something as a new enquiry', function () {
+it('reads a showroom note that asks about something as an enquiry', function () {
     expect(visitLog()->purposeFor("Showroom\nInquiry on coffee machines\nColins")->value)
-        ->toBe('new_enquiry');
+        ->toBe('enquiry');
 });
 
-it('reads an enquiry with no department in front of it as a new enquiry', function () {
+it('reads an enquiry with no department in front of it as an enquiry', function () {
     expect(visitLog()->purposeFor("Individual\nInquiry on coffee machine & ice cube makers\nAnn")->value)
-        ->toBe('new_enquiry');
+        ->toBe('enquiry');
 });
 
 it('leaves a purpose the department already settled alone', function (string $note, string $purpose) {

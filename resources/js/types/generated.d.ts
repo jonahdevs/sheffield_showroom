@@ -459,7 +459,7 @@ declare namespace App {
             | 'installation'
             | 'other';
         export type VisitPurpose =
-            | 'new_enquiry'
+            | 'enquiry'
             | 'quotation'
             | 'product_viewing'
             | 'order'

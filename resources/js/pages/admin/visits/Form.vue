@@ -73,7 +73,7 @@ const form = useForm({
     segment: props.visit?.segment ?? '',
     visited_on: props.visit?.visited_on ?? now.date,
     visited_time: props.visit?.visited_time ?? now.time,
-    purpose: props.visit?.purpose ?? 'new_enquiry',
+    purpose: props.visit?.purpose ?? 'enquiry',
     department: props.visit?.department ?? 'showroom',
     source: props.visit?.source ?? 'walk_in',
     referred_by: props.visit?.referred_by ?? '',
@@ -199,7 +199,7 @@ const heading = computed(() =>
 const { choice: purposeChoice, other: purposeOther } = openOnStored(
     props.purposes,
     props.visit?.purpose,
-    'new_enquiry',
+    'enquiry',
 );
 
 const { choice: departmentChoice, other: departmentOther } = openOnStored(

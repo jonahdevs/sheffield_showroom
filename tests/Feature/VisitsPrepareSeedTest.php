@@ -20,7 +20,7 @@ it('writes the rows the seeder reads', function () {
         ->toHaveCount(1)
         ->and(json_decode((string) file_get_contents($output), true)[0])
         ->legacy_id->toBe(6)
-        ->purpose->toBe('new_enquiry')
+        ->purpose->toBe('enquiry')
         ->respondent->toBe('Colins')
         ->visited_at->toBe('2026-02-25 11:26:47');
 

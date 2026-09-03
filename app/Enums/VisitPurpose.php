@@ -9,7 +9,7 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 #[TypeScript]
 enum VisitPurpose: string
 {
-    case NewEnquiry = 'new_enquiry';
+    case Enquiry = 'enquiry';
     case Quotation = 'quotation';
     case ProductViewing = 'product_viewing';
     case Order = 'order';
@@ -24,7 +24,7 @@ enum VisitPurpose: string
     public function label(): string
     {
         return match ($this) {
-            self::NewEnquiry => 'New enquiry',
+            self::Enquiry => 'Enquiry',
             self::Quotation => 'Quotation request',
             self::ProductViewing => 'Product viewing / demo',
             self::Order => 'Placing an order',

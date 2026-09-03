@@ -157,7 +157,7 @@ class LegacyVisitLog
         }
 
         if (($purpose === null || $purpose === VisitPurpose::ProductViewing) && $this->readsAsEnquiry($note)) {
-            return VisitPurpose::NewEnquiry;
+            return VisitPurpose::Enquiry;
         }
 
         return $purpose ?? VisitPurpose::Other;
