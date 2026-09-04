@@ -13,7 +13,7 @@ jobs:
     steps:
       # Checkout
       - name: 🚚 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # PHP Setup
       - name: 🐘 Setup PHP 8.4
@@ -40,7 +40,7 @@ jobs:
 
       # Node / Assets
       - name: 🟢 Setup Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: "npm"
@@ -53,7 +53,7 @@ jobs:
 
       # Deploy via Rsync
       - name: 📂 Sync files to server
-        uses: burnett01/rsync-deployments@6.0.0
+        uses: burnett01/rsync-deployments@9.0.0
         with:
           switches: >-
             -avzr --delete
@@ -84,7 +84,7 @@ jobs:
 
       # Post-Deploy Commands
       - name: ⚙️ Run post-deployment commands
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
