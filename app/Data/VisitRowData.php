@@ -58,15 +58,17 @@ class VisitRowData extends Data
         return new self(
             id: $visit->id,
             customer_name: $customer?->name
-                ?? $customer?->displayName()
-                ?? $visit->visitor_name
-                ?? 'Unknown visitor',
+            ?? $customer?->displayName()
+            ?? $visit->visitor_name
+            ?? 'Unknown visitor',
             # Null rather than defaulted to Individual: nobody asked a courier
             # whether they buy for themselves or for a firm, and answering for
             # them puts a wrong badge on the row.
             customer_type: $customer?->type,
-            visitor_type: $visit->visitor_type,
-            visitor_type_label: VisitorType::readable($visit->visitor_type),
+            visitor_type: $visit->visitor_type ?? VisitorType::Customer->value,
+            visitor_type_label: $visit->visitor_type === null
+            ? VisitorType::Customer->label()
+            : VisitorType::readable($visit->visitor_type),
             customer_company: $customer?->company_name ?? $visit->visitor_organisation,
             customer_phone: $customer?->phone ?? $visit->visitor_phone,
             purpose: $visit->purpose,
@@ -75,8 +77,8 @@ class VisitRowData extends Data
             source_label: CustomerSource::readable($visit->source),
             department: $visit->department,
             department_label: $visit->department === null
-                ? null
-                : VisitDepartment::readable($visit->department),
+            ? null
+            : VisitDepartment::readable($visit->department),
             visited_on: $visit->visited_at->format('j M Y'),
             visited_time: $visit->visited_at->format('H:i'),
             products: $visit->products->pluck('name')->all(),
