@@ -10,6 +10,7 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 enum VisitDepartment: string
 {
     case Accounts = 'accounts';
+    case Admin = 'admin';
     # Two desks, not one: the floor that shows the equipment and the desk that
     # closes the sale. Rows written while they shared an option still read
     # 'showroom_sales' - see `RETIRED`.
@@ -33,6 +34,7 @@ enum VisitDepartment: string
     {
         return match ($this) {
             self::Accounts => 'Accounts',
+            self::Admin => 'Admin',
             self::Showroom => 'Showroom',
             self::Sales => 'Sales',
             self::Marketing => 'Marketing',
