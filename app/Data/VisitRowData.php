@@ -7,6 +7,7 @@ namespace App\Data;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\VisitDepartment;
+use App\Enums\VisitorType;
 use App\Enums\VisitPurpose;
 use App\Models\Visit;
 use Spatie\LaravelData\Data;
@@ -27,8 +28,13 @@ class VisitRowData extends Data
      */
     public function __construct(
         public int $id,
+        # "Customer" throughout, because that is what this list and the download
+        # have always called these columns and renaming them moves every heading.
+        # Half the log has no customer behind it - see `visitor_type`.
         public string $customer_name,
-        public CustomerType $customer_type,
+        public ?CustomerType $customer_type,
+        public string $visitor_type,
+        public string $visitor_type_label,
         public ?string $customer_company,
         public ?string $customer_phone,
         public string $purpose,
@@ -47,14 +53,22 @@ class VisitRowData extends Data
 
     public static function fromModel(Visit $visit): self
     {
+        $customer = $visit->customer;
+
         return new self(
             id: $visit->id,
-            customer_name: $visit->customer?->name
-                ?? $visit->customer?->displayName()
-                ?? 'Unknown customer',
-            customer_type: $visit->customer?->type ?? CustomerType::Individual,
-            customer_company: $visit->customer?->company_name,
-            customer_phone: $visit->customer?->phone,
+            customer_name: $customer?->name
+                ?? $customer?->displayName()
+                ?? $visit->visitor_name
+                ?? 'Unknown visitor',
+            # Null rather than defaulted to Individual: nobody asked a courier
+            # whether they buy for themselves or for a firm, and answering for
+            # them puts a wrong badge on the row.
+            customer_type: $customer?->type,
+            visitor_type: $visit->visitor_type,
+            visitor_type_label: VisitorType::readable($visit->visitor_type),
+            customer_company: $customer?->company_name ?? $visit->visitor_organisation,
+            customer_phone: $customer?->phone ?? $visit->visitor_phone,
             purpose: $visit->purpose,
             purpose_label: VisitPurpose::readable($visit->purpose),
             source: $visit->source,

@@ -13,6 +13,7 @@ use App\Data\DashboardTrendPointData;
 use App\Data\VisitRowData;
 use App\Enums\CustomerSource;
 use App\Enums\Permission;
+use App\Enums\VisitorType;
 use App\Enums\VisitPurpose;
 use App\Exports\DashboardSummaryExport;
 use App\Models\Product;
@@ -150,7 +151,7 @@ class DashboardController extends Controller
     {
         $counted = $this->within($viewer, $range)
             ->selectRaw('COUNT(*) AS visits')
-            ->selectRaw('COUNT(DISTINCT visits.customer_id) AS customers')
+            ->selectRaw(Visit::customerCount().' AS customers')
             ->first();
 
         return [
@@ -171,6 +172,8 @@ class DashboardController extends Controller
         $scoped = $this->scopedToOwn($viewer);
 
         return $this->within($viewer, $range)
+            # A courier's first call is not a new customer.
+            ->forVisitorType(VisitorType::Customer)
             ->whereNotExists(fn (QueryBuilder $earlier) => $earlier
                 ->select(DB::raw(1))
                 ->from('visits as earlier')
@@ -325,7 +328,7 @@ class DashboardController extends Controller
             ->leftJoin('users', 'users.id', '=', 'visits.created_by')
             ->selectRaw("coalesce(nullif(visits.respondent, ''), users.name, ?) as respondent_name", ['Unattributed'])
             ->selectRaw('count(*) as visits_count')
-            ->selectRaw('count(distinct visits.customer_id) as customers_count')
+            ->selectRaw(Visit::customerCount().' as customers_count')
             ->selectRaw('count(visits.expected_follow_up_on) as follow_ups_count')
             ->groupBy('respondent_name')
             ->orderByDesc('visits_count')

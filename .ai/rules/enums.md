@@ -1,13 +1,13 @@
 ---
 paths:
-  - 'app/Enums/{VisitPurpose,VisitDepartment,CustomerSource}.php'
+  - 'app/Enums/{VisitPurpose,VisitDepartment,CustomerSource,VisitorType}.php'
   - app/Enums/CustomerSegment.php
 ---
 
 # Enums
 
-## visits.purpose, .source and .department are free text, never enum casts
-All three columns store whatever the user typed under "Other". The enums are the menu the form suggests, not a closed set.
+## visits.purpose, .source, .department and .visitor_type are free text, never enum casts
+All four columns store whatever the user typed under "Other". The enums are the menu the form suggests, not a closed set. `visitor_type` has no Other box, but it is still stored uncast for the same reason: retiring a case while rows hold it must read as what somebody wrote rather than throw on every read.
 
 Never put an enum cast on them in `Visit`: deleting a case while rows still hold it makes every read throw `"..." is not a valid backing value`. That took the app down once already. `@property` stays `string`, and factories write `->value`, never enum instances.
 

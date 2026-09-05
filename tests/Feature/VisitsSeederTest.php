@@ -5,9 +5,13 @@ use App\Models\Visit;
 use Database\Seeders\CustomersSeeder;
 use Database\Seeders\VisitsSeeder;
 
-# 448 of the 453 extract rows carry a note; 29 belong to customers the
-# import turns down for having no dialable phone.
-const IMPORTED_VISITS = 419;
+# 448 of the 453 extract rows carry a note. 25 belong to customers the import
+# turns down for having no dialable phone; the callers who were never customers
+# keep their name on the visit and so need no record to land against.
+const IMPORTED_VISITS = 423;
+
+# Of those, the ones that need a customer on file first.
+const IMPORTED_CUSTOMER_VISITS = 285;
 
 /**
  * Both halves, in the order they have to run: a visit matches its customer on
@@ -51,10 +55,15 @@ it('records the whole log as walk-ins that nobody here logged', function () {
         ->and(Visit::query()->whereNotNull('expected_follow_up_on')->count())->toBe(0);
 });
 
-it('reads a purpose other than Other out of most of the log', function () {
+# A floor, not a target: it catches the mapping silently collapsing into a heap of
+# Other. It sits at 200 rather than 300 because the 138 errands that were never
+# shopping - the cheque runs and the candidates - are Other by design now that
+# `VisitPurpose` has no case for them. Who those callers were is `visitor_type`,
+# asserted below.
+it('reads a real purpose out of the calls that were actually shopping', function () {
     seedTheMigration();
 
-    expect(Visit::query()->where('purpose', '!=', 'other')->count())->toBeGreaterThan(300);
+    expect(Visit::query()->where('purpose', '!=', 'other')->count())->toBeGreaterThan(200);
 });
 
 it('imports each visit once when run twice', function () {
@@ -86,8 +95,11 @@ it('leaves out a visit whose customer is not on file', function () {
         ->and(Visit::query()->where('legacy_id', 9)->exists())->toBeFalse();
 });
 
-it('imports nothing at all when the book has not been seeded', function () {
+# Only the calls by somebody buying need the book: everybody else carries their
+# own name, so their visits land whether or not a customer was ever imported.
+it('imports only the callers who needed no customer when the book has not been seeded', function () {
     $this->seed(VisitsSeeder::class);
 
-    expect(Visit::query()->count())->toBe(0);
+    expect(Visit::query()->count())->toBe(IMPORTED_VISITS - IMPORTED_CUSTOMER_VISITS)
+        ->and(Visit::query()->whereNotNull('customer_id')->exists())->toBeFalse();
 });

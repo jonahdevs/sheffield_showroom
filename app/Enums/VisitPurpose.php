@@ -19,6 +19,9 @@ enum VisitPurpose: string
     # Rows written before they were told apart still read 'collection'.
     case Collection = 'collection';
     case Delivery = 'delivery';
+    # Errands that bring somebody in who is not shopping - a cheque runner, a
+    # candidate - are deliberately not cases here. They are Other, and who the
+    # caller was is `visits.visitor_type`'s question rather than this column's.
     case Other = 'other';
 
     public function label(): string

@@ -12,10 +12,10 @@ use App\Data\VisitFormData;
 use App\Data\VisitRowData;
 use App\Enums\CustomerSegment;
 use App\Enums\CustomerSource;
-use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
 use App\Enums\Permission;
 use App\Enums\VisitDepartment;
+use App\Enums\VisitorType;
 use App\Enums\VisitPurpose;
 use App\Enums\VisitReport;
 use App\Exports\VisitExport;
@@ -65,6 +65,7 @@ class VisitController extends Controller
             'window_days' => $this->precedingWindow($filters)['days'] ?? null,
             'purposes' => VisitPurpose::options(),
             'departments' => VisitDepartment::options(),
+            'visitor_types' => VisitorType::options(),
             'page_sizes' => PageSize::OPTIONS,
             'formats' => ExportResponse::available(),
             'stats' => $this->stats($viewer, $filters),
@@ -79,11 +80,11 @@ class VisitController extends Controller
     }
 
     /**
-     * Narrowed by the date window only — deliberately NOT by search, purpose or department,
+     * Narrowed by the date window only — deliberately NOT by search, purpose, department or visitor_type,
      * which ask "which of these rows did I mean" rather than "which stretch of the log am I
      * reading".
      *
-     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, visitor_type: string, range: string, from: string, to: string}  $filters
      * @return array<int, DashboardStatData>
      */
     private function stats(User $viewer, array $filters): array
@@ -117,7 +118,7 @@ class VisitController extends Controller
     {
         $counted = $this->betweenDates($this->visible($viewer), $from, $to)
             ->selectRaw('COUNT(*) AS visits')
-            ->selectRaw('COUNT(DISTINCT visits.customer_id) AS customers')
+            ->selectRaw(Visit::customerCount().' AS customers')
             ->selectRaw('COUNT(visits.expected_follow_up_on) AS follow_ups')
             ->toBase()
             ->first();
@@ -130,7 +131,7 @@ class VisitController extends Controller
     }
 
     /**
-     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, visitor_type: string, range: string, from: string, to: string}  $filters
      * @return array{days: int, from: string, to: string}|null
      */
     private function precedingWindow(array $filters): ?array
@@ -179,6 +180,7 @@ class VisitController extends Controller
     {
         $this->authorize('update', $visit);
 
+        # `customer` is null on every visit by somebody who was not buying.
         $visit->load('products', 'customer');
 
         return Inertia::render('admin/visits/Form', [
@@ -193,7 +195,7 @@ class VisitController extends Controller
             $customer = $request->resolveCustomer();
 
             $visit = new Visit($request->visitAttributes());
-            $visit->customer_id = $customer->id;
+            $visit->customer_id = $customer?->id;
             $visit->visited_at = $request->visitedAt();
             $visit->created_by = $request->user()->id;
             $visit->save();
@@ -206,7 +208,7 @@ class VisitController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => __('The visit by :name has been added.', [
-                'name' => $visit->customer->displayName(),
+                'name' => $visit->visitorName(),
             ]),
         ]);
 
@@ -217,7 +219,9 @@ class VisitController extends Controller
     {
         DB::transaction(function () use ($request, $visit) {
             $visit->fill($request->visitAttributes());
-            $visit->customer_id = $request->resolveCustomer()->id;
+            # Nulled when a visit is moved off a customer, so the row keeps one
+            # answer to "who came in" - `visitAttributes()` fills the other half.
+            $visit->customer_id = $request->resolveCustomer()?->id;
             $visit->visited_at = $request->visitedAt();
             $visit->save();
 
@@ -227,7 +231,7 @@ class VisitController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => __('The visit by :name has been saved.', [
-                'name' => $visit->customer->displayName(),
+                'name' => $visit->visitorName(),
             ]),
         ]);
 
@@ -238,7 +242,7 @@ class VisitController extends Controller
     {
         $this->authorize('delete', $visit);
 
-        $name = $visit->customer->displayName();
+        $name = $visit->visitorName();
 
         $visit->delete();
 
@@ -267,7 +271,7 @@ class VisitController extends Controller
     /**
      * One definition shared by the screen and the download — keep it that way.
      *
-     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, visitor_type: string, range: string, from: string, to: string}  $filters
      * @return Builder<Visit>
      */
     private function filtered(User $viewer, array $filters): Builder
@@ -284,6 +288,10 @@ class VisitController extends Controller
             ->when(
                 $filters['department'] !== '',
                 fn (Builder $query) => $query->forDepartment($filters['department']),
+            )
+            ->when(
+                $filters['visitor_type'] !== '',
+                fn (Builder $query) => $query->forVisitorType($filters['visitor_type']),
             );
 
         return $this->betweenDates($query, $filters['from'], $filters['to']);
@@ -319,14 +327,14 @@ class VisitController extends Controller
     }
 
     /**
-     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, visitor_type: string, range: string, from: string, to: string}  $filters
      */
     private function exportSubtitle(User $viewer, array $filters): string
     {
         $parts = [
             $viewer->can(Permission::VisitsViewAny->value)
-                ? 'Every visit'
-                : 'Visits logged by '.$viewer->name,
+            ? 'Every visit'
+            : 'Visits logged by '.$viewer->name,
             $this->windowLabel($filters),
         ];
 
@@ -336,6 +344,10 @@ class VisitController extends Controller
 
         if ($filters['department'] !== '') {
             $parts[] = VisitDepartment::readable($filters['department']);
+        }
+
+        if ($filters['visitor_type'] !== '') {
+            $parts[] = VisitorType::readable($filters['visitor_type']);
         }
 
         if ($filters['search'] !== '') {
@@ -364,7 +376,10 @@ class VisitController extends Controller
                 ->get(['id', 'name', 'sku', 'model_number', 'image_path'])
                 ->map(ProductOptionData::fromModel(...))
                 ->values(),
-            'types' => CustomerType::options(),
+            # One question, not two: `VisitorType::menu()` splits the customer arm
+            # by `CustomerType` and leaves everybody else whole, so the form has no
+            # separate customer-type select to feed.
+            'visitor_types' => VisitorType::menu(),
             'segments' => CustomerSegment::options(),
             'purposes' => VisitPurpose::options(),
             'departments' => VisitDepartment::options(),
@@ -377,12 +392,13 @@ class VisitController extends Controller
     }
 
     /**
-     * @return array{search: string, purpose: string, department: string, range: string, from: string, to: string}
+     * @return array{search: string, purpose: string, department: string, visitor_type: string, range: string, from: string, to: string}
      */
     private function filters(Request $request): array
     {
         $purpose = $request->string('purpose')->toString();
         $department = $request->string('department')->toString();
+        $visitorType = $request->string('visitor_type')->toString();
         [$range, $from, $to] = $this->window($request);
 
         return [
@@ -391,6 +407,7 @@ class VisitController extends Controller
             # value somebody typed has to stay filterable.
             'purpose' => mb_substr(trim($purpose), 0, 120),
             'department' => mb_substr(trim($department), 0, 120),
+            'visitor_type' => mb_substr(trim($visitorType), 0, 120),
             # Carried alongside the resolved dates purely so the picker can keep showing
             # "This month" — everything downstream reads `from`/`to`.
             'range' => $range,
@@ -408,7 +425,7 @@ class VisitController extends Controller
     }
 
     /**
-     * @param  array{search: string, purpose: string, department: string, range: string, from: string, to: string}  $filters
+     * @param  array{search: string, purpose: string, department: string, visitor_type: string, range: string, from: string, to: string}  $filters
      */
     private function windowLabel(array $filters): string
     {

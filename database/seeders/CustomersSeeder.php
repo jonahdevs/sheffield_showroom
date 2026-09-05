@@ -63,7 +63,16 @@ class CustomersSeeder extends Seeder
      */
     private function clearExisting(): Collection
     {
-        $visited = DB::table('visits')->distinct()->pluck('customer_id')->all();
+        # `whereNotNull` is load-bearing: half the log is callers who were never
+        # customers and carry a null `customer_id`. One null in the list makes
+        # `whereNotIn('id', ...)` below `id NOT IN (1, 2, NULL)`, which is never
+        # true for any row, so nothing is cleared and the re-insert files every
+        # unvisited customer a second time.
+        $visited = DB::table('visits')
+            ->whereNotNull('customer_id')
+            ->distinct()
+            ->pluck('customer_id')
+            ->all();
 
         $spared = Customer::withTrashed()->whereIn('id', $visited)->get();
 

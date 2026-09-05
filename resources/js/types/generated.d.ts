@@ -321,13 +321,14 @@ declare namespace App {
         };
         export type VisitFormData = {
             id: number;
-            customer_id: number;
-            customer_type: App.Enums.CustomerType;
-            customer_name: string | null;
-            phone: string;
+            customer_id: number | null;
+            visitor_type: string;
+            customer_type: App.Enums.CustomerType | null;
+            visitor_name: string | null;
+            phone: string | null;
             email: string | null;
             id_number: string | null;
-            company_name: string | null;
+            organisation: string | null;
             segment: string | null;
             visited_on: string;
             visited_time: string;
@@ -339,12 +340,14 @@ declare namespace App {
             expected_follow_up_on: string | null;
             notes: string | null;
             products: App.Data.ProductOptionData[];
-            customer_label: string;
+            visitor_label: string;
         };
         export type VisitRowData = {
             id: number;
             customer_name: string;
-            customer_type: App.Enums.CustomerType;
+            customer_type: App.Enums.CustomerType | null;
+            visitor_type: string;
+            visitor_type_label: string;
             customer_company: string | null;
             customer_phone: string | null;
             purpose: string;
@@ -468,5 +471,14 @@ declare namespace App {
             | 'delivery'
             | 'other';
         export type VisitReport = 'full' | 'reception';
+        export type VisitorType =
+            | 'customer'
+            | 'supplier'
+            | 'contractor'
+            | 'staff'
+            | 'courier'
+            | 'job_applicant'
+            | 'official'
+            | 'other';
     }
 }

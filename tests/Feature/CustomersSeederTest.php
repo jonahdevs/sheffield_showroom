@@ -5,8 +5,9 @@ use App\Models\Visit;
 use Database\Seeders\CustomersSeeder;
 use Database\Seeders\VisitsSeeder;
 
-# 453 rows in the extract, 29 with nothing dialable in the phone column.
-const IMPORTED_CUSTOMERS = 424;
+# 453 rows in the extract: 138 whose note says the caller was never a customer
+# and 25 of the rest with nothing dialable in the phone column.
+const IMPORTED_CUSTOMERS = 290;
 
 it('seeds every customer in the prepared file', function () {
     $this->seed(CustomersSeeder::class);
@@ -102,7 +103,7 @@ it('imports nobody without a phone number', function () {
 });
 
 # Once the visits are in, the FK spares every customer - so without
-# `legacy_id` a second `db:seed` would insert all 424 a second time.
+# `legacy_id` a second `db:seed` would insert all 290 a second time.
 it('imports each customer once when the visits are already logged against them', function () {
     $this->seed(CustomersSeeder::class);
     $this->seed(VisitsSeeder::class);

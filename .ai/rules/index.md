@@ -7,7 +7,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Data/** | .ai/rules/app-data.md |
 | app/Http/Controllers/** | .ai/rules/controllers.md |
 | database/data/** | .ai/rules/data.md |
-| app/Enums/{VisitPurpose,VisitDepartment,CustomerSource}.php, app/Enums/CustomerSegment.php | .ai/rules/enums.md |
+| app/Enums/{VisitPurpose,VisitDepartment,CustomerSource,VisitorType}.php, app/Enums/CustomerSegment.php | .ai/rules/enums.md |
 | **/*.php | .ai/rules/general.md |
 | app/{Http,Policies,Data}/** | .ai/rules/http-policies-data.md |
 | resources/js/** | .ai/rules/js.md |
@@ -18,4 +18,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | routes/** | .ai/rules/routes.md |
 | database/seeders/** | .ai/rules/seeders.md |
 | tests/** | .ai/rules/tests.md |
-| app/Services/Visits/** | .ai/rules/visits.md |
+| app/Services/Visits/**, app/Models/Visit.php, app/Http/Requests/Admin/VisitRequest.php, app/Http/Controllers/Admin/VisitController.php, database/migrations/*_create_visits_table.php | .ai/rules/visits.md |

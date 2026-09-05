@@ -9,7 +9,7 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 #[TypeScript]
 enum VisitDepartment: string
 {
-    case Finance = 'finance';
+    case Accounts = 'accounts';
     # Two desks, not one: the floor that shows the equipment and the desk that
     # closes the sale. Rows written while they shared an option still read
     # 'showroom_sales' - see `RETIRED`.
@@ -32,7 +32,7 @@ enum VisitDepartment: string
     public function label(): string
     {
         return match ($this) {
-            self::Finance => 'Finance',
+            self::Accounts => 'Accounts',
             self::Showroom => 'Showroom',
             self::Sales => 'Sales',
             self::Marketing => 'Marketing',
@@ -62,6 +62,7 @@ enum VisitDepartment: string
      */
     private const RETIRED = [
         'showroom_sales' => 'Showroom/Sales',
+        'finance' => 'Finance',
     ];
 
     # `visits.department` is free text: the cases above are the menu the form

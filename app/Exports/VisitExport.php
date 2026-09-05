@@ -100,7 +100,10 @@ class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, Wi
             'id' => $visit->id,
             'customer_name' => $visit->customer_name,
             'customer_company' => $visit->customer_company ?? '',
-            'customer_type' => $visit->customer_type->label(),
+            # Empty for everybody who is not a customer: nobody asked a courier
+            # whether they buy for themselves or for a firm.
+            'customer_type' => $visit->customer_type?->label() ?? '',
+            'visitor_type' => $visit->visitor_type_label,
             'customer_phone' => $this->textCell($visit->customer_phone, $this->format),
             'purpose' => $visit->purpose_label,
             'department' => $visit->department_label ?? '',

@@ -20,9 +20,27 @@ return new class extends Migration
             # times and this ties a note to the customer it belongs to.
             $table->unsignedBigInteger('legacy_id')->nullable();
 
+            # Null for everybody who is not a customer - see `visitor_type`.
             # Restricted rather than cascaded: force-deleting a customer must
             # refuse rather than quietly take the history with it.
-            $table->foreignId('customer_id')->constrained()->restrictOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained()->restrictOnDelete();
+
+            # ------------------------------------------------------------------
+            # Who came in
+            # ------------------------------------------------------------------
+            # The front desk logs every caller and most are not shopping. Only a
+            # customer gets a row in `customers`; everybody else is written here,
+            # because somebody with no telephone cannot be matched against next
+            # time and would file a fresh, near-empty customer on every call.
+            #
+            # The invariant, held by `VisitRequest`: this reads 'customer' if and
+            # only if `customer_id` is set, and the three columns below are filled
+            # if and only if it does not.
+            $table->string('visitor_type')->default('customer')->index();
+
+            $table->string('visitor_name')->nullable();
+            $table->string('visitor_phone')->nullable();
+            $table->string('visitor_organisation')->nullable();
 
             $table->dateTime('visited_at')->index();
 

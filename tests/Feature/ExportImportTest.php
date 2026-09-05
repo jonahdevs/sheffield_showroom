@@ -240,6 +240,7 @@ it('hands reception the front desk sheet rather than the full log', function () 
         'reception-visits-'.now()->toDateString().'.csv',
         fn (VisitExport $export) => $export->headings() === [
             'Visitor name',
+            'Visitor type',
             'Company',
             'Contact',
             'Department',

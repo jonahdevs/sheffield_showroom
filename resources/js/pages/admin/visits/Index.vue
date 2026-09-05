@@ -57,6 +57,7 @@ const props = defineProps<{
         search: string;
         purpose: string;
         department: string;
+        visitor_type: string;
         /** The name of the window, where one was named rather than drawn. */
         range: string;
         from: string;
@@ -68,6 +69,7 @@ const props = defineProps<{
     window_days: number | null;
     purposes: { value: string; label: string }[];
     departments: { value: string; label: string }[];
+    visitor_types: { value: string; label: string; hint: string }[];
     page_sizes: number[];
     formats: string[];
     /** The window's figures, unaffected by the search and the two menu filters. */
@@ -100,6 +102,10 @@ const { filters, query, hasFilters, processing, apply, clear } = useFilters({
         purpose: props.filters.purpose === '' ? 'all' : props.filters.purpose,
         department:
             props.filters.department === '' ? 'all' : props.filters.department,
+        visitor_type:
+            props.filters.visitor_type === ''
+                ? 'all'
+                : props.filters.visitor_type,
         range: props.filters.range ?? '',
         from: props.filters.range === '' ? (props.filters.from ?? '') : '',
         to: props.filters.range === '' ? (props.filters.to ?? '') : '',
@@ -108,6 +114,7 @@ const { filters, query, hasFilters, processing, apply, clear } = useFilters({
         search: '',
         purpose: 'all',
         department: 'all',
+        visitor_type: 'all',
         range: '',
         from: '',
         to: '',
@@ -302,6 +309,26 @@ defineOptions({
                         </SelectItem>
                     </SelectContent>
                 </Select>
+
+                <Select v-model="filters.visitor_type">
+                    <SelectTrigger
+                        class="w-52"
+                        aria-label="Filter by visitor type"
+                        data-test="visit-visitor-type-filter"
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                        <SelectItem value="all">All visitor types</SelectItem>
+                        <SelectItem
+                            v-for="visitor_type in props.visitor_types"
+                            :key="visitor_type.value"
+                            :value="visitor_type.value"
+                        >
+                            {{ visitor_type.label }}
+                        </SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             <!-- Ahead of the empty branch on purpose: mid-reload this must not flash "no visits". -->
@@ -365,6 +392,9 @@ defineOptions({
                                     class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-faint"
                                     aria-hidden="true"
                                 >
+                                    <!-- A company icon only for a customer
+                                         buying for one: nobody asked a courier
+                                         which they were. -->
                                     <Building2
                                         v-if="visit.customer_type === 'company'"
                                         class="size-4"
@@ -382,6 +412,17 @@ defineOptions({
                                     >
                                         {{ visit.customer_phone }}
                                     </p>
+
+                                    <!-- Only when they were not a customer.
+                                         Most rows are, and a badge on every one
+                                         of them says nothing. -->
+                                    <span
+                                        v-if="visit.visitor_type !== 'customer'"
+                                        class="mt-0.5 inline-block rounded border px-1.5 py-0.5 text-[0.6875rem] text-faint"
+                                        :data-test="`visitor-badge-${visit.id}`"
+                                    >
+                                        {{ visit.visitor_type_label }}
+                                    </span>
                                 </div>
                             </div>
 

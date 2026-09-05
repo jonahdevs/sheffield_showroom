@@ -33,7 +33,16 @@ const props = defineProps<{
     visit: App.Data.VisitFormData | null;
     customers: App.Data.CustomerOptionData[];
     products: App.Data.ProductOptionData[];
-    types: { value: string; label: string }[];
+    /* One question, not two. The customer arm is split by customer type
+       because that distinction only means something to somebody buying;
+       `visitor_type` and `customer_type` on the form are derived from it. */
+    visitor_types: {
+        value: string;
+        label: string;
+        hint: string;
+        visitor_type: string;
+        customer_type: string | null;
+    }[];
     segments: { value: string; label: string }[];
     purposes: { value: string; label: string }[];
     departments: { value: string; label: string }[];
@@ -64,12 +73,17 @@ const now = nowParts();
 
 const form = useForm({
     customer_id: props.visit?.customer_id ?? (null as number | null),
-    customer_type: props.visit?.customer_type ?? 'individual',
-    customer_name: props.visit?.customer_name ?? '',
+    /* Both derived from `visitorChoice` by the watcher below - never assigned
+       directly, or the next tick overwrites what was set. */
+    visitor_type: (props.visit?.visitor_type ?? 'customer') as string,
+    /* Widened deliberately: it is emptied for anybody who is not buying, and
+       `VisitRequest` refuses a customer type from them. */
+    customer_type: (props.visit?.customer_type ?? 'individual') as string,
+    visitor_name: props.visit?.visitor_name ?? '',
     phone: props.visit?.phone ?? '',
     email: props.visit?.email ?? '',
     id_number: props.visit?.id_number ?? '',
-    company_name: props.visit?.company_name ?? '',
+    organisation: props.visit?.organisation ?? '',
     segment: props.visit?.segment ?? '',
     visited_on: props.visit?.visited_on ?? now.date,
     visited_time: props.visit?.visited_time ?? now.time,
@@ -135,7 +149,43 @@ function dropProduct(id: number) {
     form.products = form.products.filter((product) => product.value !== id);
 }
 
-const isCompany = computed(() => form.customer_type === 'company');
+/* The one question reception is asked. Its value is the menu's composite -
+   `customer_individual`, `supplier` - and the watcher below splits it back into
+   the two fields the server takes. */
+const visitorChoice = ref(
+    props.visit === null
+        ? 'customer_individual'
+        : (props.visitor_types.find(
+              (option) =>
+                  option.visitor_type === props.visit?.visitor_type &&
+                  option.customer_type === (props.visit?.customer_type ?? null),
+          )?.value ?? 'customer_individual'),
+);
+
+const chosenVisitor = computed(
+    () =>
+        props.visitor_types.find(
+            (option) => option.value === visitorChoice.value,
+        ) ?? props.visitor_types[0],
+);
+
+watchEffect(() => {
+    form.visitor_type = chosenVisitor.value.visitor_type;
+    form.customer_type = chosenVisitor.value.customer_type ?? '';
+});
+
+/* Only a customer gets a record of their own, so only a customer is matched on
+   their telephone and only a customer has anywhere to keep an email, an ID
+   number or a trade. Everybody else is written on the visit - see `VisitorType`.
+   `VisitRequest` refuses the customer-only fields outright rather than dropping
+   them silently, so anything it would refuse is not shown. */
+const isCustomer = computed(() => form.visitor_type === 'customer');
+
+const isCompany = computed(
+    () => isCustomer.value && form.customer_type === 'company',
+);
+
+const visitorHint = computed(() => chosenVisitor.value.hint);
 
 const linked = computed(
     () =>
@@ -152,14 +202,16 @@ const locked = computed(
     () => linked.value !== null && !props.can_update_customer,
 );
 
+/* The picker only ever offers customers, so choosing one is also an answer to
+   the question above. */
 function choose(chosen: App.Data.CustomerOptionData) {
     form.customer_id = chosen.value;
-    form.customer_type = chosen.type;
-    form.customer_name = chosen.name ?? '';
+    visitorChoice.value = `customer_${chosen.type}`;
+    form.visitor_name = chosen.name ?? '';
     form.phone = chosen.hint ?? '';
     form.email = chosen.email ?? '';
     form.id_number = chosen.id_number ?? '';
-    form.company_name = chosen.company_name ?? '';
+    form.organisation = chosen.company_name ?? '';
     openSegment(chosen.segment);
     form.clearErrors();
 }
@@ -169,31 +221,44 @@ function startNew(name: string) {
     form.customer_id = null;
 
     if (name !== '') {
-        form.customer_name = name;
+        form.visitor_name = name;
     }
 
     form.clearErrors();
 }
 
 /**
- * Changing the kind must also clear `customer_id`: a record on file is one
- * kind or the other, so the attachment can no longer be to that record. The
- * person's own name, phone and ID stay - only the company half is dropped.
+ * Any change to the answer drops `customer_id`. A record on file is a customer
+ * of one kind, so the attachment cannot survive the visitor becoming a courier
+ * or the other kind of customer - and `VisitRequest` refuses an id outright
+ * from anybody who was not buying. The name, phone and organisation typed so
+ * far stay; only what now has nowhere to go is cleared.
  */
-function changeType(next: App.Enums.CustomerType) {
-    form.customer_type = next;
+function changeVisitor(next: string) {
+    visitorChoice.value = next;
     form.customer_id = null;
 
-    if (next === 'individual') {
-        form.company_name = '';
+    /* Read off `next`, not off `isCustomer` / `isCompany`: those follow
+       `form.visitor_type`, which the watcher above only sets on the next flush,
+       so here they still describe the choice being replaced. Clearing on a
+       stale answer leaves a segment or an email on a courier, and
+       `VisitRequest` refuses both outright. */
+    const chosen = props.visitor_types.find((option) => option.value === next);
+
+    if (chosen?.customer_type !== 'company') {
         openSegment(null);
+    }
+
+    if (chosen?.visitor_type !== 'customer') {
+        form.email = '';
+        form.id_number = '';
     }
 
     form.clearErrors();
 }
 
 const heading = computed(() =>
-    props.visit ? `Visit by ${props.visit.customer_label}` : 'New visit',
+    props.visit ? `Visit by ${props.visit.visitor_label}` : 'New visit',
 );
 
 const { choice: purposeChoice, other: purposeOther } = openOnStored(
@@ -346,7 +411,7 @@ defineOptions({
                         <h2
                             class="text-xs font-bold tracking-[0.04em] text-faint uppercase"
                         >
-                            Customer information
+                            Visitor details
                         </h2>
                     </div>
 
@@ -354,70 +419,82 @@ defineOptions({
                         <div
                             class="flex flex-col gap-4 @xl/main:grid @xl/main:grid-cols-2 @xl/main:gap-x-5.5 @xl/main:gap-y-4.5 @4xl/main:grid-cols-3"
                         >
-                            <!-- Deliberately does not filter the name search
-                                 below: hiding the match somebody wanted is how
-                                 one customer gets filed twice. -->
+                            <!-- One question, not two: whether somebody
+                                 buys for themselves or for a firm only means
+                                 anything if they are buying at all. Deliberately
+                                 does not filter the name search below - hiding
+                                 the match somebody wanted is how one person
+                                 gets filed twice. -->
                             <div>
-                                <Label for="customer_type">
-                                    Customer type
+                                <Label for="visitor_type">
+                                    Who came in
                                     <span class="text-primary">*</span>
                                 </Label>
                                 <Select
-                                    :model-value="form.customer_type"
+                                    :model-value="visitorChoice"
                                     :disabled="locked"
                                     @update:model-value="
-                                        (value) =>
-                                            changeType(
-                                                value as App.Enums.CustomerType,
-                                            )
+                                        (value) => changeVisitor(value as string)
                                     "
                                 >
                                     <SelectTrigger
-                                        id="customer_type"
+                                        id="visitor_type"
                                         class="mt-2.25 w-full"
-                                        data-test="field-customer-type"
+                                        data-test="field-visitor-type"
                                     >
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem
-                                            v-for="type in props.types"
-                                            :key="type.value"
-                                            :value="type.value"
+                                            v-for="visitor in props.visitor_types"
+                                            :key="visitor.value"
+                                            :value="visitor.value"
+                                            :data-test="`visitor-${visitor.value}`"
                                         >
-                                            {{ type.label }}
+                                            {{ visitor.label }}
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
+                                <p class="mt-2 text-xs text-faint">
+                                    {{ visitorHint }}
+                                </p>
+                                <InputError
+                                    :message="form.errors.visitor_type"
+                                />
                                 <InputError
                                     :message="form.errors.customer_type"
                                 />
                             </div>
 
                             <div>
-                                <Label for="customer_name">
+                                <Label for="visitor_name">
                                     Full name
                                     <span class="text-primary">*</span>
                                 </Label>
 
                                 <div class="mt-2.25">
+                                    <!-- A plain box for anybody who is not
+                                         buying: the list holds customers, and
+                                         picking one off it would file a
+                                         courier's call against them. -->
                                     <Input
-                                        v-if="locked"
-                                        id="customer_name"
-                                        :model-value="form.customer_name"
-                                        readonly
-                                        data-test="field-customer-name"
+                                        v-if="locked || !isCustomer"
+                                        id="visitor_name"
+                                        v-model="form.visitor_name"
+                                        :readonly="locked"
+                                        placeholder="Who came in"
+                                        data-test="field-visitor-name"
                                     />
                                     <OptionOrNewCombobox
                                         v-else
-                                        id="customer_name"
+                                        id="visitor_name"
                                         :model-value="form.customer_id"
-                                        :name="form.customer_name"
+                                        :name="form.visitor_name"
                                         :options="props.customers"
                                         placeholder="Search or start a new one"
                                         search-placeholder="Name, company or phone number"
                                         new-label="New customer"
-                                        data-test="field-customer-name"
+                                        data-test="field-visitor-name"
                                         @pick="choose"
                                         @create="startNew"
                                     >
@@ -436,7 +513,7 @@ defineOptions({
                                 </div>
 
                                 <InputError
-                                    :message="form.errors.customer_name"
+                                    :message="form.errors.visitor_name"
                                 />
 
                                 <p
@@ -451,7 +528,12 @@ defineOptions({
                             <div>
                                 <Label for="phone">
                                     Phone number
-                                    <span class="text-primary">*</span>
+                                    <span
+                                        v-if="isCustomer"
+                                        class="text-primary"
+                                    >
+                                        *
+                                    </span>
                                 </Label>
                                 <div class="mt-2.25">
                                     <Input
@@ -468,10 +550,20 @@ defineOptions({
                                         data-test="field-phone"
                                     />
                                 </div>
+                                <p
+                                    v-if="!isCustomer && !locked"
+                                    class="mt-2 text-xs text-faint"
+                                >
+                                    Optional. Nobody who is not a customer is
+                                    looked up by it.
+                                </p>
                                 <InputError :message="form.errors.phone" />
                             </div>
 
-                            <div>
+                            <!-- Only a customer has a record to keep these on,
+                                 and `VisitRequest` refuses them from anybody
+                                 else rather than dropping them silently. -->
+                            <div v-if="isCustomer">
                                 <Label for="email">Email</Label>
                                 <Input
                                     id="email"
@@ -485,7 +577,7 @@ defineOptions({
                                 <InputError :message="form.errors.email" />
                             </div>
 
-                            <div>
+                            <div v-if="isCustomer">
                                 <Label for="id_number">ID number</Label>
                                 <Input
                                     id="id_number"
@@ -497,6 +589,38 @@ defineOptions({
                                     data-test="field-id-number"
                                 />
                                 <InputError :message="form.errors.id_number" />
+                            </div>
+
+                            <!-- The firm behind them: the customer's own
+                                 company when they are buying for one, and who
+                                 sent them when they are not. -->
+                            <div v-if="!isCustomer || isCompany">
+                                <Label for="organisation">
+                                    {{
+                                        isCompany
+                                            ? 'Company name'
+                                            : 'Organisation'
+                                    }}
+                                    <span v-if="isCompany" class="text-primary">
+                                        *
+                                    </span>
+                                </Label>
+                                <Input
+                                    id="organisation"
+                                    v-model="form.organisation"
+                                    class="mt-2.25"
+                                    :readonly="locked"
+                                    :placeholder="
+                                        isCompany
+                                            ? 'e.g. Mwangi Builders Ltd'
+                                            : 'Optional - who sent them'
+                                    "
+                                    autocomplete="organization"
+                                    data-test="field-organisation"
+                                />
+                                <InputError
+                                    :message="form.errors.organisation"
+                                />
                             </div>
 
                             <div>
@@ -578,25 +702,6 @@ defineOptions({
                         <div
                             class="flex flex-col gap-4 @xl/main:grid @xl/main:grid-cols-2 @xl/main:gap-x-5.5 @xl/main:gap-y-4.5"
                         >
-                            <div>
-                                <Label for="company_name">
-                                    Company name
-                                    <span class="text-primary">*</span>
-                                </Label>
-                                <Input
-                                    id="company_name"
-                                    v-model="form.company_name"
-                                    class="mt-2.25"
-                                    :readonly="locked"
-                                    placeholder="e.g. Mwangi Builders Ltd"
-                                    autocomplete="organization"
-                                    data-test="field-company-name"
-                                />
-                                <InputError
-                                    :message="form.errors.company_name"
-                                />
-                            </div>
-
                             <div>
                                 <Label for="segment">Segment</Label>
                                 <Select

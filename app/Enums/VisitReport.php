@@ -31,6 +31,10 @@ enum VisitReport: string
             self::Full => [
                 'id' => 'ID',
                 'customer_name' => 'Customer',
+                # Added rather than put in place of `customer_type`: the warning
+                # above is about renaming, and a sheet built on the old download
+                # still finds every heading it knew.
+                'visitor_type' => 'Visitor type',
                 'customer_company' => 'Company',
                 'customer_type' => 'Type',
                 'customer_phone' => 'Phone',
@@ -51,6 +55,7 @@ enum VisitReport: string
             # the notes say what was actually asked for.
             self::Reception => [
                 'customer_name' => 'Visitor name',
+                'visitor_type' => 'Visitor type',
                 'customer_company' => 'Company',
                 'customer_phone' => 'Contact',
                 'department' => 'Department',

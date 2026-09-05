@@ -7,6 +7,7 @@ namespace App\Http\Requests\Admin;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
+use App\Enums\VisitorType;
 use App\Models\Customer;
 use App\Models\Visit;
 use Carbon\CarbonImmutable;
@@ -31,23 +32,57 @@ class VisitRequest extends FormRequest
      */
     public function rules(): array
     {
-        $isCompany = $this->input('customer_type') === CustomerType::Company->value;
+        $isCustomer = $this->isCustomerVisit();
+        $isCompany = $isCustomer && $this->input('customer_type') === CustomerType::Company->value;
 
         return [
+            # `Rule::in` over `Rule::enum`: the column is free text holding these
+            # values, so it is checked without being cast.
+            'visitor_type' => ['required', Rule::in(VisitorType::values())],
+
+            # Asked only of somebody buying: whether you buy for yourself or for a
+            # firm means nothing about a courier. The form asks both as one question
+            # and splits its answer into these two fields.
+            'customer_type' => [
+                Rule::requiredIf($isCustomer),
+                Rule::prohibitedIf(! $isCustomer),
+                'nullable',
+                Rule::enum(CustomerType::class),
+            ],
+
             # A soft-deleted customer keeps its id, so `exists` must exclude them.
+            # Refused outright from anybody else: only a customer has a record to
+            # attach to, and a stray id left on a form since switched to Courier
+            # would file that call against a customer who was never there.
             'customer_id' => [
+                Rule::prohibitedIf(! $isCustomer),
                 'nullable',
                 Rule::exists('customers', 'id')->whereNull('deleted_at'),
             ],
 
-            'customer_type' => ['required', Rule::enum(CustomerType::class)],
-            'customer_name' => ['required', 'string', 'max:120'],
-            'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+()\s-]+$/'],
-            'email' => ['nullable', 'email', 'max:180'],
-            'id_number' => ['nullable', 'string', 'max:30'],
+            'visitor_name' => ['required', 'string', 'max:120'],
 
-            'company_name' => [Rule::requiredIf($isCompany), 'nullable', 'string', 'max:160'],
-            'segment' => ['nullable', 'string', 'max:120'],
+            # Required of a customer, who is recognised by it next time. Reception
+            # often has no number for a courier, and a visit that will not save
+            # without one is a visit that goes unlogged.
+            'phone' => [
+                Rule::requiredIf($isCustomer),
+                'nullable',
+                'string',
+                'max:30',
+                'regex:/^[0-9+()\s-]+$/',
+            ],
+
+            # Only a customer has a record to keep these on, so they are refused
+            # from anybody else rather than accepted and silently dropped.
+            'email' => [Rule::prohibitedIf(! $isCustomer), 'nullable', 'email', 'max:180'],
+            'id_number' => [Rule::prohibitedIf(! $isCustomer), 'nullable', 'string', 'max:30'],
+
+            # The firm behind them: the customer's own company for somebody buying,
+            # and who sent them for everybody else.
+            'organisation' => [Rule::requiredIf($isCompany), 'nullable', 'string', 'max:160'],
+
+            'segment' => [Rule::prohibitedIf(! $isCustomer), 'nullable', 'string', 'max:120'],
 
             'visited_on' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'visited_time' => ['required', 'date_format:H:i'],
@@ -84,11 +119,22 @@ class VisitRequest extends FormRequest
         ];
     }
 
-    # Id, then phone match, then a new record. The phone step is what stops a
-    # returning walk-in being filed twice; the `can('update')` gate is what stops
-    # a read-only form quietly rewriting the customer it was only shown.
-    public function resolveCustomer(): Customer
+    /**
+     * Id, then phone match, then a new record. The phone step is what stops a
+     * returning walk-in being filed twice; the `can('update')` gate is what stops a
+     * read-only form quietly rewriting the customer it was only shown.
+     *
+     * Null for everybody who was not buying: they get no record and are not looked
+     * for in the book either, so a courier logged against the number on a
+     * customer's file cannot be attached to them. `visitAttributes()` writes them
+     * onto the visit instead.
+     */
+    public function resolveCustomer(): ?Customer
     {
+        if (! $this->isCustomerVisit()) {
+            return null;
+        }
+
         $picked = $this->validated('customer_id');
 
         if ($picked !== null) {
@@ -131,14 +177,14 @@ class VisitRequest extends FormRequest
         # not clear an employer the Customers screen entered but never showed.
         $business = $type === CustomerType::Company
             ? [
-                'company_name' => $this->validated('company_name'),
+                'company_name' => $this->validated('organisation'),
                 'segment' => $this->validated('segment'),
             ]
             : [];
 
         return [
             'type' => $type,
-            'name' => $this->validated('customer_name'),
+            'name' => $this->validated('visitor_name'),
             'phone' => (string) $this->validated('phone'),
             'email' => $this->validated('email'),
             'id_number' => $this->validated('id_number'),
@@ -183,6 +229,8 @@ class VisitRequest extends FormRequest
      */
     public function visitAttributes(): array
     {
+        $isCustomer = $this->isCustomerVisit();
+
         return [
             ...$this->safe()->only([
                 'purpose',
@@ -198,7 +246,22 @@ class VisitRequest extends FormRequest
             'referred_by' => $this->isReferral()
                 ? $this->validated('referred_by')
                 : null,
+
+            'visitor_type' => $this->validated('visitor_type'),
+
+            # Written unconditionally, and nulled for a customer, for the same
+            # reason. A visit moved onto a customer would otherwise keep the
+            # visitor it was filed under, leaving the row with two answers to
+            # "who came in" and `visitorName()` reading the wrong one.
+            'visitor_name' => $isCustomer ? null : $this->validated('visitor_name'),
+            'visitor_phone' => $isCustomer ? null : $this->validated('phone'),
+            'visitor_organisation' => $isCustomer ? null : $this->validated('organisation'),
         ];
+    }
+
+    public function isCustomerVisit(): bool
+    {
+        return $this->input('visitor_type') === VisitorType::Customer->value;
     }
 
     private function isReferral(): bool
@@ -214,8 +277,9 @@ class VisitRequest extends FormRequest
         return [
             'customer_id' => 'customer',
             'customer_type' => 'customer type',
-            'customer_name' => 'customer name',
-            'company_name' => 'company or organisation',
+            'visitor_type' => 'visitor type',
+            'visitor_name' => 'full name',
+            'organisation' => 'company or organisation',
             'phone' => 'phone number',
             'visited_on' => 'visit date',
             'visited_time' => 'visit time',

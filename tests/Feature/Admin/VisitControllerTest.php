@@ -6,6 +6,7 @@ use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
 use App\Enums\Permission;
 use App\Enums\VisitDepartment;
+use App\Enums\VisitorType;
 use App\Enums\VisitPurpose;
 use App\Exports\VisitExport;
 use App\Models\Customer;
@@ -74,8 +75,8 @@ function visitPayload(array $overrides = []): array
         # The form posts a picked customer's own details back with the rest,
         # so the payload has to carry them too.
         'customer_type' => $customer->type->value,
-        'customer_name' => $customer->name,
-        'company_name' => $customer->company_name,
+        'visitor_name' => $customer->name,
+        'organisation' => $customer->company_name,
         'phone' => $customer->phone,
         'email' => $customer->email,
         ...visitFields(),
@@ -94,7 +95,7 @@ function newCustomerPayload(array $overrides = []): array
 {
     return [
         'customer_type' => CustomerType::Individual->value,
-        'customer_name' => 'Achieng Odhiambo',
+        'visitor_name' => 'Achieng Odhiambo',
         'phone' => '0722 000 111',
         'email' => 'achieng@example.com',
         ...visitFields(),
@@ -108,6 +109,7 @@ function newCustomerPayload(array $overrides = []): array
 function visitFields(): array
 {
     return [
+        'visitor_type' => VisitorType::Customer->value,
         'respondent' => 'Achieng Odhiambo',
         'visited_on' => now()->subDay()->format('Y-m-d'),
         'visited_time' => '14:30',
@@ -196,6 +198,106 @@ it('measures the figures over the window the page is read under', function () {
             ->where('stats.2.key', 'follow_ups')
             ->where('stats.2.value', 1)
             ->where('window_days', 28));
+});
+
+it('keeps a caller who was not buying off the customer book entirely', function () {
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload([
+            'visitor_type' => VisitorType::Courier->value,
+            'customer_type' => null,
+            'visitor_name' => 'Brian Otieno',
+            'organisation' => 'Sendy',
+            'email' => null,
+            'phone' => '',
+        ]))
+        ->assertRedirect(route('admin.visits.index'));
+
+    expect(Customer::query()->count())->toBe(0)
+        ->and(Visit::query()->sole())
+        ->visitor_type->toBe(VisitorType::Courier->value)
+        ->customer_id->toBeNull()
+        ->visitor_name->toBe('Brian Otieno')
+        ->visitor_organisation->toBe('Sendy')
+        ->visitor_phone->toBeNull();
+});
+
+it('still requires a number from a customer', function () {
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload(['phone' => '']))
+        ->assertSessionHasErrors('phone');
+});
+
+# The trap this closes: reception logs a customer's driver against the number on
+# file. Under a single table that match demoted the customer; now there is no
+# match to make, because a courier is never looked up in the book at all.
+it('never attaches a caller who was not buying to the customer on that number', function () {
+    $customer = Customer::factory()->create(['phone' => '0722 000 111']);
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload([
+            'visitor_type' => VisitorType::Courier->value,
+            'customer_type' => null,
+            'email' => null,
+            'phone' => '+254722000111',
+        ]))
+        ->assertRedirect(route('admin.visits.index'));
+
+    expect(Customer::query()->count())->toBe(1)
+        ->and(Visit::query()->sole()->customer_id)->toBeNull()
+        ->and($customer->fresh()->phone)->toBe('0722 000 111');
+});
+
+it('refuses a customer type from somebody who was not buying', function () {
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload([
+            'visitor_type' => VisitorType::Supplier->value,
+            'email' => null,
+        ]))
+        ->assertSessionHasErrors('customer_type');
+});
+
+# Without this a stray id left on a form that has since been switched to Courier
+# files the call against a customer who was never there.
+it('refuses a picked customer from somebody who was not buying', function () {
+    $customer = Customer::factory()->create();
+
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload([
+            'visitor_type' => VisitorType::Supplier->value,
+            'customer_type' => null,
+            'email' => null,
+            'customer_id' => $customer->id,
+        ]))
+        ->assertSessionHasErrors('customer_id');
+});
+
+it('clears the visitor details when a visit is moved onto a customer', function () {
+    $visit = Visit::factory()->visitedBy(VisitorType::Courier)->create();
+
+    $this->actingAs(visitManager())
+        ->patch(route('admin.visits.update', $visit), newCustomerPayload())
+        ->assertRedirect(route('admin.visits.index'));
+
+    expect($visit->fresh())
+        ->visitor_type->toBe(VisitorType::Customer->value)
+        ->customer_id->not->toBeNull()
+        ->visitor_name->toBeNull()
+        ->visitor_phone->toBeNull()
+        ->visitor_organisation->toBeNull();
+});
+
+it('counts the callers who were customers, not everyone through the door', function () {
+    Visit::factory()->create(['visited_at' => '2026-02-10 09:00']);
+    Visit::factory()->visitedBy(VisitorType::Courier)->create(['visited_at' => '2026-02-11 09:00']);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index', ['from' => '2026-02-01', 'to' => '2026-02-28']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.0.key', 'visits')
+            ->where('stats.0.value', 2)
+            ->where('stats.1.key', 'customers')
+            ->where('stats.1.value', 1));
 });
 
 it('compares the window against the equally long one before it', function () {
@@ -762,8 +864,8 @@ it('files a different number as a different customer', function () {
 it('records both the person and the company for a company visit', function () {
     $this->actingAs(visitManager())->post(route('admin.visits.store'), newCustomerPayload([
         'customer_type' => CustomerType::Company->value,
-        'customer_name' => 'Peter Mwangi',
-        'company_name' => 'Mwangi Builders Ltd',
+        'visitor_name' => 'Peter Mwangi',
+        'organisation' => 'Mwangi Builders Ltd',
         'segment' => CustomerSegment::Corporate->value,
     ]));
 
@@ -779,8 +881,8 @@ it('records both the person and the company for a company visit', function () {
 it('stores a segment typed under Other on the visit form as written', function () {
     $this->actingAs(visitManager())->post(route('admin.visits.store'), newCustomerPayload([
         'customer_type' => CustomerType::Company->value,
-        'customer_name' => 'Peter Mwangi',
-        'company_name' => 'Boat Yard Ltd',
+        'visitor_name' => 'Peter Mwangi',
+        'organisation' => 'Boat Yard Ltd',
         'segment' => 'Boat yards',
     ]));
 
@@ -802,26 +904,26 @@ it('refuses a typed-in customer with no phone number', function () {
 it('refuses a typed-in customer of either kind with no name', function () {
     $this->actingAs(visitManager())
         ->post(route('admin.visits.store'), newCustomerPayload([
-            'customer_name' => null,
+            'visitor_name' => null,
         ]))
-        ->assertSessionHasErrors('customer_name');
+        ->assertSessionHasErrors('visitor_name');
 
     $this->actingAs(visitManager())
         ->post(route('admin.visits.store'), newCustomerPayload([
             'customer_type' => CustomerType::Company->value,
-            'customer_name' => null,
-            'company_name' => 'Mwangi Builders Ltd',
+            'visitor_name' => null,
+            'organisation' => 'Mwangi Builders Ltd',
         ]))
-        ->assertSessionHasErrors('customer_name');
+        ->assertSessionHasErrors('visitor_name');
 });
 
 it('refuses a typed-in company with no company name', function () {
     $this->actingAs(visitManager())
         ->post(route('admin.visits.store'), newCustomerPayload([
             'customer_type' => CustomerType::Company->value,
-            'company_name' => null,
+            'organisation' => null,
         ]))
-        ->assertSessionHasErrors('company_name');
+        ->assertSessionHasErrors('organisation');
 });
 
 it('saves a correction typed over a picked customer back to their record', function () {
@@ -834,7 +936,7 @@ it('saves a correction typed over a picked customer back to their record', funct
     $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
         'customer_id' => $existing->id,
         'customer_type' => CustomerType::Individual->value,
-        'customer_name' => 'Achieng Odhiambo-Kamau',
+        'visitor_name' => 'Achieng Odhiambo-Kamau',
         'phone' => '0799 999 999',
     ]));
 
@@ -855,7 +957,7 @@ it('leaves a picked customer alone for somebody who may not edit customers', fun
     $this->actingAs(visitSalesperson())->post(route('admin.visits.store'), visitPayload([
         'customer_id' => $existing->id,
         'customer_type' => CustomerType::Individual->value,
-        'customer_name' => 'Somebody Else',
+        'visitor_name' => 'Somebody Else',
         'phone' => '0799 999 999',
     ]));
 
@@ -877,8 +979,8 @@ it('leaves the company an individual is recorded against alone', function () {
     $this->actingAs(visitManager())->post(route('admin.visits.store'), visitPayload([
         'customer_id' => $existing->id,
         'customer_type' => CustomerType::Individual->value,
-        'customer_name' => 'Achieng Odhiambo',
-        'company_name' => null,
+        'visitor_name' => 'Achieng Odhiambo',
+        'organisation' => null,
         'phone' => '0722 000 111',
     ]));
 
@@ -1081,11 +1183,11 @@ it('refuses a visit that names no department', function () {
 });
 
 it('narrows the list to one department', function () {
-    Visit::factory()->count(2)->for_department(VisitDepartment::Finance)->create();
+    Visit::factory()->count(2)->for_department(VisitDepartment::Accounts)->create();
     Visit::factory()->count(3)->for_department(VisitDepartment::Logistics)->create();
 
     $this->actingAs(visitManager())
-        ->get(route('admin.visits.index', ['department' => VisitDepartment::Finance->value]))
+        ->get(route('admin.visits.index', ['department' => VisitDepartment::Accounts->value]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('visits.total', 2));
 });

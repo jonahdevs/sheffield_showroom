@@ -6,6 +6,7 @@ namespace App\Services\Customers;
 
 use App\Enums\CustomerSegment;
 use App\Enums\CustomerType;
+use App\Services\Visits\VisitNote;
 use RuntimeException;
 
 class LegacyExtract
@@ -16,10 +17,18 @@ class LegacyExtract
 
     private const KENYA = '+254';
 
+    # Reads the front-desk note the old system kept in the customer's own `notes`
+    # column. It lives under Visits because that is what the note is, and it is
+    # shared rather than reimplemented here so the two pipelines cannot disagree
+    # about who was a customer: a row this drops must be a visit `LegacyVisitLog`
+    # files as somebody else, and the other way round.
+    public function __construct(private readonly VisitNote $notes = new VisitNote) {}
+
     /**
      * @return array{
      *     rows: list<array<string, mixed>>,
      *     skipped: list<array{id: mixed, phone: string}>,
+     *     not_customers: list<mixed>,
      *     duplicate_phones: array<string, int>,
      * }
      */
@@ -27,8 +36,18 @@ class LegacyExtract
     {
         $rows = [];
         $skipped = [];
+        $notCustomers = [];
 
         foreach ($this->extractedRows($json) as $source) {
+            # Counted apart from the rows with no telephone: both are left out of the
+            # book, but one is a record that could not be matched and the other is a
+            # caller who was never a customer, and a single total hides which.
+            if (! $this->isCustomer($source)) {
+                $notCustomers[] = $source['id'] ?? null;
+
+                continue;
+            }
+
             $seedRow = $this->toSeedRow($source);
 
             if ($seedRow === null) {
@@ -46,8 +65,46 @@ class LegacyExtract
         return [
             'rows' => $rows,
             'skipped' => $skipped,
+            'not_customers' => $notCustomers,
             'duplicate_phones' => $this->duplicatePhones($rows),
         ];
+    }
+
+    /**
+     * Whether this record belongs in the customer book at all. A row whose note
+     * reads as a cheque collection or an interview does not: `LegacyVisitLog` keeps
+     * the caller's name on the visit instead, and no half-empty customer is created
+     * for somebody who never bought anything.
+     *
+     * A row with no note is left as a customer - the old book had no other kind.
+     *
+     * @param  array<string, mixed>  $source
+     */
+    public function isCustomer(array $source): bool
+    {
+        $note = $this->text($source['notes'] ?? null);
+
+        return $note === null || $this->notes->visitorTypeFor($note)->isCustomer();
+    }
+
+    /**
+     * The caller's name and telephone as this extract reads them, for a visit that
+     * has to carry them itself. Shared rather than re-derived, so a name on a visit
+     * is spelled the way the same name in the book would have been.
+     *
+     * @param  array<string, mixed>  $source
+     */
+    public function displayNameFor(array $source): ?string
+    {
+        return $this->name($source);
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     */
+    public function phoneFor(array $source): ?string
+    {
+        return $this->phone($source['phone_primary'] ?? null);
     }
 
     /**
@@ -56,6 +113,10 @@ class LegacyExtract
      */
     public function toSeedRow(array $source): ?array
     {
+        if (! $this->isCustomer($source)) {
+            return null;
+        }
+
         $phone = $this->phone($source['phone_primary'] ?? null);
 
         if ($phone === null) {

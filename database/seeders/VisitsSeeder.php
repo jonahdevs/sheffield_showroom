@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Enums\VisitorType;
 use App\Models\Customer;
 use App\Models\Visit;
 use Illuminate\Database\Seeder;
@@ -34,6 +35,14 @@ class VisitsSeeder extends Seeder
 
         foreach ($rows as $row) {
             $legacyId = $row['legacy_id'];
+
+            # A caller who was not buying has no customer to find: their name and
+            # number are on the row itself - see `visits.visitor_type`.
+            if ($row['visitor_type'] !== VisitorType::Customer->value) {
+                $prepared[] = ['customer_id' => null, ...$row];
+
+                continue;
+            }
 
             if (! isset($customers[$legacyId])) {
                 $orphaned[] = $legacyId;

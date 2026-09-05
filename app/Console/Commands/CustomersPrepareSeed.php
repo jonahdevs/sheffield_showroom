@@ -51,6 +51,7 @@ class CustomersPrepareSeed extends Command
      * @param  array{
      *     rows: list<array<string, mixed>>,
      *     skipped: list<array{id: mixed, phone: string}>,
+     *     not_customers: list<mixed>,
      *     duplicate_phones: array<string, int>,
      * }  $result
      */
@@ -61,9 +62,10 @@ class CustomersPrepareSeed extends Command
         table(
             ['Outcome', 'Count', 'Detail'],
             [
-                ['Read', (string) (count($result['rows']) + count($result['skipped'])), basename($output)],
+                ['Read', (string) (count($result['rows']) + count($result['skipped']) + count($result['not_customers'])), basename($output)],
                 ['Prepared', (string) count($result['rows']), ''],
                 ['Skipped', (string) count($result['skipped']), 'No usable phone number'],
+                ['Never a customer', (string) count($result['not_customers']), 'The note reads as a cheque collection or an interview - the visit keeps their name'],
                 ['Sharing a number', (string) $collisions, count($result['duplicate_phones']).' number(s) held by more than one customer'],
             ]
         );

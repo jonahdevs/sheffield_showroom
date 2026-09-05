@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\CustomerSource;
 use App\Enums\VisitDepartment;
+use App\Enums\VisitorType;
 use App\Enums\VisitPurpose;
 use App\Models\Customer;
 use App\Models\User;
@@ -24,6 +25,10 @@ class VisitFactory extends Factory
     {
         return [
             'customer_id' => Customer::factory(),
+            # The stored value, never the case: `visitor_type` is free text and an
+            # enum instance here leaves the in-memory model disagreeing with the
+            # row read back.
+            'visitor_type' => VisitorType::Customer->value,
             # In the past: `VisitRequest` will not accept anything else.
             'visited_at' => fake()->dateTimeBetween('-6 months', 'now'),
             'purpose' => fake()->randomElement(VisitPurpose::values()),
@@ -58,6 +63,21 @@ class VisitFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'department' => $department->value,
+        ]);
+    }
+
+    /**
+     * Somebody who was not buying: no customer record, and their details written
+     * on the visit - see `VisitorType`.
+     */
+    public function visitedBy(VisitorType $visitor): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'customer_id' => null,
+            'visitor_type' => $visitor->value,
+            'visitor_name' => fake()->name(),
+            'visitor_phone' => fake()->optional()->numerify('07## ### ###'),
+            'visitor_organisation' => fake()->optional()->company(),
         ]);
     }
 

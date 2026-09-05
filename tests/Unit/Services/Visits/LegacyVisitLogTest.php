@@ -56,9 +56,12 @@ it('reads the department a visitor came to see as the nearest purpose', function
     'rational' => ['Rational- 6 tray demonstration', 'product_viewing'],
     'laundry' => ['Laundry- Calender ironer', 'product_viewing'],
 
-    'accounts' => ["Accounts\nDelivery of invoices\nRachael", 'collection'],
-    'cheque collection' => ['Cheque collection-Accounts', 'collection'],
-    'collection of cheque' => ["Collection of cheque\nAccounts", 'collection'],
+    # The accounts window is money, not goods off the yard, so a caller collecting
+    # a cheque there is Other rather than a collection. Who they were is
+    # `visitorTypeFor()`'s answer - see `VisitNoteTest`.
+    'accounts' => ["Accounts\nDelivery of invoices\nRachael", 'other'],
+    'cheque collection' => ['Cheque collection-Accounts', 'other'],
+    'collection of cheque' => ["Collection of cheque\nAccounts", 'other'],
     'logistics' => ['Logistics-Collection of meat mincer', 'collection'],
     'collection of equipment' => ["Collection of equipment\nLogistics", 'collection'],
 
@@ -80,7 +83,7 @@ it('reads the department a visitor came to see as the nearest purpose', function
     'security' => ['Security- Fire extinguishers', 'other'],
     'design' => ["Design\nMeeting", 'other'],
     'a bare meeting' => ["Meeting\npurchase", 'other'],
-    'a bare delivery' => ["Delivery of equipment\nPauline", 'other'],
+    'a bare delivery' => ["Delivery of equipment\nPauline", 'delivery'],
     'a department nobody recognises' => ['Wickerwork', 'other'],
 ]);
 
@@ -102,7 +105,10 @@ it('leaves a purpose the department already settled alone', function (string $no
     'an enquiry at HR' => ['HR- Inquiry on team building', 'other'],
 ]);
 
-it('records somebody who came about a job as other, whichever desk took them', function (string $note) {
+# Not a product viewing and not an enquiry, whichever desk took them: a candidate
+# counted as either is a sale the showroom never made. `visitorTypeFor()` is what
+# keeps them apart from a buyer.
+it('keeps somebody who came about a job out of the shopping purposes', function (string $note) {
     expect(visitLog()->purposeFor($note)->value)->toBe('other');
 })->with([
     'at the laundry desk' => ['Laundry- Interview Christine'],

@@ -19,13 +19,14 @@ class VisitFormData extends Data
      */
     public function __construct(
         public int $id,
-        public int $customer_id,
-        public CustomerType $customer_type,
-        public ?string $customer_name,
-        public string $phone,
+        public ?int $customer_id,
+        public string $visitor_type,
+        public ?CustomerType $customer_type,
+        public ?string $visitor_name,
+        public ?string $phone,
         public ?string $email,
         public ?string $id_number,
-        public ?string $company_name,
+        public ?string $organisation,
         public ?string $segment,
         public string $visited_on,
         public string $visited_time,
@@ -39,23 +40,26 @@ class VisitFormData extends Data
         # The whole row rather than an id, so a product dropped from the
         # catalogue since still has a name to show.
         public array $products,
-        public string $customer_label,
+        public string $visitor_label,
     ) {}
 
     public static function fromModel(Visit $visit): self
     {
+        # Null on every visit by somebody who was not buying: their details are on
+        # the visit rather than in the customer book.
         $customer = $visit->customer;
 
         return new self(
             id: $visit->id,
             customer_id: $visit->customer_id,
-            customer_type: $customer->type,
-            customer_name: $customer->name,
-            phone: $customer->phone,
-            email: $customer->email,
-            id_number: $customer->id_number,
-            company_name: $customer->company_name,
-            segment: $customer->segment,
+            visitor_type: $visit->visitor_type,
+            customer_type: $customer?->type,
+            visitor_name: $customer?->name ?? $visit->visitor_name,
+            phone: $customer?->phone ?? $visit->visitor_phone,
+            email: $customer?->email,
+            id_number: $customer?->id_number,
+            organisation: $customer?->company_name ?? $visit->visitor_organisation,
+            segment: $customer?->segment,
             visited_on: $visit->visited_at->format('Y-m-d'),
             visited_time: $visit->visited_at->format('H:i'),
             purpose: $visit->purpose,
@@ -69,7 +73,7 @@ class VisitFormData extends Data
                 ->map(ProductOptionData::fromVisitProduct(...))
                 ->values()
                 ->all(),
-            customer_label: $customer->displayName(),
+            visitor_label: $visit->visitorName(),
         );
     }
 }
