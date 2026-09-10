@@ -245,12 +245,14 @@ class DashboardController extends Controller
             return [];
         }
 
-        $slices = [];
+        # Still walks the buckets the query returned rather than the enum's
+        # cases, so nothing counted in the total goes undrawn - but a bucket
+        # with no case to match is folded into Other rather than given a wedge
+        # of its own. The columns are free text and hold answers typed before
+        # the Other box was withdrawn; drawn separately they grow the chart a
+        # wedge per typist and bury the eight reasons that mean something.
+        $folded = [];
 
-        # Walks the buckets the query actually returned rather than the enum's
-        # cases: `visits.purpose` is free text, so a reason somebody typed has
-        # no case to match and iterating the enum would drop it from the chart
-        # while still counting it in the total the shares divide by.
         foreach ($counts as $bucket => $count) {
             $bucket = (string) $bucket;
             $count = (int) $count;
@@ -259,11 +261,17 @@ class DashboardController extends Controller
                 continue;
             }
 
-            $case = $enum::tryFrom($bucket);
+            $case = $enum::tryFrom($bucket) ?? $enum::Other;
 
+            $folded[$case->value] = ($folded[$case->value] ?? 0) + $count;
+        }
+
+        $slices = [];
+
+        foreach ($folded as $value => $count) {
             $slices[] = new DashboardSliceData(
-                value: $bucket,
-                label: $case?->label() ?? $bucket,
+                value: (string) $value,
+                label: $enum::from((string) $value)->label(),
                 count: $count,
                 share: round(($count / $total) * 100, 1),
             );

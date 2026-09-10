@@ -359,6 +359,7 @@ declare namespace App {
             visited_on: string;
             visited_time: string;
             products: string[];
+            product_thumbnail: string | null;
             attended_by: string | null;
             has_notes: boolean;
         };
@@ -445,7 +446,8 @@ declare namespace App {
         export type ShuffleSessionStatus =
             'pending' | 'shuffled' | 'expired' | 'cancelled';
         export type VisitDepartment =
-            | 'finance'
+            | 'accounts'
+            | 'admin'
             | 'showroom'
             | 'sales'
             | 'marketing'

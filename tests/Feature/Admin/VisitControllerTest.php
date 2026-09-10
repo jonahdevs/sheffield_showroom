@@ -15,6 +15,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\Visit;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -804,6 +805,41 @@ it('refuses a visit with nobody against it', function () {
         ->assertSessionHasErrors('respondent');
 
     expect(Visit::query()->count())->toBe(0);
+});
+
+it('sends the list a thumbnail of the first product the visit showed', function () {
+    $visit = Visit::factory()->create();
+    $shown = Product::factory()->create(['image_path' => 'products/oven.jpg']);
+
+    $visit->products()->attach($shown->id, [
+        'quantity' => 1,
+        'interest_level' => InterestLevel::Medium->value,
+    ]);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where(
+                'visits.data.0.product_thumbnail',
+                Storage::disk('public')->url('products/oven.jpg'),
+            ));
+});
+
+it('sends no thumbnail for a product with no picture on file', function () {
+    $visit = Visit::factory()->create();
+    $shown = Product::factory()->create(['image_path' => null]);
+
+    $visit->products()->attach($shown->id, [
+        'quantity' => 1,
+        'interest_level' => InterestLevel::Medium->value,
+    ]);
+
+    $this->actingAs(visitManager())
+        ->get(route('admin.visits.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('visits.data.0.product_thumbnail', null));
 });
 
 it('falls back to the logger when no respondent was recorded', function () {

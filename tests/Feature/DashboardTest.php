@@ -205,6 +205,38 @@ it('divides the window by purpose and says what share each wedge is', function (
             ->where('purposes.1.value', VisitPurpose::AfterSales->value));
 });
 
+it('folds a purpose nobody could match into Other rather than its own wedge', function () {
+    visitOn(1, ['purpose' => VisitPurpose::Quotation]);
+    # Typed before the Other box was withdrawn, and still on file.
+    visitOn(2, ['purpose' => 'Warranty claim']);
+    visitOn(3, ['purpose' => VisitPurpose::Other->value]);
+
+    $this->actingAs(dashboardManager())
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('purposes', 2)
+            ->where('purposes.0.value', VisitPurpose::Other->value)
+            ->where('purposes.0.label', 'Other')
+            ->where('purposes.0.count', 2)
+            ->where('purposes.1.value', VisitPurpose::Quotation->value)
+            ->where('purposes.1.count', 1));
+});
+
+it('folds a source nobody could match into Other too', function () {
+    visitOn(1, ['source' => CustomerSource::WalkIn->value]);
+    visitOn(2, ['source' => CustomerSource::WalkIn->value]);
+    visitOn(3, ['source' => 'Trade fair stand']);
+
+    $this->actingAs(dashboardManager())
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('sources', 2)
+            ->where('sources.1.value', CustomerSource::Other->value)
+            ->where('sources.1.count', 1));
+});
+
 it('divides the window by where the customer came from', function () {
     visitOn(1, ['source' => CustomerSource::WalkIn->value]);
     visitOn(2, ['source' => CustomerSource::WalkIn->value]);

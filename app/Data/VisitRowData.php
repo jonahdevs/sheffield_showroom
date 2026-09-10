@@ -21,7 +21,7 @@ class VisitRowData extends Data
      *
      * @var array<int, string>
      */
-    public const RELATIONS = ['customer', 'creator', 'products:id,name'];
+    public const RELATIONS = ['customer', 'creator', 'products:id,name,image_path'];
 
     /**
      * @param  array<int, string>  $products
@@ -47,6 +47,10 @@ class VisitRowData extends Data
         public string $visited_time,
         /** @var array<int, string> */
         public array $products,
+        # The first one's picture, for the list's thumbnail. One image, not a
+        # gallery: the cell is a single line and the names beside it already
+        # say what else was shown.
+        public ?string $product_thumbnail,
         public ?string $attended_by,
         public bool $has_notes,
     ) {}
@@ -82,6 +86,7 @@ class VisitRowData extends Data
             visited_on: $visit->visited_at->format('j M Y'),
             visited_time: $visit->visited_at->format('H:i'),
             products: $visit->products->pluck('name')->all(),
+            product_thumbnail: $visit->products->first()?->imageUrl(),
             attended_by: $visit->respondent ?? $visit->creator?->name,
             has_notes: filled($visit->notes),
         );

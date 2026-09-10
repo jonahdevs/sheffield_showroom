@@ -459,11 +459,26 @@ defineOptions({
                             </span>
 
                             <div class="flex min-w-0 items-center gap-1.5">
-                                <Package
+                                <!-- Decorative: the names beside it carry the
+                                     answer, and only the first product's
+                                     picture is shown. -->
+                                <span
                                     v-if="visit.products.length > 0"
-                                    class="size-3.5 shrink-0 text-faint"
+                                    class="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
                                     aria-hidden="true"
-                                />
+                                >
+                                    <img
+                                        v-if="visit.product_thumbnail"
+                                        :src="visit.product_thumbnail"
+                                        alt=""
+                                        loading="lazy"
+                                        class="size-full object-contain"
+                                    />
+                                    <Package
+                                        v-else
+                                        class="size-3.5 text-faint"
+                                    />
+                                </span>
                                 <span
                                     class="truncate text-xs"
                                     :class="
