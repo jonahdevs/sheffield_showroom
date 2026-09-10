@@ -50,17 +50,19 @@ enum VisitReport: string
             ],
 
             # `department` is on it because routing a caller to a desk is the
-            # front desk's own job. The write-up sits beside the purpose rather
-            # than instead of it: the menu label says what kind of visit it was,
-            # the notes say what was actually asked for.
+            # front desk's own job. The write-up does not sit beside the purpose
+            # here, it replaces it - `purpose_detail`, one column, printing the
+            # note when reception wrote one and the menu label otherwise. Only
+            # `Full` keeps the two apart.
+            # `visitor_type` is deliberately off this one and stays on `Full`:
+            # the front desk already knows who it let in, and the column only
+            # widened the sheet they read down a corridor.
             self::Reception => [
                 'customer_name' => 'Visitor name',
-                'visitor_type' => 'Visitor type',
                 'customer_company' => 'Company',
                 'customer_phone' => 'Contact',
                 'department' => 'Department',
-                'purpose' => 'Nature of visit',
-                'notes' => 'Visit notes',
+                'purpose_detail' => 'Nature of visit',
                 'respondent' => 'Respondent',
             ],
         };

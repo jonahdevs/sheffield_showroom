@@ -1019,17 +1019,17 @@ it('keeps a visit with no follow-up planned', function () {
 });
 
 # =========================================================================
-# Nature of visit is free text, and the menu is only a suggestion
+# Nature of visit is the menu and nothing else
 # =========================================================================
 
-it('stores a typed nature of visit exactly as it was written', function () {
+it('refuses a nature of visit that is not on the menu', function () {
     $user = visitStaff([Permission::VisitsViewAny, Permission::VisitsCreate]);
 
     $this->actingAs($user)
         ->post(route('admin.visits.store'), visitPayload(['purpose' => 'Warranty claim']))
-        ->assertRedirect();
+        ->assertSessionHasErrors('purpose');
 
-    expect(Visit::query()->sole()->purpose)->toBe('Warranty claim');
+    expect(Visit::query()->count())->toBe(0);
 });
 
 it('reads a typed nature of visit back as written and a known one by its label', function () {
@@ -1141,14 +1141,14 @@ it('drops the referrer when the visit moves off a referral', function () {
 # Department reaches the form, the list, the filter and the download
 # =========================================================================
 
-it('stores a typed department exactly as it was written', function () {
+it('refuses a department that is not on the menu', function () {
     $user = visitStaff([Permission::VisitsViewAny, Permission::VisitsCreate]);
 
     $this->actingAs($user)
         ->post(route('admin.visits.store'), visitPayload(['department' => 'Fabrication']))
-        ->assertRedirect();
+        ->assertSessionHasErrors('department');
 
-    expect(Visit::query()->sole()->department)->toBe('Fabrication');
+    expect(Visit::query()->count())->toBe(0);
 });
 
 it('reads a typed department back as written and a known one by its label', function () {

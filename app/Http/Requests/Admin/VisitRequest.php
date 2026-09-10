@@ -7,7 +7,9 @@ namespace App\Http\Requests\Admin;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
+use App\Enums\VisitDepartment;
 use App\Enums\VisitorType;
+use App\Enums\VisitPurpose;
 use App\Models\Customer;
 use App\Models\Visit;
 use Carbon\CarbonImmutable;
@@ -87,9 +89,17 @@ class VisitRequest extends FormRequest
             'visited_on' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'visited_time' => ['required', 'date_format:H:i'],
 
-            'purpose' => ['required', 'string', 'max:120'],
+            # Menu-only, and `Rule::in` over `Rule::enum` for the same reason as
+            # `visitor_type`: the column stays free text holding these values, so
+            # the rows already carrying a typed purpose or a retired desk still
+            # read, while nothing new may be written off the menu. The Other box
+            # was withdrawn from the form because reception filed real errands
+            # under it as prose, which no filter or chart could then group.
+            'purpose' => ['required', Rule::in(VisitPurpose::values())],
+            'department' => ['required', Rule::in(VisitDepartment::values())],
+
+            # Still free text: `source` keeps its Other box.
             'source' => ['required', 'string', 'max:120'],
-            'department' => ['required', 'string', 'max:120'],
 
             # A referral is still filed under "Referral" - this names who made
             # it, so it is required there and refused everywhere else rather
@@ -276,6 +286,7 @@ class VisitRequest extends FormRequest
     {
         return [
             'customer_id' => 'customer',
+            'purpose' => 'nature of visit',
             'customer_type' => 'customer type',
             'visitor_type' => 'visitor type',
             'visitor_name' => 'full name',
@@ -300,6 +311,8 @@ class VisitRequest extends FormRequest
             'customer_id.exists' => 'That customer is no longer on file.',
             'phone.required' => 'A phone number is what tells one customer from another.',
             'phone.regex' => 'Use digits, spaces, brackets, + and - only.',
+            'purpose.in' => 'Choose a nature of visit from the list.',
+            'department.in' => 'Choose a department from the list.',
             'respondent.required' => 'Say who took the visit.',
             'referred_by.required' => 'Say who referred them.',
             'referred_by.prohibited' => 'Only a referral names who sent them.',

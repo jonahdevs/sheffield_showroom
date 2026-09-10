@@ -261,16 +261,16 @@ const heading = computed(() =>
     props.visit ? `Visit by ${props.visit.visitor_label}` : 'New visit',
 );
 
-const { choice: purposeChoice, other: purposeOther } = openOnStored(
-    props.purposes,
-    props.visit?.purpose,
-    'enquiry',
+/* Menu only, with no Other box: `VisitRequest` refuses anything off these two
+   menus. A visit still holding a value typed before the box was withdrawn -
+   or a desk since retired - opens on Other, so it is never posted back as a
+   value the request would now reject. */
+const purposeChoice = ref(
+    storedChoice(props.purposes, props.visit?.purpose, 'enquiry').choice,
 );
 
-const { choice: departmentChoice, other: departmentOther } = openOnStored(
-    props.departments,
-    props.visit?.department,
-    'showroom',
+const departmentChoice = ref(
+    storedChoice(props.departments, props.visit?.department, 'showroom').choice,
 );
 
 const { choice: sourceChoice, other: sourceOther } = openOnStored(
@@ -297,11 +297,8 @@ function openSegment(stored: string | null | undefined) {
 }
 
 watchEffect(() => {
-    form.purpose = chosenOption(purposeChoice.value, purposeOther.value);
-    form.department = chosenOption(
-        departmentChoice.value,
-        departmentOther.value,
-    );
+    form.purpose = purposeChoice.value;
+    form.department = departmentChoice.value;
     form.source = chosenOption(sourceChoice.value, sourceOther.value);
     form.segment = chosenOption(segmentChoice.value, segmentOther.value);
 });
@@ -310,19 +307,9 @@ const isReferral = computed(() => form.source === 'referral');
 
 /* Each Other box, and the Referred-by beside it, take the cursor as they
    appear. */
-const purposeOtherBox = ref<HTMLElement | null>(null);
-const departmentOtherBox = ref<HTMLElement | null>(null);
 const sourceOtherBox = ref<HTMLElement | null>(null);
 const segmentOtherBox = ref<HTMLElement | null>(null);
 const referredByBox = ref<HTMLElement | null>(null);
-
-function onPurposeChosen(chosen: unknown) {
-    focusIf(chosen === 'other', purposeOtherBox);
-}
-
-function onDepartmentChosen(chosen: unknown) {
-    focusIf(chosen === 'other', departmentOtherBox);
-}
 
 function onSegmentChosen(chosen: unknown) {
     focusIf(chosen === 'other', segmentOtherBox);
@@ -434,7 +421,8 @@ defineOptions({
                                     :model-value="visitorChoice"
                                     :disabled="locked"
                                     @update:model-value="
-                                        (value) => changeVisitor(value as string)
+                                        (value) =>
+                                            changeVisitor(value as string)
                                     "
                                 >
                                     <SelectTrigger
@@ -797,10 +785,7 @@ defineOptions({
                                     Nature of visit
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select
-                                    v-model="purposeChoice"
-                                    @update:model-value="onPurposeChosen"
-                                >
+                                <Select v-model="purposeChoice">
                                     <SelectTrigger
                                         id="purpose"
                                         class="mt-2.25 w-full"
@@ -819,21 +804,6 @@ defineOptions({
                                     </SelectContent>
                                 </Select>
 
-                                <!-- The menu is short by design; anything it
-                                     does not cover is typed here and stored as
-                                     written. -->
-                                <Input
-                                    v-if="purposeChoice === 'other'"
-                                    id="purpose-other"
-                                    ref="purposeOtherBox"
-                                    v-model="purposeOther"
-                                    class="mt-2.25"
-                                    maxlength="120"
-                                    placeholder="What brought them in?"
-                                    aria-label="Describe the nature of the visit"
-                                    data-test="field-purpose-other"
-                                />
-
                                 <InputError :message="form.errors.purpose" />
                             </div>
 
@@ -842,10 +812,7 @@ defineOptions({
                                     Department
                                     <span class="text-primary">*</span>
                                 </Label>
-                                <Select
-                                    v-model="departmentChoice"
-                                    @update:model-value="onDepartmentChosen"
-                                >
+                                <Select v-model="departmentChoice">
                                     <SelectTrigger
                                         id="department"
                                         class="mt-2.25 w-full"
@@ -863,18 +830,6 @@ defineOptions({
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
-
-                                <Input
-                                    v-if="departmentChoice === 'other'"
-                                    id="department-other"
-                                    ref="departmentOtherBox"
-                                    v-model="departmentOther"
-                                    class="mt-2.25"
-                                    maxlength="120"
-                                    placeholder="Which desk were they here for?"
-                                    aria-label="Name the department they came to see"
-                                    data-test="field-department-other"
-                                />
 
                                 <InputError :message="form.errors.department" />
                             </div>

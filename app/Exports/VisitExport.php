@@ -94,6 +94,14 @@ class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, Wi
         ];
     }
 
+    /** A note somebody actually wrote, or null for one that is blank or all spaces. */
+    private function written(?string $notes): ?string
+    {
+        $written = trim((string) $notes);
+
+        return $written === '' ? null : $written;
+    }
+
     private function value(string $column, Visit $row, VisitRowData $visit): mixed
     {
         return match ($column) {
@@ -106,6 +114,11 @@ class VisitExport implements FromQuery, ShouldAutoSize, WithColumnFormatting, Wi
             'visitor_type' => $visit->visitor_type_label,
             'customer_phone' => $this->textCell($visit->customer_phone, $this->format),
             'purpose' => $visit->purpose_label,
+            # One column doing the work of two on reception's sheet. The menu
+            # label only ever says what kind of visit it was, so a note saying
+            # what was actually asked for wins outright - a blank one, or one
+            # that is nothing but whitespace, falls back to the label.
+            'purpose_detail' => $this->written($row->notes) ?? $visit->purpose_label,
             'department' => $visit->department_label ?? '',
             'source' => $visit->source_label,
             'date' => $visit->visited_on,

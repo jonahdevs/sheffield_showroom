@@ -240,23 +240,21 @@ it('hands reception the front desk sheet rather than the full log', function () 
         'reception-visits-'.now()->toDateString().'.csv',
         fn (VisitExport $export) => $export->headings() === [
             'Visitor name',
-            'Visitor type',
             'Company',
             'Contact',
             'Department',
             'Nature of visit',
-            'Visit notes',
             'Respondent',
         ],
     );
 });
 
-it('prints both the purpose and the write-up on reception\'s sheet', function () {
+it('prints the write-up in place of the purpose on reception\'s sheet', function () {
     Excel::fake();
 
     $visit = Visit::factory()->for(Customer::factory())->create([
         'purpose' => VisitPurpose::Enquiry->value,
-        'notes' => 'Haggled hard on the oven; go in at 12% next time.',
+        'notes' => 'Enquiry on coffee machines',
     ]);
 
     $this->actingAs(receptionStaff())
@@ -266,11 +264,35 @@ it('prints both the purpose and the write-up on reception\'s sheet', function ()
     Excel::assertDownloaded(
         'reception-visits-'.now()->toDateString().'.csv',
         function (VisitExport $export) use ($visit): bool {
-            $printed = implode('|', array_map(strval(...), $export->map($visit)));
+            $printed = array_map(strval(...), $export->map($visit));
 
-            return str_contains($printed, 'Enquiry')
-                && str_contains($printed, 'Haggled hard');
+            # The label is gone rather than repeated: one column, and the note
+            # already says everything 'Enquiry' would have.
+            return in_array('Enquiry on coffee machines', $printed, true)
+                && ! in_array('Enquiry', $printed, true);
         },
+    );
+});
+
+it('falls back to the menu label when reception wrote no note', function () {
+    Excel::fake();
+
+    $visit = Visit::factory()->for(Customer::factory())->create([
+        'purpose' => VisitPurpose::Enquiry->value,
+        'notes' => '   ',
+    ]);
+
+    $this->actingAs(receptionStaff())
+        ->get(route('admin.visits.export'))
+        ->assertSuccessful();
+
+    Excel::assertDownloaded(
+        'reception-visits-'.now()->toDateString().'.csv',
+        fn (VisitExport $export) => in_array(
+            'Enquiry',
+            array_map(strval(...), $export->map($visit)),
+            true,
+        ),
     );
 });
 
