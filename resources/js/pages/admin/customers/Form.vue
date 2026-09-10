@@ -15,7 +15,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { chosenOption, focusIf, openOnStored } from '@/lib/options';
+import { storedChoice } from '@/lib/options';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/customers';
 
@@ -45,23 +45,15 @@ const form = useForm({
     notes: props.customer?.notes ?? '',
 });
 
-/* `segment` is free text and the menu is only a suggestion, so a stored value
-   matching no option is one somebody typed: it opens on Other with the box
-   filled rather than falling off the form and being overwritten on save. */
-const { choice: segmentChoice, other: segmentOther } = openOnStored(
-    props.segments,
-    props.customer?.segment,
-    '',
+/* Menu only, with no Other box: `CustomerRequest` refuses anything off it. A
+   record still holding a trade typed before the box was withdrawn opens on
+   Other, so it is never posted back as a value the request would now reject. */
+const segmentChoice = ref(
+    storedChoice(props.segments, props.customer?.segment, '').choice,
 );
 
-const segmentOtherBox = ref<HTMLElement | null>(null);
-
-function focusSegmentOther(chosen: unknown) {
-    focusIf(chosen === 'other', segmentOtherBox);
-}
-
 watchEffect(() => {
-    form.segment = chosenOption(segmentChoice.value, segmentOther.value);
+    form.segment = segmentChoice.value;
 });
 
 const isCompany = computed(() => form.type === 'company');
@@ -264,10 +256,7 @@ defineOptions({
 
                         <div>
                             <Label for="segment">Segment</Label>
-                            <Select
-                                v-model="segmentChoice"
-                                @update:model-value="focusSegmentOther"
-                            >
+                            <Select v-model="segmentChoice">
                                 <SelectTrigger
                                     id="segment"
                                     class="mt-2.25 w-full"
@@ -287,21 +276,6 @@ defineOptions({
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
-
-                            <!-- The menu is short by design; a trade it does
-                                 not cover is typed here and stored as
-                                 written. -->
-                            <Input
-                                v-if="segmentChoice === 'other'"
-                                id="segment-other"
-                                v-model="segmentOther"
-                                class="mt-2.25"
-                                maxlength="120"
-                                placeholder="Name their trade"
-                                aria-label="Name the segment they are in"
-                                ref="segmentOtherBox"
-                                data-test="field-segment-other"
-                            />
 
                             <InputError :message="form.errors.segment" />
                         </div>

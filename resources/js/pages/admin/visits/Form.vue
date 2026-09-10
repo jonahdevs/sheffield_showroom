@@ -20,12 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import {
-    chosenOption,
-    focusIf,
-    openOnStored,
-    storedChoice,
-} from '@/lib/options';
+import { focusIf, storedChoice } from '@/lib/options';
 import { dashboard } from '@/routes';
 import { index, store, update } from '@/routes/admin/visits';
 
@@ -261,10 +256,10 @@ const heading = computed(() =>
     props.visit ? `Visit by ${props.visit.visitor_label}` : 'New visit',
 );
 
-/* Menu only, with no Other box: `VisitRequest` refuses anything off these two
-   menus. A visit still holding a value typed before the box was withdrawn -
-   or a desk since retired - opens on Other, so it is never posted back as a
-   value the request would now reject. */
+/* Menu only, with no Other box on any of the four: `VisitRequest` refuses
+   anything off these menus. A visit still holding a value typed before the
+   boxes were withdrawn - or a desk since retired - opens on Other, so it is
+   never posted back as a value the request would now reject. */
 const purposeChoice = ref(
     storedChoice(props.purposes, props.visit?.purpose, 'enquiry').choice,
 );
@@ -273,51 +268,36 @@ const departmentChoice = ref(
     storedChoice(props.departments, props.visit?.department, 'showroom').choice,
 );
 
-const { choice: sourceChoice, other: sourceOther } = openOnStored(
-    props.sources,
-    props.visit?.source,
-    'walk_in',
+const sourceChoice = ref(
+    storedChoice(props.sources, props.visit?.source, 'walk_in').choice,
 );
 
 /* Blank rather than a default: a segment nobody recorded must stay unrecorded. */
-const { choice: segmentChoice, other: segmentOther } = openOnStored(
-    props.segments,
-    props.visit?.segment,
-    '',
+const segmentChoice = ref(
+    storedChoice(props.segments, props.visit?.segment, '').choice,
 );
 
-/* Picking a customer, or dropping to an individual, re-opens the pair on what
+/* Picking a customer, or dropping to an individual, re-opens the select on what
    that record holds - writing `form.segment` directly would be overwritten by
    the watcher below on the next tick. */
 function openSegment(stored: string | null | undefined) {
-    const opened = storedChoice(props.segments, stored, '');
-
-    segmentChoice.value = opened.choice;
-    segmentOther.value = opened.other;
+    segmentChoice.value = storedChoice(props.segments, stored, '').choice;
 }
 
 watchEffect(() => {
     form.purpose = purposeChoice.value;
     form.department = departmentChoice.value;
-    form.source = chosenOption(sourceChoice.value, sourceOther.value);
-    form.segment = chosenOption(segmentChoice.value, segmentOther.value);
+    form.source = sourceChoice.value;
+    form.segment = segmentChoice.value;
 });
 
 const isReferral = computed(() => form.source === 'referral');
 
-/* Each Other box, and the Referred-by beside it, take the cursor as they
-   appear. */
-const sourceOtherBox = ref<HTMLElement | null>(null);
-const segmentOtherBox = ref<HTMLElement | null>(null);
+/* Referred-by is the one box left that appears with a choice, so it still
+   takes the cursor as it arrives. */
 const referredByBox = ref<HTMLElement | null>(null);
 
-function onSegmentChosen(chosen: unknown) {
-    focusIf(chosen === 'other', segmentOtherBox);
-}
-
-/* Referral reveals a box of its own, so the source select has two to place. */
 function onSourceChosen(chosen: unknown) {
-    focusIf(chosen === 'other', sourceOtherBox);
     focusIf(chosen === 'referral', referredByBox);
 }
 
@@ -579,30 +559,19 @@ defineOptions({
                                 <InputError :message="form.errors.id_number" />
                             </div>
 
-                            <!-- The firm behind them: the customer's own
-                                 company when they are buying for one, and who
-                                 sent them when they are not. -->
-                            <div v-if="!isCustomer || isCompany">
-                                <Label for="organisation">
-                                    {{
-                                        isCompany
-                                            ? 'Company name'
-                                            : 'Organisation'
-                                    }}
-                                    <span v-if="isCompany" class="text-primary">
-                                        *
-                                    </span>
-                                </Label>
+                            <!-- Who sent them. The same field carries a
+                                 company customer's own company name, and that
+                                 case is asked in the Business card below
+                                 instead - one field, two questions, never
+                                 both on screen at once. -->
+                            <div v-if="!isCustomer">
+                                <Label for="organisation">Organisation</Label>
                                 <Input
                                     id="organisation"
                                     v-model="form.organisation"
                                     class="mt-2.25"
                                     :readonly="locked"
-                                    :placeholder="
-                                        isCompany
-                                            ? 'e.g. Mwangi Builders Ltd'
-                                            : 'Optional - who sent them'
-                                    "
+                                    placeholder="Optional - who sent them"
                                     autocomplete="organization"
                                     data-test="field-organisation"
                                 />
@@ -637,18 +606,6 @@ defineOptions({
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
-
-                                <Input
-                                    v-if="sourceChoice === 'other'"
-                                    id="source-other"
-                                    ref="sourceOtherBox"
-                                    v-model="sourceOther"
-                                    class="mt-2.25"
-                                    maxlength="120"
-                                    placeholder="How did they hear about us?"
-                                    aria-label="Describe how they found the showroom"
-                                    data-test="field-source-other"
-                                />
 
                                 <InputError :message="form.errors.source" />
                             </div>
@@ -691,11 +648,29 @@ defineOptions({
                             class="flex flex-col gap-4 @xl/main:grid @xl/main:grid-cols-2 @xl/main:gap-x-5.5 @xl/main:gap-y-4.5"
                         >
                             <div>
+                                <Label for="company_name">
+                                    Company name
+                                    <span class="text-primary">*</span>
+                                </Label>
+                                <Input
+                                    id="company_name"
+                                    v-model="form.organisation"
+                                    class="mt-2.25"
+                                    :readonly="locked"
+                                    placeholder="e.g. Mwangi Builders Ltd"
+                                    autocomplete="organization"
+                                    data-test="field-organisation"
+                                />
+                                <InputError
+                                    :message="form.errors.organisation"
+                                />
+                            </div>
+
+                            <div>
                                 <Label for="segment">Segment</Label>
                                 <Select
                                     v-model="segmentChoice"
                                     :disabled="locked"
-                                    @update:model-value="onSegmentChosen"
                                 >
                                     <SelectTrigger
                                         id="segment"
@@ -716,19 +691,6 @@ defineOptions({
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
-
-                                <Input
-                                    v-if="segmentChoice === 'other'"
-                                    id="segment-other"
-                                    v-model="segmentOther"
-                                    class="mt-2.25"
-                                    maxlength="120"
-                                    :readonly="locked"
-                                    placeholder="Name their trade"
-                                    aria-label="Name the segment they are in"
-                                    ref="segmentOtherBox"
-                                    data-test="field-segment-other"
-                                />
 
                                 <InputError :message="form.errors.segment" />
                             </div>

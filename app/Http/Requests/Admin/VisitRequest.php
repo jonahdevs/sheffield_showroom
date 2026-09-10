@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerSource;
 use App\Enums\CustomerType;
 use App\Enums\InterestLevel;
@@ -84,22 +85,24 @@ class VisitRequest extends FormRequest
             # and who sent them for everybody else.
             'organisation' => [Rule::requiredIf($isCompany), 'nullable', 'string', 'max:160'],
 
-            'segment' => [Rule::prohibitedIf(! $isCustomer), 'nullable', 'string', 'max:120'],
+            'segment' => [
+                Rule::prohibitedIf(! $isCustomer),
+                'nullable',
+                Rule::in(CustomerSegment::values()),
+            ],
 
             'visited_on' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'visited_time' => ['required', 'date_format:H:i'],
 
             # Menu-only, and `Rule::in` over `Rule::enum` for the same reason as
-            # `visitor_type`: the column stays free text holding these values, so
-            # the rows already carrying a typed purpose or a retired desk still
-            # read, while nothing new may be written off the menu. The Other box
-            # was withdrawn from the form because reception filed real errands
-            # under it as prose, which no filter or chart could then group.
+            # `visitor_type`: the columns stay free text holding these values, so
+            # the rows already carrying a typed answer or a retired desk still
+            # read, while nothing new may be written off the menu. Every Other
+            # box was withdrawn from the form because reception filed real
+            # answers under them as prose, which no filter or chart could group.
             'purpose' => ['required', Rule::in(VisitPurpose::values())],
             'department' => ['required', Rule::in(VisitDepartment::values())],
-
-            # Still free text: `source` keeps its Other box.
-            'source' => ['required', 'string', 'max:120'],
+            'source' => ['required', Rule::in(CustomerSource::values())],
 
             # A referral is still filed under "Referral" - this names who made
             # it, so it is required there and refused everywhere else rather
@@ -313,6 +316,8 @@ class VisitRequest extends FormRequest
             'phone.regex' => 'Use digits, spaces, brackets, + and - only.',
             'purpose.in' => 'Choose a nature of visit from the list.',
             'department.in' => 'Choose a department from the list.',
+            'source.in' => 'Choose a source from the list.',
+            'segment.in' => 'Choose a segment from the list.',
             'respondent.required' => 'Say who took the visit.',
             'referred_by.required' => 'Say who referred them.',
             'referred_by.prohibited' => 'Only a referral names who sent them.',

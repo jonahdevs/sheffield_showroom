@@ -386,10 +386,10 @@ it('records the fuller address', function () {
 });
 
 # =========================================================================
-# Segment is free text, and the menu is only a suggestion
+# Segment is the menu, and nothing off it may be written
 # =========================================================================
 
-it('stores a segment picked from the menu and one typed under Other alike', function () {
+it('stores a segment picked from the menu', function () {
     $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
 
     $this->actingAs($user)
@@ -398,15 +398,19 @@ it('stores a segment picked from the menu and one typed under Other alike', func
         ]))
         ->assertRedirect(route('admin.customers.index'));
 
+    expect(Customer::query()->sole()->segment)->toBe('coffee_shops');
+});
+
+it('refuses a segment that is not on the menu', function () {
+    $user = staffWith([Permission::CustomersViewAny, Permission::CustomersCreate]);
+
     $this->actingAs($user)
         ->post(route('admin.customers.store'), companyPayload([
-            'phone' => '0733 444 555',
             'segment' => 'Boat yards',
         ]))
-        ->assertRedirect(route('admin.customers.index'));
+        ->assertSessionHasErrors('segment');
 
-    expect(Customer::query()->orderBy('id')->pluck('segment')->all())
-        ->toBe(['coffee_shops', 'Boat yards']);
+    expect(Customer::query()->count())->toBe(0);
 });
 
 it('reads a typed segment back as written and a known one by its label', function () {

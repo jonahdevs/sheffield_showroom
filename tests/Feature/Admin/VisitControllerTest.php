@@ -878,15 +878,17 @@ it('records both the person and the company for a company visit', function () {
         ->and($customer->displayName())->toBe('Mwangi Builders Ltd');
 });
 
-it('stores a segment typed under Other on the visit form as written', function () {
-    $this->actingAs(visitManager())->post(route('admin.visits.store'), newCustomerPayload([
-        'customer_type' => CustomerType::Company->value,
-        'visitor_name' => 'Peter Mwangi',
-        'organisation' => 'Boat Yard Ltd',
-        'segment' => 'Boat yards',
-    ]));
+it('refuses a segment that is not on the menu', function () {
+    $this->actingAs(visitManager())
+        ->post(route('admin.visits.store'), newCustomerPayload([
+            'customer_type' => CustomerType::Company->value,
+            'visitor_name' => 'Peter Mwangi',
+            'organisation' => 'Boat Yard Ltd',
+            'segment' => 'Boat yards',
+        ]))
+        ->assertSessionHasErrors('segment');
 
-    expect(Customer::query()->sole()->segment)->toBe('Boat yards');
+    expect(Customer::query()->count())->toBe(0);
 });
 
 it('refuses a typed-in customer with no phone number', function () {
@@ -1072,10 +1074,10 @@ it('no longer offers the two purposes nobody ever used', function () {
 });
 
 # =========================================================================
-# Source is free text too, and a referral names who made it
+# Source is the menu too, and a referral names who made it
 # =========================================================================
 
-it('stores a typed source exactly as it was written', function () {
+it('refuses a source that is not on the menu', function () {
     $user = visitStaff([Permission::VisitsViewAny, Permission::VisitsCreate]);
 
     $this->actingAs($user)
@@ -1083,9 +1085,9 @@ it('stores a typed source exactly as it was written', function () {
             'source' => 'Trade fair stand',
             'referred_by' => null,
         ]))
-        ->assertRedirect();
+        ->assertSessionHasErrors('source');
 
-    expect(Visit::query()->sole()->source)->toBe('Trade fair stand');
+    expect(Visit::query()->count())->toBe(0);
 });
 
 it('reads a typed source back as written and a known one by its label', function () {

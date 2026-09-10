@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\CustomerSegment;
 use App\Enums\CustomerType;
 use App\Models\Customer;
 use Illuminate\Foundation\Http\FormRequest;
@@ -56,7 +57,11 @@ class CustomerRequest extends FormRequest
             # Business
             # -----------------------------------------------------------------
             'company_name' => [Rule::requiredIf($isCompany), 'nullable', 'string', 'max:160'],
-            'segment' => ['nullable', 'string', 'max:120'],
+            # Menu-only, and `Rule::in` over `Rule::enum`: the column stays
+            # free text so the rows already holding a trade somebody typed,
+            # and the ones the legacy extract folded in, still read. The
+            # Other box was withdrawn from both forms that write this.
+            'segment' => ['nullable', Rule::in(CustomerSegment::values())],
 
             # -----------------------------------------------------------------
             # Address
@@ -101,6 +106,7 @@ class CustomerRequest extends FormRequest
             'name.required' => 'Record who you spoke to, company or not.',
             'phone.regex' => 'Use digits, spaces, brackets, + and - only.',
             'company_name.required' => 'A company customer needs the name of the company.',
+            'segment.in' => 'Choose a segment from the list.',
         ];
     }
 
