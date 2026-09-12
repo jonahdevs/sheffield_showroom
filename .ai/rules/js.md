@@ -53,3 +53,10 @@ Any element at less than full opacity creates a new stacking/3D context, so desc
 
 Keep opacity/scale/position on an outer element and the `rotateY` on a separate inner one with `[transform-style:preserve-3d]`. See `components/ShuffleCards.vue`.</note>
 </invoke>
+
+## A type="number" box hands v-model a number, not a string
+Vue's `vModelText` casts the bound value with `looseToNumber` whenever `el.type === 'number'`, so a form field seeded as `String(...)` becomes a **number** the moment somebody types in it. An empty box stays `''`.
+
+Any helper that runs inside `form.transform` must therefore take `string | number` and normalise with `String(value).trim()` — never `value.trim()`. The throw happens inside `transform`, which Inertia calls before the request, so the submit dies silently: no network call, no validation errors, no toast. The user sees a Save button that does nothing.
+
+Bit `admin/rewards/Form.vue` (turns per customer, minimum purchase, quantity, validity days) and `admin/rewards/catalogue/Form.vue` (value, default validity days). `components/ui/input/Input.vue` passes `type` straight through as a fallthrough attribute, so every `<Input type="number">` in the app behaves this way.

@@ -90,11 +90,14 @@ const isClosed = computed(() => isCompleted.value || isCancelled.value);
 // The form
 // =========================================================================
 
+/** What a number box holds: seeded a string, a number once it is edited. */
+type NumberBox = string | number;
+
 /** Nothing here describes the reward - the catalogue does, so nothing drifts. */
 type RewardRow = {
     reward_id: string;
-    quantity: string;
-    validity_days: string;
+    quantity: NumberBox;
+    validity_days: NumberBox;
     qualifying_product_ids: number[];
 };
 
@@ -117,8 +120,8 @@ type CampaignForm = {
     description: string;
     starts_at: string;
     ends_at: string;
-    max_shuffles_per_customer: string;
-    minimum_purchase_amount: string;
+    max_shuffles_per_customer: NumberBox;
+    minimum_purchase_amount: NumberBox;
     rewards: RewardRow[];
 };
 
@@ -270,15 +273,22 @@ function rewardError(index: number, field: string): string | undefined {
     return errors.value[`rewards.${index}.${field}`];
 }
 
-function blankToNull(value: string): string | null {
-    const trimmed = value.trim();
+/**
+ * Vue's `v-model` casts a `type="number"` box to a number the moment it is
+ * typed in, so a field seeded as a string arrives here as one or the other.
+ * Both helpers normalise before trimming - reading `.trim()` off a number
+ * threw inside `transform`, which aborted the submit with no request sent and
+ * no error on the page.
+ */
+function blankToNull(value: NumberBox): string | null {
+    const trimmed = String(value).trim();
 
     return trimmed === '' ? null : trimmed;
 }
 
 /** A cleared number box is null rather than zero, so validation says "required". */
-function numberOrNull(value: string): number | null {
-    const trimmed = value.trim();
+function numberOrNull(value: NumberBox): number | null {
+    const trimmed = String(value).trim();
 
     return trimmed === '' ? null : Number(trimmed);
 }

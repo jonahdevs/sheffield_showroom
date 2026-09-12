@@ -107,15 +107,22 @@ async function removeReward() {
     router.delete(destroy(reward.id).url);
 }
 
-function blankToNull(value: string): string | null {
-    const trimmed = value.trim();
+/**
+ * Vue's `v-model` casts a `type="number"` box to a number the moment it is
+ * typed in, so a field seeded as a string arrives here as one or the other.
+ * Both helpers normalise before trimming - reading `.trim()` off a number
+ * threw inside `transform`, which aborted the submit with no request sent and
+ * no error on the page.
+ */
+function blankToNull(value: string | number): string | null {
+    const trimmed = String(value).trim();
 
     return trimmed === '' ? null : trimmed;
 }
 
 /** A cleared number box is nothing rather than zero. */
-function numberOrNull(value: string): number | null {
-    const trimmed = value.trim();
+function numberOrNull(value: string | number): number | null {
+    const trimmed = String(value).trim();
 
     return trimmed === '' ? null : Number(trimmed);
 }
